@@ -1,0 +1,15 @@
+{
+  "_comment": "物件类型表：有状态的实体，站在格子上，不是地形。",
+  "version": 1,
+  "props": {
+    "mast":     { "name": "桅杆",   "blocks": true,  "color": "#7a5230", "shape": "circle" },
+    "capstan":  { "name": "绞盘",   "blocks": true,  "color": "#9c7b4a", "shape": "circle" },
+    "windlass": { "name": "起锚绞车","blocks": true, "color": "#8a6a3c", "shape": "rect" },
+    "helm":     { "name": "舵柄",   "blocks": false, "color": "#d9c07a", "shape": "rect" },
+    "bunk":     { "name": "铺位",   "blocks": true,  "color": "#6f5a3a", "shape": "rect" },
+    "stove":    { "name": "灶台",   "blocks": true,  "color": "#a04a2a", "shape": "rect" },
+    "chest":    { "name": "储物箱", "blocks": true,  "color": "#7d6038", "shape": "rect" },
+    "barrel":   { "name": "木桶",   "blocks": true,  "color": "#5d6f8a", "shape": "circle" },
+    "cargo":    { "name": "货堆",   "blocks": true,  "color": "#8a7a4a", "shape": "rect" }
+  }
+}

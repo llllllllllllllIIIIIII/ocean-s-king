@@ -1,0 +1,14 @@
+{
+  "_comment": "格子类型表：ship.json 的 tiles 里每个字符的含义。改这里不需要改代码。",
+  "version": 1,
+  "tiles": {
+    ".": { "name": "船外",     "walkable": false, "color": "#0d1b26", "desc": "空气或船体外侧" },
+    "=": { "name": "舷墙",     "walkable": false, "color": "#6b4f2a", "desc": "甲板边缘的护墙" },
+    "#": { "name": "甲板",     "walkable": true,  "color": "#c8a45c", "desc": "主甲板可走面" },
+    "_": { "name": "舱内地板", "walkable": true,  "color": "#8a6a3c", "desc": "舱内可走面" },
+    "|": { "name": "船体内壁", "walkable": false, "color": "#4a3520", "desc": "船体结构 / 舱壁" },
+    "H": { "name": "舱口",     "walkable": true,  "color": "#2b6ca3", "desc": "上下层开口" },
+    "L": { "name": "梯子",     "walkable": true,  "color": "#3fa3d6", "desc": "上下层通道，通行较慢" },
+    "p": { "name": "桅顶平台", "walkable": true,  "color": "#b08a4a", "desc": "瞭望台地板" }
+  }
+}

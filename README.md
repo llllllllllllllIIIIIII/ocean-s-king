@@ -77,6 +77,20 @@ tests/                   无头测试
 | `docs/02-开发日志与7天排期.md` | 每日详细卡片 + 进度记录本 |
 | `docs/03-单桅帆船SVG部件清单.md` | 部件清单、锚点规范、层序 |
 | `docs/04-工具链与GitHub同步.md` | Godot 命令行交互、仓库与推送 |
+| `docs/05-船的数据结构.md` | 三层对象模型、网格约定、格子 vs 物件、校验器 |
+| `docs/06-测试与验收.md` | 三层验证体系、命令速查、关于 Godot MCP 的取舍 |
+
+---
+
+## 快速命令
+
+```powershell
+$g = 'D:\Godot\Godot_v4.7.2-stable_win64_console.exe'
+
+python tools/gen_ship.py                                     # 重新生成船体数据
+& $g --headless --path . --script res://tests/validate_ship.gd   # 校验数据
+& $g --path . res://scenes/ship_debug.tscn -- shots          # 截图看画面
+```
 
 ---
 
