@@ -1,0 +1,24 @@
+# Godot 4
+.godot/
+*.translation
+export/
+export_presets.cfg
+
+# 构建产物
+*.exe
+*.pck
+*.zip
+
+# 系统
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# 编辑器
+.vscode/
+.idea/
+
+# 临时
+*.tmp
+*.log
+_scratch/
