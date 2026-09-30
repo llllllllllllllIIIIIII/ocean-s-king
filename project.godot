@@ -10,6 +10,7 @@ config_version=5
 config/name="环球航行"
 config/description="16 世纪麦哲伦环球航行背景的远洋航行模拟 / 探索 / 管理游戏"
 config/features=PackedStringArray("4.7", "GL Compatibility")
+run/main_scene="res://scenes/ship_debug.tscn"
 
 [display]
 
