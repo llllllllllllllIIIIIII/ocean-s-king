@@ -130,19 +130,24 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _wheel(dir: int) -> void:
 	if _mode == Mode.LAYER:
-		var idx := _layer_order.find(_layer) - dir      # 滚轮向上 = 往上层走
-		if idx < 0:                                     # 已经到最上层，回到缩放
+		# _layer_order = [3, 2, 1, 0]，下标越大层越低。
+		# 所以"向下 = 下沉"是 +dir，"向上 = 上浮"是 -dir。
+		var idx := _layer_order.find(_layer) + dir
+		if idx < 0:                                     # 在最上层继续向上 -> 回到缩放
 			_mode = Mode.ZOOM
 			_zoom = LAYER_ZOOM_STEP
+			_layer = 2                                  # 缩放模式永远看主甲板
 		else:
 			_layer = _layer_order[clampi(idx, 0, _layer_order.size() - 1)]
 	else:
 		if dir > 0 and _zoom >= LAYER_ZOOM_STEP and _layer == 2:
-			# 甲板上继续往下滚 -> 沉入船舱
+			# 已经拉到最近，再往下滚 -> 穿过甲板沉入船舱
 			_mode = Mode.LAYER
-			_layer = _layer_order[1]
+			_layer = _layer_order[_layer_order.find(_layer) + 1]
 		else:
-			_zoom = clampf(_zoom * (0.85 if dir > 0 else 1.18), 0.25, 4.0)
+			# 滚轮把"垂直"当成一根轴：向上 = 拉远看全船，向下 = 拉近看细节。
+			# 注意 Godot 的 Camera2D.zoom 越大 = 放大越多，别写反。
+			_zoom = clampf(_zoom * (1.18 if dir > 0 else 0.85), 0.25, 4.0)
 	_apply_camera()
 	_update_hud()
 	queue_redraw()
