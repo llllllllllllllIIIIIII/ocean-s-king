@@ -84,7 +84,7 @@ func _run_assertions() -> void:
 	_check(state["layer"] == 2, "回到甲板应为 L2，实际 L%d" % state["layer"])
 
 	# --- 相机必须始终对准船中心 ---
-	var ship: Dictionary = scene.get("_ship")
+	var ship: Dictionary = scene.get_node("ShipView").ship
 	var expect_center := Vector2(
 		float(ship["hull"]["cells_x"]) * 40.0 * 0.5,
 		float(ship["hull"]["cells_y"]) * 40.0 * 0.5)
@@ -113,7 +113,9 @@ func _wheel(scene, button: int, times: int) -> void:
 
 
 func _snapshot(scene) -> Dictionary:
-	var layer_def: Dictionary = scene._layers[scene._layer]
+	# 船的绘制已经拆到 ShipView（ShipRenderer）里，层级与名称从那里取
+	var v = scene.get_node("ShipView")
+	var layer_def: Dictionary = v.layers[scene._layer]
 	return {
 		"mode": "LAYER" if scene._mode == 1 else "ZOOM",
 		"layer": scene._layer,

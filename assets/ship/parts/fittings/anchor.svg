@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
+  <!-- 锚（俯视符号） -->
+  <g stroke="#4a5560" stroke-linecap="round" fill="none">
+    <line x1="80" y1="26" x2="80" y2="128" stroke-width="14"/>
+    <line x1="34" y1="56" x2="126" y2="56" stroke-width="12"/>
+    <path d="M 34 96 C 34 132, 126 132, 126 96" stroke-width="13"/>
+  </g>
+  <circle cx="80" cy="22" r="12" fill="none" stroke="#4a5560" stroke-width="9"/>
+</svg>

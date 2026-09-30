@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="620" viewBox="0 0 1120 620">
+  <!-- 主帆（拉丁三角帆，俯视）。锚点在靠近桅杆的那个角。 -->
+  <path d="M 40 310 C 300 118, 700 58, 1060 100 L 1060 520 C 700 562, 300 502, 40 310 Z"
+        fill="#e8dfc8" stroke="#8a7f66" stroke-width="9" stroke-linejoin="round"/>
+  <g stroke="#cfc4a8" stroke-width="6" fill="none" stroke-linecap="round">
+    <path d="M 300 190 C 500 250, 700 300, 1060 108"/>
+    <path d="M 300 430 C 500 370, 700 320, 1060 512"/>
+    <path d="M 620 140 C 720 240, 780 320, 1060 250"/>
+  </g>
+</svg>

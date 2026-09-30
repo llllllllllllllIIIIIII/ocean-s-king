@@ -1,0 +1,198 @@
+class_name ShipRenderer
+extends Node2D
+
+# 船的渲染器：读 ship.json + SVG 部件，把某一层画出来。
+#
+# 分层观察的规则（docs/01 支柱 5）：
+#   * 船体轮廓 / 甲板 / 舷墙是"整船"部件，四层共用（因为外形同源）
+#   * 上面一层的半透明虚影给出层间高度感
+#   * 队员/物件只画当前层
+
+const CELL := 40.0                 # 1 格 = 40 逻辑像素（摄像机再缩放）
+const SVG_PER_CELL := 100.0        # 1 格 = 100 SVG 单位
+const GHOST_ALPHA := 0.13
+const SAIL_ALPHA := 0.70           # 俯视下帆保持半透明，甲板始终可读
+
+var ship: Dictionary
+var tiles: Dictionary
+var prop_defs: Dictionary
+var layers: Dictionary = {}        # id -> layer dict
+var bank: SvgBank
+
+var layer := 2
+var zoom := 1.0
+var sail_angle := -0.45            # 帆相对船首方向的偏角（弧度）
+var show_grid := false
+var show_ghost := true
+
+
+func setup(ship_path := "res://data/ships/caravel_60.json") -> void:
+	ship = JSON.parse_string(FileAccess.get_file_as_string(ship_path))
+	tiles = JSON.parse_string(FileAccess.get_file_as_string(
+		"res://data/defs/tiles.json"))["tiles"]
+	prop_defs = JSON.parse_string(FileAccess.get_file_as_string(
+		"res://data/defs/props.json"))["props"]
+	bank = SvgBank.new()
+	for l in ship["layers"]:
+		# JSON 的数字会解析成 float，字典键必须显式转 int
+		layers[int(l["id"])] = l
+
+
+func world_ppu() -> float:
+	"""每个 SVG 单位占多少世界像素。固定值——缩放由摄像机负责。"""
+	return CELL / SVG_PER_CELL
+
+
+func raster_ppu() -> float:
+	"""每个 SVG 单位在屏幕上占多少像素。只用来挑栅格化倍率。"""
+	return CELL * zoom / SVG_PER_CELL
+
+
+func layer_name(lid: int) -> String:
+	return str(layers[lid]["name"])
+
+
+func layer_elevation(lid: int) -> float:
+	return float(layers[lid]["elevation_m"])
+
+
+# ------------------------------------------------------------------ 绘制
+
+func _draw() -> void:
+	_draw_sea()
+	_draw_layer(layer, 1.0, Vector2.ZERO, false)
+	if show_ghost:
+		var above := _layer_above(layer)
+		if above >= 0:
+			var dz: float = absf(layer_elevation(above) - layer_elevation(layer))
+			# 高度差越大，虚影偏移越多 —— 这是"层叠"的视觉暗示
+			_draw_layer(above, GHOST_ALPHA, Vector2(-2.0, -3.0) * (dz / 2.0), true)
+	if show_grid:
+		_draw_grid()
+
+
+func _draw_sea() -> void:
+	var nx := float(ship["hull"]["cells_x"]) * CELL
+	var ny := float(ship["hull"]["cells_y"]) * CELL
+	draw_rect(Rect2(-nx, -ny, nx * 3.0, ny * 3.0), Color("#0d1b26"), true)
+	var y := 0.0
+	while y < ny * 2.0:
+		draw_line(Vector2(-nx, y), Vector2(nx * 2.0, y), Color(1, 1, 1, 0.022), 2.0)
+		y += 40.0
+
+
+func _draw_layer(lid: int, alpha: float, offset: Vector2, is_ghost: bool) -> void:
+	var ldef: Dictionary = layers[lid]
+	var kind := str(ldef["kind"])
+	var tint := Color(1, 1, 1, alpha)
+	var wu := world_ppu()
+	var ru := raster_ppu()
+
+	bank.draw_part(self, "hull_outline", offset, 0.0, wu, ru, tint)
+	if kind == "deck":
+		bank.draw_part(self, "deck_planks", offset, 0.0, wu, ru, tint)
+		bank.draw_part(self, "deck_bulwark", offset, 0.0, wu, ru, tint)
+	else:
+		bank.draw_part(self, "interior_floor", offset, 0.0, wu, ru, tint)
+		_draw_rooms(lid, alpha, offset)
+
+	for prop in ship["props"]:
+		if int(prop["layer"]) == lid:
+			_draw_prop(prop, alpha, offset)
+
+	for link in ship["links"]:
+		if int(link["from"]) == lid or int(link["to"]) == lid:
+			_draw_link(link, alpha, offset)
+
+	# 虚影不画桅装：帆面积大，半透明叠加后是一条斜带，只会干扰读数
+	if kind == "deck" and not is_ghost:
+		_draw_rig(alpha, offset)
+
+
+func _draw_rig(alpha: float, offset: Vector2) -> void:
+	var mast := Vector2i(ship["hull"]["origin_cell"][0], ship["hull"]["origin_cell"][1])
+	var at := _cell_center(mast) + offset
+	var tint := Color(1, 1, 1, alpha)
+	var wu := world_ppu()
+	var ru := raster_ppu()
+	# 先帆后桁再桅杆：桅杆压在最上面，帆从桁下张开
+	# 帆要半透明：它物理上确实在甲板之上、会挡住甲板，
+	# 但纯俯视视角下必须能看见甲板，否则玩家读不出船的状态。
+	var sail_tint := Color(1, 1, 1, alpha * SAIL_ALPHA)
+	bank.draw_part(self, "sail_main", at, sail_angle, wu, ru, sail_tint)
+	bank.draw_part(self, "sail_jib", at, sail_angle * 0.5 - 0.30, wu, ru,
+		Color(1, 1, 1, alpha * SAIL_ALPHA * 0.86))
+	bank.draw_part(self, "yard", at, sail_angle, wu, ru, tint)
+	bank.draw_part(self, "mast", at, 0.0, wu, ru, tint)
+
+
+func _draw_prop(prop: Dictionary, alpha: float, offset: Vector2) -> void:
+	var t := str(prop["type"])
+	var d: Dictionary = prop_defs.get(t, {})
+	var at := _cell_center(Vector2i(int(prop["x"]), int(prop["y"]))) + offset
+	var tint := Color(1, 1, 1, alpha)
+	var part := str(d.get("part", ""))
+	if part != "" and bank.draw_part(self, part, at, 0.0, world_ppu(), raster_ppu(), tint):
+		return
+	# 没有配 SVG 部件的（主要是舱内小物件）先用简单图形
+	var col := Color(str(d.get("color", "#ffffff")))
+	col.a = alpha
+	if str(d.get("shape", "rect")) == "circle":
+		draw_circle(at, CELL * 0.30, col)
+		draw_arc(at, CELL * 0.30, 0.0, TAU, 20, Color(0, 0, 0, 0.45 * alpha), 2.0)
+	else:
+		var r := Rect2(at - Vector2(CELL * 0.28, CELL * 0.28),
+			Vector2(CELL * 0.56, CELL * 0.56))
+		draw_rect(r, col, true)
+		draw_rect(r, Color(0, 0, 0, 0.45 * alpha), false, 2.0)
+
+
+func _draw_link(link: Dictionary, alpha: float, offset: Vector2) -> void:
+	var at := _cell_center(Vector2i(int(link["x"]), int(link["y"]))) + offset
+	var part := "ladder" if str(link["type"]) == "ladder" else "hatch"
+	bank.draw_part(self, part, at, 0.0, world_ppu(), raster_ppu(), Color(1, 1, 1, alpha))
+
+
+func _draw_rooms(lid: int, alpha: float, offset: Vector2) -> void:
+	for room in ship["rooms"]:
+		if int(room["layer"]) != lid:
+			continue
+		var minp := Vector2(1e9, 1e9)
+		var maxp := Vector2(-1e9, -1e9)
+		for c in room["cells"]:
+			var p := Vector2(float(c[0]) * CELL, float(c[1]) * CELL) + offset
+			minp = minp.min(p)
+			maxp = maxp.max(p + Vector2(CELL, CELL))
+		var r := Rect2(minp, maxp - minp)
+		draw_rect(r, Color(0.25, 0.72, 1.0, 0.09 * alpha), true)
+		draw_rect(r, Color(0.45, 0.85, 1.0, 0.45 * alpha), false, 2.0)
+
+
+func room_at(lid: int) -> Array:
+	var out := []
+	for room in ship["rooms"]:
+		if int(room["layer"]) == lid:
+			out.append(room)
+	return out
+
+
+func _draw_grid() -> void:
+	var nx: int = ship["hull"]["cells_x"]
+	var ny: int = ship["hull"]["cells_y"]
+	var c := Color(1, 1, 1, 0.10)
+	for x in nx + 1:
+		draw_line(Vector2(x * CELL, 0), Vector2(x * CELL, ny * CELL), c, 1.0)
+	for y in ny + 1:
+		draw_line(Vector2(0, y * CELL), Vector2(nx * CELL, y * CELL), c, 1.0)
+
+
+func _cell_center(c: Vector2i) -> Vector2:
+	return Vector2((float(c.x) + 0.5) * CELL, (float(c.y) + 0.5) * CELL)
+
+
+func _layer_above(lid: int) -> int:
+	match lid:
+		0: return 1
+		1: return 2
+		2: return 3
+	return -1

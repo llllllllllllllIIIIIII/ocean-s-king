@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="430" viewBox="0 0 780 430">
+  <!-- 前帆（较小的拉丁三角帆）。锚点同上。 -->
+  <path d="M 30 215 C 200 88, 480 44, 740 70 L 740 360 C 480 386, 200 342, 30 215 Z"
+        fill="#ded4bb" stroke="#8a7f66" stroke-width="8" stroke-linejoin="round"/>
+  <g stroke="#c4b99c" stroke-width="5" fill="none" stroke-linecap="round">
+    <path d="M 200 132 C 350 180, 500 225, 740 76"/>
+    <path d="M 200 300 C 350 252, 500 208, 740 356"/>
+  </g>
+</svg>

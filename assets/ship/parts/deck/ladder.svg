@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
+  <!-- 梯子（俯视：两根侧梁 + 横档） -->
+  <g stroke="#8a6a3c" stroke-width="10" stroke-linecap="round">
+    <line x1="34" y1="8" x2="34" y2="112"/>
+    <line x1="86" y1="8" x2="86" y2="112"/>
+  </g>
+  <g stroke="#a8845a" stroke-width="8" stroke-linecap="round">
+    <line x1="34" y1="28" x2="86" y2="28"/>
+    <line x1="34" y1="54" x2="86" y2="54"/>
+    <line x1="34" y1="80" x2="86" y2="80"/>
+    <line x1="34" y1="106" x2="86" y2="106"/>
+  </g>
+</svg>

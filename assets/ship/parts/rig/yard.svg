@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1560" height="84" viewBox="0 0 1560 84">
+  <!-- 拉丁帆的上桁（俯视：细长渐缩的横杆）。锚点在**中点**，因为拉丁帆的
+       帆桁本来就是吊在中点、前后对称探出的。锚在端点会让桁整根甩出船外。 -->
+  <path d="M 30 38 L 1500 24 L 1536 42 L 1500 60 L 30 46 Z"
+        fill="#8a6a3c" stroke="#2a1c10" stroke-width="5" stroke-linejoin="round"/>
+  <g fill="#2a1c10">
+    <circle cx="300" cy="38" r="8"/>
+    <circle cx="780" cy="34" r="11"/>
+    <circle cx="1260" cy="32" r="8"/>
+  </g>
+</svg>

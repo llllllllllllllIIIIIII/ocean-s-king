@@ -1,0 +1,21 @@
+{
+  "_comment": "SVG 部件表。anchor 是部件画布内、应对准目标位置的像素点（docs/03 第 2 节的锚点规范）。",
+  "version": 1,
+  "units": { "svg_units_per_cell": 100 },
+  "parts": {
+    "hull_outline": { "file": "hull/hull_outline.svg", "anchor": [0, 0] },
+    "deck_planks":  { "file": "deck/deck_planks.svg",  "anchor": [0, 0] },
+    "deck_bulwark": { "file": "deck/deck_bulwark.svg", "anchor": [0, 0] },
+    "interior_floor": { "file": "cabin/interior_floor.svg", "anchor": [0, 0] },
+    "mast":         { "file": "rig/mast.svg",          "anchor": [60, 60] },
+    "yard":         { "file": "rig/yard.svg",          "anchor": [780, 42] },
+    "sail_main":    { "file": "sails/sail_main.svg",   "anchor": [40, 310] },
+    "sail_jib":     { "file": "sails/sail_jib.svg",    "anchor": [30, 215] },
+    "helm":         { "file": "fittings/helm.svg",     "anchor": [20, 60] },
+    "capstan":      { "file": "fittings/capstan.svg",  "anchor": [80, 80] },
+    "windlass":     { "file": "fittings/windlass.svg", "anchor": [120, 60] },
+    "anchor_icon":  { "file": "fittings/anchor.svg",   "anchor": [80, 80] },
+    "hatch":        { "file": "deck/hatch.svg",        "anchor": [60, 60] },
+    "ladder":       { "file": "deck/ladder.svg",       "anchor": [60, 60] }
+  }
+}

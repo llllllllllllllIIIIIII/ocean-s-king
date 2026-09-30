@@ -70,6 +70,11 @@ python tools/gen_ship.py                                               # 重新�
 | 类型化数组不能直接赋值 | `Array[int] = dict.keys()` 报错 | 用 `.assign()` |
 | Godot 默认字体没有中文字形 | 标签显示成方块 | 加载 `C:/Windows/Fonts/msyh.ttc` |
 | 用真实按键输入测试 | 结果不可复现 | 构造 `InputEventMouseButton` 直接喂 `_unhandled_input()` |
+| `_set()` / `_get()` 是 **Object 的内置虚函数** | 同名不同签名直接解析失败，报 "function signature doesn't match the parent" | 自己的方法别用这两个名字，改叫 `_set_state` / `_fetch` |
+| 新增 `class_name` 后没让引擎重扫 | `Could not find type "XXX" in the current scope` | 加完脚本跑一次 `--headless --import` |
+| 世界像素比和栅格化倍率混用同一个值 | 摄像机缩放被应用两次，整艘船大一圈（或小一圈） | 两个值分开：`world_ppu` 是固定值，只有 `raster_ppu` 乘 zoom |
+| 改了 `half_beam` / `WIDTHS` 没重排房间坐标 | 校验器报"房间的格子在 Lx 上不可走" | 动船体曲线后**必须**重跑 `validate_ship.gd` |
+| SVG 部件锚点在画布外 | 部件被画到错误位置 | `test_svg_parts.gd` 会检查锚点落在画布内 |
 
 ---
 
