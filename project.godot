@@ -1,0 +1,24 @@
+; Engine configuration file.
+; 《环球航行》 / ocean-s-king
+;
+; Godot 4.7.2 + GDScript
+
+config_version=5
+
+[application]
+
+config/name="环球航行"
+config/description="16 世纪麦哲伦环球航行背景的远洋航行模拟 / 探索 / 管理游戏"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+
+[display]
+
+window/size/viewport_width=1600
+window/size/viewport_height=900
+window/stretch/mode="canvas_items"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/canvas_textures/default_texture_filter=1

@@ -22,3 +22,6 @@ Desktop.ini
 *.tmp
 *.log
 _scratch/
+
+# 测试产出的截图
+tests/_*.png
