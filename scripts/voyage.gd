@@ -23,6 +23,7 @@ var journal := VoyageJournal.new()   # 文书的航海日志（Day 7）：结算
 var story := Story.new()             # 三幕剧情（Day 7）：触发条件 + 文本 + 后果
 
 var t := 0.0
+var day := 0                       # 1519-09-20 起的天数（M2 加真实日期时会驱动它，见 docs/14）
 var log_lines: Array = []          # 航海日志（文书记的）
 var fired := {}                    # 已触发的事件 id
 var pending_reports: Array = []    # 船长不在船时攒下的报告，回船一次性给他
@@ -368,3 +369,85 @@ func describe() -> String:
 	return "第 %.0f 分钟　船速 %.1f 节　%s　损伤：%s　%s" % [
 		t / 60.0, ship.speed_kn(), nav.method_name(), dmg,
 		"船长在岸上" if ashore else "船长在船上"]
+
+
+# ------------------------------------------------------------ 存档（docs/14）
+# 状态分三层，这里交出的是"一局"的两块：世界（房主权威）与本船（拥有者权威）。
+# 每块内部的字段由各自的类负责（Story / VoyageJournal / WindField / ShipDynamics /
+# ShipOrders / Navigator / Crew / CrewRoster / CrewMember / LandingParty）。
+#
+# 静态数据（海域、剧本、物理参数、配平表）**不进存档** —— 读档时 setup() 已经重新加载过。
+
+func capture_world_state() -> Dictionary:
+	return {
+		"t": t,
+		"day": day,
+		"wind": wind.capture_state(),
+		"fired": fired.duplicate(),
+		"island_known": island_known,
+		"visited": visited.duplicate(),
+		"reef_hit": reef_hit,
+		"last_message": last_message,
+		"message_timer": message_timer,
+		"log_lines": log_lines.duplicate(),
+		"pending_reports": pending_reports.duplicate(),
+		"_shore_cooldown": _shore_cooldown,
+		"story": story.capture_state(),
+		"journal": journal.capture_state(),
+	}
+
+
+func apply_world_state(d: Dictionary) -> void:
+	if d.is_empty():
+		return
+	t = float(d.get("t", 0.0))
+	day = int(d.get("day", 0))
+	wind.apply_state(d.get("wind", {}))
+	fired = (d.get("fired", {}) as Dictionary).duplicate()
+	island_known = bool(d.get("island_known", false))
+	visited = (d.get("visited", {}) as Dictionary).duplicate()
+	reef_hit = bool(d.get("reef_hit", false))
+	last_message = str(d.get("last_message", ""))
+	message_timer = float(d.get("message_timer", 0.0))
+	log_lines = (d.get("log_lines", []) as Array).duplicate()
+	pending_reports = (d.get("pending_reports", []) as Array).duplicate()
+	_shore_cooldown = float(d.get("_shore_cooldown", 0.0))
+	story.apply_state(d.get("story", {}))
+	journal.apply_state(d.get("journal", {}))
+
+
+func capture_ship_state() -> Dictionary:
+	return {
+		"id": "player",
+		"kind": "detailed",
+		"ship": ship.capture_state(),
+		"orders": orders.capture_state(),
+		"nav": nav.capture_state(),
+		"crew": crew.capture_state(),
+		"roster": roster.capture_state(),
+		"ashore": ashore,
+		"captain_pos": StateIO.v2(captain_pos),
+		"captain_target": StateIO.v2(captain_target),
+		"ashore_count": ashore_count,
+		"landing_point": StateIO.v2(landing_point),
+		"party": party.capture_state(),
+	}
+
+
+func apply_ship_state(d: Dictionary) -> void:
+	if d.is_empty():
+		return
+	ship.apply_state(d.get("ship", {}))
+	orders.apply_state(d.get("orders", {}))
+	nav.apply_state(d.get("nav", {}))
+	crew.apply_state(d.get("crew", {}))
+	roster.apply_state(d.get("roster", {}))
+	ashore = bool(d.get("ashore", false))
+	captain_pos = StateIO.to_v2(d.get("captain_pos", [0.0, 0.0]))
+	captain_target = StateIO.to_v2(d.get("captain_target", [0.0, 0.0]))
+	ashore_count = int(d.get("ashore_count", 0))
+	landing_point = StateIO.to_v2(d.get("landing_point", [0.0, 0.0]))
+	party.apply_state(d.get("party", {}), roster)
+	# 航程累计用的"上一帧船位"是派生值：读档后必须对齐到读回来的位置，
+	# 否则这一刻会被当成一次瞬移（或者被算成几百米的航程）。
+	_prev_pos = ship.position_m()

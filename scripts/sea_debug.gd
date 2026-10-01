@@ -413,6 +413,17 @@ func _key(k: InputEventKey) -> void:
 			_crew_panel.visible = _show_crew_panel
 		KEY_ESCAPE:
 			_picker.visible = false
+		KEY_F5:
+			# 存档：M1 的界面先做到"两个键 + 一条消息"（docs/13 的砍单预案允许这样）
+			var r := SaveGame.save_game(voyage, "auto")
+			print("[save] ", r)
+			voyage.say("（存档）" + ("已写入 %s" % str(r.get("path", ""))
+				if bool(r.get("ok", false)) else "失败：" + str(r.get("reason", ""))), true)
+		KEY_F9:
+			var r := SaveGame.load_into(voyage, "auto")
+			print("[load] ", r)
+			voyage.say("（读档）" + ("已从 %s 读回来" % str(r.get("path", ""))
+				if bool(r.get("ok", false)) else "失败：" + str(r.get("reason", ""))), true)
 
 
 # ------------------------------------------------------------------ HUD 与面板

@@ -187,3 +187,63 @@ func size() -> int:
 func describe() -> String:
 	return "队伍 %d 人（岸上 %d、还在船上 %d）" % [
 		size(), count_ashore(), count_onboard()]
+
+
+# ------------------------------------------------------------ 存档（docs/14）
+# entries 里的 crew 是 CrewMember 引用 —— 存档里换成 id（null 表示普通水手），
+# 回填时再从名册里按 id 找回来。找不到就当成普通水手（宁可丢一个人，不要崩）。
+
+func capture_state() -> Dictionary:
+	var out := []
+	for e in entries:
+		var c = e.get("crew", null)
+		out.append({
+			"crew_id": (c.id if c != null else ""),
+			"name": str(e.get("name", "")),
+			"key": bool(e.get("key", false)),
+			"pos": StateIO.v2(e.get("pos", Vector2.ZERO)),
+			"state": str(e.get("state", "onboard")),
+		})
+	return {
+		"entries": out,
+		"shore": StateIO.v2(shore),
+		"ship_pos": StateIO.v2(ship_pos),
+		"captain": StateIO.v2(captain),
+		"captain_target": StateIO.v2(captain_target),
+		"facing": StateIO.v2(facing),
+		"boarding": boarding,
+		"_next_to_go": _next_to_go,
+		"_timer": _timer,
+		"t": t,
+		"ashore_times": ashore_times.duplicate(),
+	}
+
+
+func apply_state(d: Dictionary, roster: CrewRoster = null) -> void:
+	if d.is_empty():
+		return
+	shore = StateIO.to_v2(d.get("shore", [0.0, 0.0]))
+	ship_pos = StateIO.to_v2(d.get("ship_pos", [0.0, 0.0]))
+	captain = StateIO.to_v2(d.get("captain", [0.0, 0.0]))
+	captain_target = StateIO.to_v2(d.get("captain_target", [0.0, 0.0]))
+	facing = StateIO.to_v2(d.get("facing", [1.0, 0.0]))
+	boarding = bool(d.get("boarding", false))
+	_next_to_go = int(d.get("_next_to_go", 0))
+	_timer = float(d.get("_timer", 0.0))
+	t = float(d.get("t", 0.0))
+	ashore_times = (d.get("ashore_times", []) as Array).duplicate()
+	var by_id := {}
+	if roster != null:
+		for m in roster.members:
+			by_id[m.id] = m
+	entries.clear()
+	var raw_list: Array = d.get("entries", [])
+	for raw in raw_list:
+		var cid := str(raw.get("crew_id", ""))
+		entries.append({
+			"crew": (by_id.get(cid) if by_id.has(cid) else null),
+			"name": str(raw.get("name", "")),
+			"key": bool(raw.get("key", false)),
+			"pos": StateIO.to_v2(raw.get("pos", [0.0, 0.0])),
+			"state": str(raw.get("state", "onboard")),
+		})

@@ -101,3 +101,45 @@ func _job_name(j: String) -> String:
 		"ashore": return "上岸"
 		"off_watch": return "休更"
 		_: return "待命"
+
+
+# ------------------------------------------------------------ 存档（docs/14）
+# 存的是**会变的状态**；姓名/职位/技能/性格/关系是静态数据（来自 crew_12.json），不进存档。
+# 例外：prio 会被玩家在船员面板里改，所以要存。
+
+func capture_state() -> Dictionary:
+	return {
+		"id": id,
+		"hunger": hunger, "fatigue": fatigue, "health": health, "mood": mood,
+		"job": job, "working": working,
+		"at": StateIO.v3i(at),
+		"path": StateIO.path3(path),
+		"path_target": StateIO.v3i(path_target),
+		"move_progress": move_progress,
+		"grumble": grumble, "grumble_timer": grumble_timer,
+		"ashore": ashore,
+		"prio": prio.duplicate(),
+		"planned": planned, "next_job": next_job, "next_target": StateIO.v3i(next_target),
+	}
+
+
+func apply_state(d: Dictionary) -> void:
+	if d.is_empty():
+		return
+	hunger = float(d.get("hunger", 0.2))
+	fatigue = float(d.get("fatigue", 0.15))
+	health = float(d.get("health", 1.0))
+	mood = float(d.get("mood", 0.75))
+	job = str(d.get("job", "idle"))
+	working = bool(d.get("working", false))
+	at = StateIO.to_v3i(d.get("at", [0, 0, 0]))
+	path = StateIO.to_path3(d.get("path", []))
+	path_target = StateIO.to_v3i(d.get("path_target", [-1, -1, -1]))
+	move_progress = float(d.get("move_progress", 0.0))
+	grumble = str(d.get("grumble", ""))
+	grumble_timer = float(d.get("grumble_timer", 0.0))
+	ashore = bool(d.get("ashore", false))
+	prio = (d.get("prio", {}) as Dictionary).duplicate()
+	planned = bool(d.get("planned", false))
+	next_job = str(d.get("next_job", ""))
+	next_target = StateIO.to_v3i(d.get("next_target", [-1, -1, -1]))

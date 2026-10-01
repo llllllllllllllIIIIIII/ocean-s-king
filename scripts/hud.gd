@@ -131,7 +131,7 @@ func _draw_banner() -> void:
 func _draw_controls() -> void:
 	draw_string(font, Vector2(16.0, size.y - 20.0),
 		"左键 目标点·带队　X 抛锚　1/2/3 帆档　+/− 操帆人数　L 登陆·返船　"
-		+ "Tab 帆态　C 船员　. 快进　滚轮 缩放·沉入船舱",
+		+ "Tab 帆态　C 船员　. 快进　F5 存档　F9 读档　滚轮 缩放·沉入船舱",
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.62, 0.7, 0.78))
 
 

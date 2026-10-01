@@ -228,3 +228,37 @@ func _act_index(act_id: String) -> int:
 		if str(acts[i].get("id", "")) == act_id:
 			return i
 	return -1
+
+
+# ------------------------------------------------------------ 存档（docs/14）
+# 存的是"演到哪儿了"：第几幕、当前目标、旗标、教学做到第几步、抢风累计秒数。
+# 剧本正文（acts / opening / title）是静态数据，读档时重新 load_data()，不进存档。
+# messages 是"这一帧要弹的消息"，每帧都会被取走，属于瞬时量，不存。
+
+func capture_state() -> Dictionary:
+	var done := {}
+	for s in steps:
+		done[str(s["id"])] = bool(s["done"])
+	return {
+		"head": head,
+		"objective": objective,
+		"ending_ready": ending_ready,
+		"flags": flags.duplicate(),
+		"steps_done": done,
+		"_beat_time": _beat_time,
+	}
+
+
+func apply_state(d: Dictionary) -> void:
+	if d.is_empty():
+		return
+	head = int(d.get("head", -1))
+	objective = str(d.get("objective", ""))
+	ending_ready = bool(d.get("ending_ready", false))
+	flags = (d.get("flags", {}) as Dictionary).duplicate()
+	_beat_time = float(d.get("_beat_time", 0.0))
+	var done: Dictionary = d.get("steps_done", {})
+	for s in steps:
+		var sid := str(s["id"])
+		s["done"] = bool(done.get(sid, false))
+	messages.clear()

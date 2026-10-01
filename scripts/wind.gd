@@ -51,3 +51,32 @@ func from_dir_rad() -> float:
 func describe() -> String:
 	return "真风 %.1f m/s（%.1f 节）来自 %.0f°，阵风幅度 %.1f" % [
 		tws_ms, tws_ms / KNOT, fposmod(from_dir_deg, 360.0), gust_gain]
+
+
+# ------------------------------------------------------------ 存档（docs/14）
+# base_from_dir 会被"风向突变"事件改（+55°），所以它也是会变的值，必须存。
+
+func capture_state() -> Dictionary:
+	return {
+		"base_tws": base_tws,
+		"base_from_dir": base_from_dir,
+		"gust_gain": gust_gain,
+		"dir_swing_deg": dir_swing_deg,
+		"time_scale": time_scale,
+		"tws_ms": tws_ms,
+		"from_dir_deg": from_dir_deg,
+		"t": t,
+	}
+
+
+func apply_state(d: Dictionary) -> void:
+	if d.is_empty():
+		return
+	base_tws = float(d.get("base_tws", 8.0))
+	base_from_dir = float(d.get("base_from_dir", 0.0))
+	gust_gain = float(d.get("gust_gain", 0.8))
+	dir_swing_deg = float(d.get("dir_swing_deg", 14.0))
+	time_scale = float(d.get("time_scale", 1.0))
+	tws_ms = float(d.get("tws_ms", 8.0))
+	from_dir_deg = float(d.get("from_dir_deg", 0.0))
+	t = float(d.get("t", 0.0))

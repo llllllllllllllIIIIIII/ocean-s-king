@@ -131,3 +131,27 @@ func _tiredest(v: Voyage) -> String:
 	if worst == null:
 		return "——"
 	return "%s（累 %.0f%%）" % [worst.label(), worst.fatigue * 100.0]
+
+
+# ------------------------------------------------------------ 存档（docs/14）
+
+func capture_state() -> Dictionary:
+	return {
+		"entries": entries.duplicate(true),
+		"decisions": decisions.duplicate(),
+		"landfalls": landfalls.duplicate(true),
+		"last_line": last_line,
+		"distance_m": distance_m,
+		"teleports": teleports,
+	}
+
+
+func apply_state(d: Dictionary) -> void:
+	if d.is_empty():
+		return
+	entries = (d.get("entries", []) as Array).duplicate(true)
+	decisions = (d.get("decisions", []) as Array).duplicate()
+	landfalls = (d.get("landfalls", []) as Array).duplicate(true)
+	last_line = str(d.get("last_line", ""))
+	distance_m = float(d.get("distance_m", 0.0))
+	teleports = int(d.get("teleports", 0))

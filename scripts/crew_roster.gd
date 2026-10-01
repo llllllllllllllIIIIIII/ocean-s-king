@@ -345,3 +345,38 @@ func describe() -> String:
 		if c.has(k):
 			parts.append("%s %d" % [names.get(k, k), int(c[k])])
 	return "全船 %d 人：%s" % [members.size(), " ".join(parts)]
+
+
+# ------------------------------------------------------------ 存档（docs/14）
+# 名册按 id 回填：静态数据（姓名/技能/性格/关系）在 setup() 时从 crew_12.json 建好，
+# 存档只覆盖"会变的状态"。成员按 id 找回来，不依赖数组下标。
+# _grumble_pool（抱怨语料）是静态表，不进存档。
+
+func capture_state() -> Dictionary:
+	var people := []
+	for m in members:
+		people.append(m.capture_state())
+	return {
+		"t": t,
+		"_assign_timer": _assign_timer,
+		"_grumble_cursor": _grumble_cursor,
+		"log_lines": log_lines.duplicate(),
+		"members": people,
+	}
+
+
+func apply_state(d: Dictionary) -> void:
+	if d.is_empty():
+		return
+	t = float(d.get("t", 0.0))
+	_assign_timer = float(d.get("_assign_timer", 1e9))
+	_grumble_cursor = int(d.get("_grumble_cursor", 0))
+	log_lines = (d.get("log_lines", []) as Array).duplicate()
+	var by_id := {}
+	for m in members:
+		by_id[m.id] = m
+	var raw_list: Array = d.get("members", [])
+	for raw in raw_list:
+		var cid := str(raw.get("id", ""))
+		if by_id.has(cid):
+			by_id[cid].apply_state(raw)

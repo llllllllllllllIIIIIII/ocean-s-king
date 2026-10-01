@@ -227,3 +227,45 @@ func crew_quality() -> float:
 	"""一句话概括船员现在有多能打：0 = 全废，1 = 满编精兵。面板上显示这个。"""
 	var hands := clampf(float(hands_on_sails) / 6.0, 0.0, 1.5)
 	return clampf(skill * hands * (1.0 - 0.7 * fatigue), 0.0, 1.2)
+
+
+# ------------------------------------------------------------ 存档（docs/14）
+# 执行层里真正会变的是这几项：舵的积分项、攻角偏差的相位、以及计时器。
+# 配平表（_tw / _ta / _alpha_grid）是静态数据，不进存档。
+
+func capture_state() -> Dictionary:
+	return {
+		"hands_on_sails": hands_on_sails,
+		"skill": skill,
+		"fatigue": fatigue,
+		"commanded_heading_deg": commanded_heading_deg,
+		"has_heading_command": has_heading_command,
+		"alpha_target": alpha_target,
+		"trim_rate_dps": trim_rate_dps,
+		"alpha_error_deg": alpha_error_deg,
+		"trim_busy": trim_busy,
+		"trim_period": trim_period,
+		"_t": _t,
+		"_trim_timer": _trim_timer,
+		"_force_retrim": _force_retrim,
+		"_steer_integral": _steer_integral,
+	}
+
+
+func apply_state(d: Dictionary) -> void:
+	if d.is_empty():
+		return
+	hands_on_sails = int(d.get("hands_on_sails", 6))
+	skill = float(d.get("skill", 0.75))
+	fatigue = float(d.get("fatigue", 0.15))
+	commanded_heading_deg = float(d.get("commanded_heading_deg", 0.0))
+	has_heading_command = bool(d.get("has_heading_command", false))
+	alpha_target = float(d.get("alpha_target", 20.0))
+	trim_rate_dps = float(d.get("trim_rate_dps", 0.0))
+	alpha_error_deg = float(d.get("alpha_error_deg", 0.0))
+	trim_busy = bool(d.get("trim_busy", false))
+	trim_period = float(d.get("trim_period", 0.5))
+	_t = float(d.get("_t", 0.0))
+	_trim_timer = float(d.get("_trim_timer", 1e9))
+	_force_retrim = bool(d.get("_force_retrim", false))
+	_steer_integral = float(d.get("_steer_integral", 0.0))

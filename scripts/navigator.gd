@@ -123,3 +123,33 @@ func describe() -> String:
 	var tgt := "%.0f°" % target_heading_deg
 	return "航海官：%s，舵手目标 %s，抢风 %d 段 / 换舷 %d 次" % [
 		method_name(), tgt, beat_count, tack_count]
+
+
+# ------------------------------------------------------------ 存档（docs/14）
+# 迟滞状态（_last_method / _last_tack_side / tack_side）必须存：
+# 不存的话读档后第一帧就可能换到另一舷，船头立刻拧一下 —— 玩家看得出来。
+
+func capture_state() -> Dictionary:
+	return {
+		"method": int(method),
+		"target_heading_deg": target_heading_deg,
+		"tack_side": tack_side,
+		"bearing_deg": bearing_deg,
+		"tack_count": tack_count,
+		"beat_count": beat_count,
+		"_last_method": int(_last_method),
+		"_last_tack_side": _last_tack_side,
+	}
+
+
+func apply_state(d: Dictionary) -> void:
+	if d.is_empty():
+		return
+	method = int(d.get("method", Method.HOLD)) as Method
+	target_heading_deg = float(d.get("target_heading_deg", 0.0))
+	tack_side = float(d.get("tack_side", 1.0))
+	bearing_deg = float(d.get("bearing_deg", 0.0))
+	tack_count = int(d.get("tack_count", 0))
+	beat_count = int(d.get("beat_count", 0))
+	_last_method = int(d.get("_last_method", Method.HOLD)) as Method
+	_last_tack_side = float(d.get("_last_tack_side", 1.0))

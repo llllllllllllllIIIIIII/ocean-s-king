@@ -80,3 +80,27 @@ func clone() -> ShipOrders:
 	o.hands_on_sails = hands_on_sails
 	o.hands_total = hands_total
 	return o
+
+
+# ------------------------------------------------------------ 存档（docs/14）
+
+func capture_state() -> Dictionary:
+	return {
+		"target_point": StateIO.v2(target_point),
+		"has_target_point": has_target_point,
+		"sail_level": int(sail_level),
+		"anchored": anchored,
+		"hands_on_sails": hands_on_sails,
+		"hands_total": hands_total,
+	}
+
+
+func apply_state(d: Dictionary) -> void:
+	if d.is_empty():
+		return
+	target_point = StateIO.to_v2(d.get("target_point", [0.0, 0.0]))
+	has_target_point = bool(d.get("has_target_point", false))
+	sail_level = int(d.get("sail_level", SailLevel.FULL)) as SailLevel
+	anchored = bool(d.get("anchored", false))
+	hands_on_sails = int(d.get("hands_on_sails", 6))
+	hands_total = int(d.get("hands_total", 12))

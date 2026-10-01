@@ -344,3 +344,49 @@ func _to_ship(v: Vector2) -> Vector2:
 	var cs := cos(h)
 	var sn := sin(h)
 	return Vector2(v.x * cs + v.y * sn, -v.x * sn + v.y * cs)
+
+
+# ------------------------------------------------------------ 存档（docs/14 第 3 节）
+# 船的运动状态只能由这个文件写（AGENTS.md 铁律 5 / check_motion_ownership.py），
+# 所以"把状态存下来"和"把状态读回来"也必须长在这里，别人不许伸手。
+
+func capture_state() -> Dictionary:
+	return {
+		# 键名 = 变量名，这样 tests/test_save.gd 可以用 get_property_list()
+		# 做"有没有字段忘了存"的覆盖断言（docs/14 第 7 节）。
+		"_pos_m": StateIO.v2(_pos_m),
+		"_heading_deg": _heading_deg,
+		"_u": _u, "_w": _w,
+		"_heel_deg": _heel_deg, "_yaw_rate_dps": _yaw_rate_dps,
+		"_rudder_deg": _rudder_deg,
+		"_sail_main_deg": _sail_main_deg, "_sail_jib_deg": _sail_jib_deg,
+		"_sail_area_scale": _sail_area_scale, "_anchored": _anchored,
+		"damage": damage.duplicate(),
+		"current_world": StateIO.v2(current_world),
+		# _wind_world 是"上一帧的风"：nav.decide() 在 step() 之前跑，读的就是它，
+		# 所以它会影响下一步的决策 —— 必须存。
+		"_wind_world": StateIO.v2(_wind_world),
+		"_t": _t,
+	}
+
+
+func apply_state(d: Dictionary) -> void:
+	if d.is_empty():
+		return
+	_pos_m = StateIO.to_v2(d.get("_pos_m", [0.0, 0.0]))
+	_heading_deg = float(d.get("_heading_deg", 180.0))
+	_u = float(d.get("_u", 0.0))
+	_w = float(d.get("_w", 0.0))
+	_heel_deg = float(d.get("_heel_deg", 0.0))
+	_yaw_rate_dps = float(d.get("_yaw_rate_dps", 0.0))
+	_rudder_deg = float(d.get("_rudder_deg", 0.0))
+	_sail_main_deg = float(d.get("_sail_main_deg", -90.0))
+	_sail_jib_deg = float(d.get("_sail_jib_deg", -90.0))
+	_sail_area_scale = float(d.get("_sail_area_scale", 1.0))
+	_anchored = bool(d.get("_anchored", false))
+	damage = (d.get("damage", {}) as Dictionary).duplicate()
+	current_world = StateIO.to_v2(d.get("current_world", [0.0, 0.0]))
+	_wind_world = StateIO.to_v2(d.get("_wind_world", [0.0, 0.0]))
+	_t = float(d.get("_t", 0.0))
+	# 派生缓存：面板要用的"上一帧受力"，下一帧 step() 会重算，不进存档。
+	_last = {}
