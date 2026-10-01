@@ -25,6 +25,7 @@ func _initialize() -> void:
 	_test_rain_and_ammo()
 	_test_deaths_are_recorded()
 	_test_culture()
+	_test_village_encounter_is_wired()
 	_test_save()
 	_finish()
 
@@ -220,6 +221,68 @@ func _test_culture() -> void:
 	v.culture.react("green_cape", "fire")
 	_check(v.culture.stance_name("green_cape") == "敌对" and v.culture.will_fight("green_cape"),
 		"开火之后就是敌对，上岸就会打起来（%s）" % v.culture.describe("green_cape"))
+
+
+# ---------------------------------------------------------------- 7 存档
+
+func _test_village_encounter_is_wired() -> void:
+	"""**上岸到底会不会打起来** —— 这一条量的是"接线"，不是"数值"。
+
+	踩过的坑：`culture` 的态度、`begin_land_battle()`、HUD 上那句"上岸就可能打起来"
+	全都写好了、也有断言，但**没有任何地方在游戏里开过一场仗**（`begin_land_battle()`
+	只在截图脚本里被调用）—— 于是"陆战与火器"这一期在正常玩法里根本摸不到，
+	连 M7 那条因果链的第一环都开不了头。所以这里从"上岸"一路演到"真的打起来"。
+	"""
+	var v := _voyage()
+	v.ship.set_pose(v.sea.poi_pos("beach") + Vector2(-200.0, 0.0), 0.0)
+	v.orders.anchored = true
+	var ids := []
+	for m in v.roster.key_crew():
+		ids.append(m.id)
+	v.land(ids, 6)
+	_check(v.ashore, "带人上岸了")
+	var shot := v.shoot_warning()
+	_check(shot.find("枪声") >= 0, "岸上可以开枪示警（%s）" % shot.substr(0, 18))
+	_check(v.culture.attitude("green_cape") < 0.0, "开一枪态度就掉（%+.2f）" % v.culture.attitude("green_cape"))
+	v.shoot_warning()
+	_check(v.culture.will_fight("green_cape"),
+		"两枪之后他们翻脸（%s）" % v.culture.describe("green_cape"))
+
+	# 走进村子 → 他们先动手
+	v.move_party_to(v.sea.poi_pos("village"))
+	var guard := 0
+	while v.battle == null and guard < 2000:
+		v.tick(STEP)
+		guard += 1
+	_check(v.battle != null, "踏进村子就被围上来（第 %d 步）" % guard)
+	if v.battle == null:
+		return
+	_check(v.battle.units.size() > 0, "场上真的有两队人（%d 个单位）" % v.battle.units.size())
+	_check(str(v.journal.decisions[-1]).find("先动手") >= 0 or
+		str(v.log_lines[-1]).find("围上来") >= 0, "航海日志/消息条记了这件事")
+	# 只伏击一次：打完还站在村里也不会凭空再开一场
+	var first := v.battle
+	guard = 0
+	while v.battle != null and not v.battle.over and guard < 6000:
+		v.tick(STEP)
+		guard += 1
+	_check(v.battle.over, "这一仗打完了（%s）" % v.battle.outcome)
+	for _i in 60:
+		v.tick(STEP)
+	_check(v.battle == first, "打完不会被反复伏击（还是同一场）")
+
+	# 中立的一方：走到村子是"和平接触"，不会凭空开打，而且态度 +0.05
+	var w := _voyage()
+	w.ship.set_pose(w.sea.poi_pos("beach") + Vector2(-200.0, 0.0), 0.0)
+	w.orders.anchored = true
+	w.land(ids, 6)
+	var before := w.culture.attitude("green_cape")
+	w.move_party_to(w.sea.poi_pos("village"))
+	for _i in 400:                      # 队伍要真的走到村子（滩头→村子约 1.7 km）
+		w.tick(STEP)
+	_check(w.battle == null, "中立时走到村子不会开打")
+	_check(w.culture.attitude("green_cape") > before,
+		"和平接触让态度涨一点（%+.2f → %+.2f）" % [before, w.culture.attitude("green_cape")])
 
 
 # ---------------------------------------------------------------- 7 存档

@@ -1057,6 +1057,12 @@ func _walk_ashore(delta: float) -> void:
 	if poi.is_empty():
 		return
 	var id := str(poi["id"])
+	# M8 收尾：**翻了脸的部落会先动手**（docs/19 第 4 节"只有敌对的才会主动打你"）。
+	# 这一条过去一直没接线 —— `begin_land_battle()` 只在截图脚本里被调用过，
+	# 于是"上岸遇上敌对的人会打起来"在游戏里永远发生不了（连 M7 那条因果链的第一环都开不了头）。
+	if id == "village" and culture.will_fight("green_cape") and not fired.has("village_ambush"):
+		_village_ambush()
+		return
 	if visited.has(id):
 		return
 	visited[id] = true
@@ -1081,11 +1087,47 @@ func _walk_ashore(delta: float) -> void:
 		report("文书把遗迹墙上的字抄了下来 —— 和《圣经》的字母不一样。")
 	if id == "village" and not fired.has("village"):
 		fired["village"] = true
-		journal.decide("和部落接触：他们没有动手，你们也没有。")
-		report("和部落接触了：他们用手势比划着要交换，没有动手。")
+		if culture.will_fight("green_cape"):
+			# 已经翻脸了（这一次登录不再伏击），那就各站各的
+			journal.decide("靠近部落的村子：他们拿着矛远远地瞪着你。")
+		else:
+			# 第一次接触：他们比划着要交换 —— "不打扰" +0.05（docs/19 第 4 节的表）
+			culture.react("green_cape", "leave_alone", "初次接触没有动手")
+			journal.decide("和部落接触：他们没有动手，你们也没有。")
+			report("和部落接触了：他们用手势比划着要交换，没有动手。")
 	if id == "stream":
 		journal.decide("在岛上的淡水溪流补了水：够装二十桶。")
 		report("找到淡水溪流，桶匠说够装二十桶。")
+
+
+func shoot_warning() -> String:
+	"""岸上的玩家动作：**向天开枪示警**（docs/19 第 4 节里"开火 −0.60"那个行为）。
+
+	为什么需要它：不翻脸就没有仗可打，而翻脸的所有入口（开火 / 抓人 / 越界）之前
+	**一个都没接进游戏** —— 当地人永远停在"中立"，陆战那一整层就成了摆设。
+	两枪就是"敌对"（−0.60 ×2 ≤ −0.35），之后踏进村子他们就会先动手。
+	"""
+	if not ashore:
+		return "船长不在岸上（先按 L 带人登陆）"
+	culture.react("green_cape", "fire", "船员向天开枪示警")
+	var line := "枪声在林子回荡。%s的态度：%s。" % [
+		str(culture.ensure("green_cape").get("name", "当地人")),
+		culture.stance_name("green_cape")]
+	if culture.will_fight("green_cape"):
+		line += " 再往前走，他们就要动手了。"
+	journal.decide("船员朝天上放了一枪。")
+	log_event(line)
+	return line
+
+
+func _village_ambush() -> void:
+	"""翻脸之后踏进村子：他们先动手（一次登陆只伏击一次）。"""
+	fired["village_ambush"] = true
+	_say("草屋里喊了一声，几个人抄起矛围上来 —— 他们记得你。", true)
+	journal.decide("上岸被部落围住：他们先动手。")
+	var r := begin_land_battle(12, weather.misfire_weather())
+	if bool(r.get("ok", false)):
+		report("在村子外被当地人围住，打起来了。")
 
 
 # ------------------------------------------------------------ 登陆
@@ -1136,6 +1178,7 @@ func land(ids: Array, hands := 6) -> String:
 	ashore_count = taken
 	ashore = true
 	fired["landed"] = true
+	fired.erase("village_ambush")      # 新的一次登陆：伏击重新武装（上来就打，见 _village_ambush）
 	var shore := sea.nearest_shore(ship.position_m())
 	landing_point = shore["pos"]
 	landing_land = shore["land"]

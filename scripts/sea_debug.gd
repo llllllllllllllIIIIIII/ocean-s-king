@@ -850,6 +850,9 @@ func _key(k: InputEventKey) -> void:
 			if voyage.battle != null and not voyage.battle.over:
 				voyage.battle.volley = not voyage.battle.volley
 				voyage.say("（陆战）%s。" % ("密集齐射" if voyage.battle.volley else "各自为战"), true)
+		KEY_B:
+			# M6：岸上的玩家动作 —— 向天开枪示警。两枪就翻脸，之后踏进村子他们会先动手。
+			voyage.say("（岸上）" + voyage.shoot_warning(), true)
 		KEY_H:
 			if voyage.battle != null and not voyage.battle.over:
 				voyage.battle.intent = "charge"

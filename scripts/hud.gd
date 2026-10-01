@@ -101,7 +101,8 @@ func _draw_status() -> void:
 		v.cargo.used_kg() / 1000.0, v.cargo.capacity_kg / 1000.0, v.cargo.money,
 		"⚠ 缺粮缺水" if v.cargo.starving else "补给尚可"])
 	if v.ashore:
-		lines.append("☀ 你在岸上，身边 %d 人 —— 左键带队走，走回滩头按 L 上船" % v.party_size())
+		lines.append("☀ 你在岸上，身边 %d 人 —— 左键带队走，B 向天开枪（会翻脸），走回滩头按 L 上船"
+			% v.party_size())
 	if v.battle != null and not v.battle.over:
 		lines.append("⚔ %s　G 齐射/各自为战　H 冲　J 退" % v.battle.describe())
 	if v.following_route:
