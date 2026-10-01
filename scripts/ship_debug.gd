@@ -130,36 +130,38 @@ func _run_shot_timeline() -> void:
 		16:
 			_capture("02_deck_close")
 		20:
-			_sail_shot(335.0, 60.0, 2.00)      # 真风角 45 度：抢风行驶
-		24:
+			_sail_shot(290.0, 200.0, 2.00)     # 先在横风上跑起来（船要有余速才收得上贴风）
+		22:
+			_sail_shot(335.0, 150.0, 2.00)     # 收到贴风：真风角 45 度
+		26:
 			_capture("03_rig_close_hauled")
-		28:
-			_sail_shot(200.0, 60.0, 2.00)      # 真风角 180 度：顺风放到底
-		32:
+		30:
+			_sail_shot(200.0, 150.0, 2.00)     # 真风角 180 度：顺风放到底
+		34:
 			_capture("04_rig_downed_on_a_run")
-		36:
+		38:
 			_set_state(1, Mode.LAYER, 1.80)
-		40:
+		42:
 			_capture("05_belowdeck")
-		44:
+		46:
 			_set_state(0, Mode.LAYER, 1.80)
-		48:
+		50:
 			_capture("06_hold")
-		52:
+		54:
 			_set_state(3, Mode.LAYER, 1.80)
-		56:
+		58:
 			_capture("07_crow_nest")
-		60:
-			_sail_shot(290.0, 60.0, 0.95)      # 真风角 90 度：横风最快，船是斜的
-		64:
-			_capture("08_sailing_beam_reach")
+		62:
+			_sail_shot(290.0, 120.0, 0.95)     # 真风角 90 度：横风最快，船是斜的
 		66:
+			_capture("08_sailing_beam_reach")
+		68:
 			_show_panel = true                 # 帆态面板（Day 4 的"看得懂"）
 			_panel.visible = true
 			_apply()
-		70:
+		72:
 			_capture("09_sail_panel")
-		76:
+		78:
 			print("[shots] " + view.bank.stats())
 			get_tree().quit(0)
 
