@@ -97,6 +97,7 @@ python tools/gen_ship.py                                     # 重新生成船�
 & $g --path . res://scenes/ship_debug.tscn -- shots          # 截图看画面
 
 # 现在真正"能玩"的是这一条：出港 → 航行 → 发现岛 → 登陆 → 返航
+run_voyage.cmd                                               # 双击这个就是"出海"
 & $g --path . res://scenes/sea_debug.tscn                    # 手动玩（左键设目标点，L 登陆）
 & $g --path . res://scenes/sea_debug.tscn -- shots           # 自动跑一趟并截图
 ```
