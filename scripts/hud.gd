@@ -146,9 +146,12 @@ func _draw_banner() -> void:
 # ---------------------------------------------------------------- 操作提示
 
 func _draw_controls() -> void:
-	draw_string(font, Vector2(16.0, size.y - 20.0),
-		"左键 目标点·带队　X 抛锚　1/2/3 帆档　+/− 操帆人数　L 登陆·返船　"
-		+ "P 靠港　Tab 帆态　C 船员　K 知识　N 沿航线走　. 快进　F5 存档　F9 读档　滚轮 缩放",
+	var line := "左键 目标点·带队　X 抛锚　1/2/3 帆档　+/− 操帆人数　L 登陆·返船　" \
+		+ "P 靠港　Tab 帆态　C 船员　K 知识　N 沿航线走　. 快进　F5 存档　F9 读档　滚轮 缩放"
+	# 账结完了才提"S 结算页"——不然这条提示对还没走完的人是噪音
+	if voyage != null and voyage.story.ending_ready:
+		line += "　S 结算页"
+	draw_string(font, Vector2(16.0, size.y - 20.0), line,
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.62, 0.7, 0.78))
 
 

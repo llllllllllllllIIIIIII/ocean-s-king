@@ -46,6 +46,9 @@ var _mode: Mode = Mode.SEA
 var _layer := 2
 var _layer_order: Array[int] = []
 var _started := false              # 标题卡关掉之前，一帧模拟都不跑
+# M8 收尾：结算页在**正常游戏里**也要真的弹出来（v0.1 只在截图时间线里铺开过，
+# 玩家按遍键也看不到那本账）。这里记"这一局是不是已经自动铺过一次"。
+var _ending_auto_shown := false
 # ×36 是 M2 加的：海从 8km 变成 48km，只有 ×12 的话横渡一次要二十多分钟真实时间。
 # 物理步长不变（快进永远是多跑几步，不是把 dt 乘大），所以气动不会被快进弄飘。
 var _time_scales: Array[float] = [1.0, 4.0, 12.0, 36.0]
@@ -245,6 +248,11 @@ func _process(delta: float) -> void:
 		_tick_sim(delta)
 		voyage.tick_real(delta)        # 网络与远端船插值走**真实时间**（不跟快进）
 		voyage.tick_ui(delta)          # 消息条按真实时间消失，不跟着快进闪过去
+		# 结局一到就把那本账铺开（返航结算与全队抵达都汇到这个旗标上）。
+		# 只自动铺一次：玩家按 Esc 收起来之后，想再看就按 S。
+		if voyage.story.ending_ready and not _ending_auto_shown:
+			_ending_auto_shown = true
+			_show_settlement()
 	if _audio != null:
 		_audio.tick(delta)
 	if _act_card_timer > 0.0:
@@ -796,6 +804,8 @@ func _key(k: InputEventKey) -> void:
 				_picker.move(1)
 			elif _show_crew_panel:
 				_crew_panel.move_selection(1, 0)
+			elif voyage.story.ending_ready:
+				_show_settlement()          # M8 收尾：账结完了随时能再摊开看
 		KEY_LEFT, KEY_A:
 			if _show_crew_panel:
 				_crew_panel.move_selection(0, -1)
@@ -974,6 +984,16 @@ func _show_overlay(card: Control, on: bool) -> void:
 	var play_ui := not on and not (_ending != null and _ending.visible)
 	_hud_layer.visible = play_ui
 	_panel_layer.visible = play_ui
+
+
+func _show_settlement() -> void:
+	"""把那本账铺开（M8 收尾：'拿到船队级结算页'这条验收，正常游戏里也要真的发生）。
+
+	账本身是 `Settlement.text()` —— 五类成果 + 三档评价 + 船队那张表，
+	全部来自已有的系统，这里只负责**排版与时机**。
+	"""
+	_ending.text = Settlement.text(voyage, voyage.journal, voyage.story)
+	_show_overlay(_ending, true)
 
 
 func _update_hud() -> void:
@@ -1225,8 +1245,7 @@ func _run_shot_timeline() -> void:
 			print("[shot] 第三幕 = %s　结算就绪 = %s" % [
 				voyage.story.act_name(), str(voyage.story.ending_ready)])
 			# M8：五类成果 + 三档评价 + 船队那张表（账都在系统里，这里只是排版）
-			_ending.text = Settlement.text(voyage, voyage.journal, voyage.story)
-			_show_overlay(_ending, true)
+			_show_settlement()
 		100:
 			_capture("37_settlement")
 		102:

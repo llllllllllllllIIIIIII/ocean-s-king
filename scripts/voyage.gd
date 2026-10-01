@@ -321,7 +321,9 @@ func _route_tick() -> void:
 	if ship.position_m().distance_to(p) < 500.0:
 		if route_waypoints.size() <= 1:
 			following_route = false
-			_say("（航线）到终点港了。", true)
+			# 顺手把"下一步做什么"说清楚：船这会儿还是张着帆的，
+			# 不定住就会被流带着走（港外那条几内亚洋流真的能把船送上滩）。
+			_say("（航线）到终点港了 —— 按 X 抛锚、P 靠港。", true)
 			return
 		route_waypoints.pop_front()
 		orders.set_target_point(route_waypoints[0] as Vector2)

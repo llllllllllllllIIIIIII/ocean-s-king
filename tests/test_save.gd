@@ -531,6 +531,23 @@ func _test_scene_wiring() -> void:
 	_check(wp_bad == 0,
 		"F9 读档后 AI 船的航点仍是 Vector2（%d 个里 %d 个变成了字符串）" % [wp_total, wp_bad])
 
+	# 结局 → 结算页（M8 验收第 1 条的"拿到**船队级结算页**"）
+	# 为什么要在这里验：v0.1 起 `Settlement.text()` 就一直算得对、也有断言，
+	# 但**正常游戏里从来没接过线**（只有截图时间线会铺开它）—— 玩家按遍键也看不到那本账。
+	# "逻辑对但没接线"正是这一节要抓的东西。
+	sc.voyage.story.ending_ready = true
+	sc._ending_auto_shown = false
+	sc._process(0.016)                 # 让场景自己走一帧
+	_check(sc._ending.visible, "结局一到，结算页自己铺开（不用玩家按键）")
+	_check(str(sc._ending.text).find("船队结算") >= 0,
+		"铺开的是船队结算那本账（%s…）" % str(sc._ending.text).substr(0, 16))
+	_check(str(sc._ending.text).find("【船队】") >= 0, "账里有船队那张表")
+	_key(sc, KEY_ESCAPE)
+	_check(not sc._ending.visible, "Esc 能把账收起来（继续看海）")
+	_key(sc, KEY_S)
+	_check(sc._ending.visible, "S 能再把账摊开看一遍")
+	_key(sc, KEY_ESCAPE)
+
 	var p := ProjectSettings.globalize_path(SaveGame.slot_path("auto"))
 	if FileAccess.file_exists(p):
 		DirAccess.remove_absolute(p)
