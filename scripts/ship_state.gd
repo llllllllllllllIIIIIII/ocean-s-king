@@ -15,6 +15,7 @@ const FIELDS := [
 	"ashore", "captain_pos", "captain_target", "ashore_count", "landing_point",
 	"landing_land_id", "party", "cargo", "docked_port",
 	"rules", "society", "dilemmas", "ending_score",
+	"culture",
 ]
 
 var data := {}

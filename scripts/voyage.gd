@@ -26,6 +26,8 @@ var ports := Ports.new()           # 四个港口的库存与价格（M4，房�
 var rules := Rules.new()           # 玩家定的规矩（M5，本船）
 var society := Society.new()       # 船上社会（M5，本船）
 var dilemmas := Dilemma.new()      # 三个高压抉择（M5，本船）
+var battle: LandBattle = null      # 上岸打起来的那一场（M6，null = 没在打）
+var culture := Culture.new()        # 当地文明的三档态度（M6）
 var ending_score := {"wealth": 0, "voyage": 0, "knowledge": 0, "crew": 0, "history": 0}
 var link: NetLink = null           # 联机（M3）：单机时是 null，走的是同一套调用
 var region_path := Sea.DATA_PATH   # 这一局用的是哪片海（静态数据，不进存档）
@@ -90,6 +92,7 @@ func setup(region := Sea.DATA_PATH, ship_id := "trinidad", inherited := {}) -> v
 	rules.setup()
 	society.setup(roster)
 	dilemmas.setup()
+	culture.setup()
 	story.load_data()
 	# 陆地：船开不上干地（沙滩那一圈是浅水，可以靠上去登陆）。
 	# M2 起陆地是一张形状表（海岸 + 多个岛），不再是"一个圆心加一个半径"。
@@ -150,6 +153,10 @@ func tick(delta: float) -> void:
 		if party.boarding and party.boarded_all():
 			_finish_boarding()
 	_consume_supplies(delta)
+	if battle != null and not battle.over:
+		battle.tick(delta, cargo)
+		if battle.over:
+			_resolve_battle()
 	_publish_local_summary()
 
 
@@ -260,6 +267,108 @@ func answer_dilemma(option_id: String) -> Dictionary:
 	if id == "":
 		return {"ok": false, "reason": "现在没有要你拿主意的事"}
 	return dilemmas.resolve(self, id, option_id)
+
+
+# ------------------------------------------------------------ 陆战（M6）
+
+func ashore_squad() -> Array:
+	"""岸上这支队伍：跟着下船的关键船员 + 派下去的水手。"""
+	var out := []
+	for m in roster.key_crew():
+		if m.ashore and not m.dead:
+			out.append(m)
+	for m in roster.hands():
+		if m.ashore and not m.dead:
+			out.append(m)
+	return out
+
+
+func begin_land_battle(locals_count := 10, weather := "") -> Dictionary:
+	"""打起来了。只有**船长在岸上**的时候才由玩家指挥（不然是留守的人在打）。"""
+	if battle != null and not battle.over:
+		return {"ok": false, "reason": "已经在打了"}
+	if not ashore:
+		return {"ok": false, "reason": "船长不在岸上"}
+	var squad := ashore_squad()
+	if squad.is_empty():
+		return {"ok": false, "reason": "岸上没有人"}
+	var w := weather if weather != "" else "dry"
+	battle = LandBattle.new()
+	# 打起来的地方就是队伍站的地方（不然画面上的两支队在世界的另一个角落）
+	battle.setup(squad, locals_count, w, captain_pos)
+	var load := Weapons.describe_loadout(Weapons.loadout_for(squad))
+	_say("【遭遇】当地人围了上来（%d 人对 %d 人）。你们带着：%s。" % [
+		locals_count, squad.size(), load], true)
+	journal.record(t, "battle", "上岸遭遇：%d 名当地人对 %d 名船员。" % [locals_count, squad.size()])
+	if culture.stance("green_cape") != Culture.HOSTILE:
+		culture.shift("green_cape", -0.15, "冲突")
+	return {"ok": true, "locals": locals_count, "crew": squad.size(), "loadout": load}
+
+
+func battle_report() -> String:
+	return battle.describe() if battle != null else ""
+
+
+func _resolve_battle() -> void:
+	"""打完之后的账：伤员能不能救回来、死者写进名册与航海日志。
+
+	规则（M6 卡片）：重伤需要**外科医生 + 药品**；救不回来的就是死了。
+	死是永久的：名册里留名字、日志里留讣告、结算的"船员成果"扣分。
+	"""
+	var surgeon := false
+	for m in roster.key_crew():
+		if m.post == "外科医生" and m.ashore and not m.dead:
+			surgeon = true
+	var meds := cargo.qty("medicine")
+	var saved := 0
+	var lost := 0
+	for u in battle.downed_units("crew"):
+		var member := _member_by_id(str(u.member_id))
+		if member == null:
+			continue
+		member.health = 0.25
+		if surgeon and meds > 0:
+			meds -= 1
+			cargo.remove("medicine", 1)
+			saved += 1
+			member.health = 0.45
+		else:
+			battle.kill_down(u)
+			lost += 1
+	for u in battle.dead_units("crew"):
+		var m2 := _member_by_id(str(u.member_id))
+		if m2 == null or m2.dead:
+			continue
+		m2.dead = true
+		m2.health = 0.0
+		m2.job = "dead"
+		ending_score["crew"] = int(ending_score.get("crew", 0)) - 1
+		_say("【讣告】%s 没能从岸上回来。" % m2.label(), true)
+		journal.record(t, "death", "讣告：%s 在岸上阵亡。" % m2.label())
+		fired["lost_" + m2.id] = true
+	var locals_lost := int(battle.stats()["locals_dead"]) + int(battle.stats()["locals_down"])
+	var head := "打完了：%s。" % battle.outcome
+	if saved > 0:
+		head += "外科医生救回了 %d 个人。" % saved
+	if lost > 0:
+		head += "有 %d 个人没救回来。" % lost
+	head += "当地人倒下 %d 个。" % locals_lost
+	_say(head, true)
+	journal.decide("上岸打了一仗：船员倒 %d、阵亡 %d；当地人倒下 %d。" % [
+		int(battle.stats()["crew_down"]) + lost, lost, locals_lost])
+	if battle.outcome == "crew_wins":
+		culture.react("green_cape", "kill", "打退了当地人")
+		ending_score["history"] = int(ending_score.get("history", 0)) - 1
+	elif battle.outcome == "locals_win":
+		culture.react("green_cape", "trespass", "被赶回海滩")
+		society.tension = clampf(society.tension + 0.15, 0.0, 1.0)
+
+
+func _member_by_id(id: String) -> CrewMember:
+	for m in roster.members:
+		if m.id == id:
+			return m
+	return null
 
 
 func can_dock() -> bool:
@@ -889,6 +998,7 @@ func capture_ship_state() -> Dictionary:
 		"society": society.capture_state(),
 		"dilemmas": dilemmas.capture_state(),
 		"ending_score": ending_score.duplicate(),
+		"culture": culture.capture_state(),
 	}
 
 
@@ -920,6 +1030,7 @@ func apply_ship_state(d: Dictionary) -> void:
 	society.apply_state(d.get("society", {}))
 	dilemmas.apply_state(d.get("dilemmas", {}))
 	ending_score = (d.get("ending_score", {}) as Dictionary).duplicate()
+	culture.apply_state(d.get("culture", {}))
 	# 航程累计用的"上一帧船位"是派生值：读档后必须对齐到读回来的位置，
 	# 否则这一刻会被当成一次瞬移（或者被算成几百米的航程）。
 	_prev_pos = ship.position_m()

@@ -118,6 +118,9 @@ python tools/gen_ship.py                                               # 重新�
 | 规矩的影响散在事件里 | 改一条规矩牵动多少系统谁也说不清，"改了没用"也查不出来 | 规矩必须是一张**档位 → 数值**的表（`Rules`），消费它的系统只读乘数 |
 | 事件/抉择的后果只在文案上不同 | 玩家选什么都一样，等于没得选 | 每条后果都写成数（船员状态/关系/纪律/分数），并逐条断言"A 与 B 确实不同" |
 | 面板里位置半相对半绝对 | `box.position + Vector2(x, y)` 而 y 里已含 `box.position.y` → 整体偏一个面板高 | 位置要么全相对、要么全绝对 |
+| 战斗单位用局部坐标 | 仗打在世界原点（地图角上），画面上一片空 | `LandBattle.setup()` 收一个 `origin`：打起来的地方就是队伍站的地方 |
+| 小样本比概率 | 一场战斗只有十来发，"雨天哑火率是晴天的 3 倍"时通时不通 | 小样本只断言方向；比例断言用一千发的确定性硬币（模型层） |
+| 遭遇距离太近 | 齐射只来得及打一轮，"火枪厉害"与"近战有用"两件事都测不出来 | 起始间距写进常量（`START_GAP_M`）：够打三四轮齐射再见面 |
 
 ---
 
@@ -126,9 +129,10 @@ python tools/gen_ship.py                                               # 重新�
 > 完整说明在 `docs/13-v0.5开发计划.md` 第 8 节。这里只留最短的版本。
 
 **每期开工前**
-1. 跑一遍上一期的全部验证通道，确认没坏（到 M5 为止：176/81/15/17/84/62/90/62/82/20/37/22/41/54/**69** + `check_motion_ownership`。
-   后六条是 M3–M5 的：`test_fleet`、`test_net_loopback`（约 20 秒）、`test_resources`、
-   `test_ports`、`test_society`（约 34 秒））
+1. 跑一遍上一期的全部验证通道，确认没坏（到 M6 为止：176/81/15/17/84/62/90/63/82/20/37/22/41/54/69/**48**/**28** + `check_motion_ownership`。
+   后八条是 M3–M6 的：`test_fleet`、`test_net_loopback`（约 20 秒）、`test_resources`、
+   `test_ports`、`test_society`（约 34 秒）、`test_weapons`、`test_land_battle`。
+   另外 `python tools/weapons_prototype.py --mode metrics` 也是这一期的一道闸）
 2. 读 `docs/07-交接.md`
 3. 在 `docs/13` 当期卡片下写下"这一期的第一个动作"
 

@@ -96,6 +96,7 @@ func _test_field_coverage() -> void:
 			# pending 是"这一帧要弹的事件"，每帧被取走，属于瞬时量
 			["pending"]],
 		["Dilemma", v.dilemmas, v.dilemmas.capture_state(), ["defs"]],
+		["Culture", v.culture, v.culture.capture_state(), []],
 	]
 	for p in pairs:
 		var label := str(p[0])

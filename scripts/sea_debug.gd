@@ -407,6 +407,7 @@ func _draw() -> void:
 		var c := voyage.party.captain * PPM
 		draw_circle(c, 8.0 * k, Color(1.0, 0.85, 0.35))
 		draw_arc(c, 13.0 * k, 0, TAU, 20, Color(1.0, 0.9, 0.5, 0.6), 2.0 * k * 2.0)
+	_draw_battle()
 	# 航线：从船到目标点
 	if voyage.orders.has_target_point:
 		draw_dashed_line(voyage.ship.position_m() * PPM, voyage.orders.target_point * PPM,
@@ -481,6 +482,49 @@ func _draw_terrain(a: float) -> void:
 			draw_arc(v, float(poi.get("radius_m", 0.0)) * PPM, 0, TAU, 24,
 				Color(col, 0.45 * a), 1.5)
 			_label(v, str(poi["name"]), col)
+
+
+func _draw_battle() -> void:
+	"""陆战的表现（M6）：每个单位一个点 —— 船员金/蓝、当地人红，倒下的变灰。
+
+	硝烟起来的时候糊一层灰白：那是 visibility 掉下去的样子。
+	"""
+	var b := voyage.battle
+	if b == null or b.units.is_empty():
+		return
+	var k := _marker_scale()
+	for u in b.units:
+		var at: Vector2 = u.pos * PPM
+		if u.side == "crew":
+			var col := Color(0.98, 0.86, 0.45, 0.95) if u.is_ranged() \
+				else Color(0.72, 0.86, 1.0, 0.95)
+			match u.state:
+				"down":
+					col = Color(0.58, 0.52, 0.46, 0.85)
+				"dead":
+					col = Color(0.35, 0.33, 0.32, 0.85)
+				"fled":
+					col = Color(0.5, 0.5, 0.55, 0.6)
+			draw_circle(at, 5.0 * k, Color(0.06, 0.08, 0.1, 0.8))
+			draw_circle(at, 3.2 * k, col)
+		else:
+			var col2 := Color(0.95, 0.4, 0.35, 0.95)
+			if u.state == "down" or u.state == "dead":
+				col2 = Color(0.45, 0.3, 0.28, 0.85)
+			elif u.state == "fled":
+				col2 = Color(0.6, 0.45, 0.4, 0.6)
+			draw_circle(at, 4.2 * k, col2)
+	if b.smoke_t > 0.0:
+		var mid := Vector2.ZERO
+		for u in b.units:
+			mid += u.pos
+		mid /= maxf(1.0, float(b.units.size()))
+		draw_circle(mid * PPM, 60.0 * PPM, Color(0.85, 0.85, 0.82, 0.22))
+	var eff := _zoom * (2.0 if voyage.ashore else 1.0)
+	if eff <= 8.0 and _font != null:
+		var size := maxi(9, int(13.0 / maxf(eff, 0.05)))
+		draw_string(_font, Vector2(b.units[0].pos.x, b.units[0].pos.y - 26.0) * PPM,
+			b.describe(), HORIZONTAL_ALIGNMENT_LEFT, -1, size, Color(1.0, 0.92, 0.7))
 
 
 func _sync_fleet_views() -> void:
@@ -755,6 +799,19 @@ func _key(k: InputEventKey) -> void:
 					voyage.say("（港口）" + r, true)
 			else:
 				voyage.say("靠港要先抛锚（X），而且得停在港口的锚地圈里。", true)
+		KEY_G:
+			# M6：齐射 / 各自为战
+			if voyage.battle != null and not voyage.battle.over:
+				voyage.battle.volley = not voyage.battle.volley
+				voyage.say("（陆战）%s。" % ("密集齐射" if voyage.battle.volley else "各自为战"), true)
+		KEY_H:
+			if voyage.battle != null and not voyage.battle.over:
+				voyage.battle.intent = "charge"
+				voyage.say("（陆战）冲上去。", true)
+		KEY_J:
+			if voyage.battle != null and not voyage.battle.over:
+				voyage.battle.intent = "withdraw"
+				voyage.say("（陆战）慢慢退回海滩。", true)
 		KEY_ESCAPE:
 			_picker.visible = false
 			_port_panel.visible = false
@@ -1069,9 +1126,17 @@ func _run_shot_timeline() -> void:
 			_warp(200.0)
 		80:
 			_capture("33_stream")
+		81:
+			# M6：上岸遇袭 —— 打完这一仗再回船（截图脚本里让当地人先动手）
+			if voyage.battle == null:
+				voyage.culture.react("green_cape", "fire", "截图脚本：敌对")
+				voyage.begin_land_battle(12)
+			_warp(13.0)                      # 两队还在拉开距离对射的时候截一张
+		83:
+			_capture("46_land_battle")
 		84:
 			voyage.move_party_to(Vector2(21800, 26500))     # 走回滩头
-			_warp(260.0)
+			_warp(260.0)                                     # 顺便把这一仗打完
 			_deliver_reports()
 		88:
 			_capture("34_back_with_reports")

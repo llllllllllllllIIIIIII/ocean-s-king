@@ -36,6 +36,7 @@ var move_progress := 0.0
 var grumble := ""               # 最近一句抱怨（只有关键船员会说）
 var grumble_timer := 0.0        # 抱怨冷却（秒），免得一句话刷屏
 var ashore := false             # 跟船长上岸了：船上的活一律不管（人在岸上）
+var dead := false               # M6：陆战里死了的人**永远回不来**（名册里留着名字）
 # --- 派活用的临时字段（每 tick 重算，不落盘）---
 var planned := false            # 这一轮方案里已经安排过他了
 var next_job := ""
@@ -117,7 +118,7 @@ func capture_state() -> Dictionary:
 		"path_target": StateIO.v3i(path_target),
 		"move_progress": move_progress,
 		"grumble": grumble, "grumble_timer": grumble_timer,
-		"ashore": ashore,
+		"ashore": ashore, "dead": dead,
 		"prio": prio.duplicate(),
 		"planned": planned, "next_job": next_job, "next_target": StateIO.v3i(next_target),
 	}
@@ -139,6 +140,7 @@ func apply_state(d: Dictionary) -> void:
 	grumble = str(d.get("grumble", ""))
 	grumble_timer = float(d.get("grumble_timer", 0.0))
 	ashore = bool(d.get("ashore", false))
+	dead = bool(d.get("dead", false))
 	prio = (d.get("prio", {}) as Dictionary).duplicate()
 	planned = bool(d.get("planned", false))
 	next_job = str(d.get("next_job", ""))

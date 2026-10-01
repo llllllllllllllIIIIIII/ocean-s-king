@@ -101,6 +101,10 @@ func _draw_status() -> void:
 		"⚠ 缺粮缺水" if v.cargo.starving else "补给尚可"])
 	if v.ashore:
 		lines.append("☀ 你在岸上，身边 %d 人 —— 左键带队走，走回滩头按 L 上船" % v.party_size())
+	if v.battle != null and not v.battle.over:
+		lines.append("⚔ %s　G 齐射/各自为战　H 冲　J 退" % v.battle.describe())
+	elif v.ashore and v.culture.will_fight("green_cape"):
+		lines.append("⚠ 当地人是敌对的：上岸就可能打起来")
 	elif v.docked_port != "":
 		lines.append("⚓ 靠在%s：按 P 补给 / 修船 / 买卖；按 X 起锚出海" % v.port_name())
 	elif v.can_land():

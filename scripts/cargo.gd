@@ -214,6 +214,24 @@ func _take(id: String, want: float) -> int:
 	return whole - got
 
 
+func spend_fraction(id: String, amount: float) -> bool:
+	"""按小数扣东西（弹药走这里）：不够就**一点不扣**并返回 false。
+
+	和消耗共用同一个小数累加器：火绳枪一发只要 0.04 桶火药，
+	按整件扣的话一桶能打出二十五发 —— 那是作弊。
+	"""
+	if amount <= 0.0:
+		return true
+	var debt := float(_frac.get(id, 0.0)) + amount
+	var whole := int(floor(debt))
+	if whole > qty(id):
+		return false
+	_frac[id] = debt - float(whole)
+	if whole > 0:
+		remove(id, whole)
+	return true
+
+
 func can_shoot() -> bool:
 	"""M6 的联动词：没有火药铅弹火绳就打不了仗（这一期先把账算清楚）。"""
 	return qty("powder") > 0 and qty("lead") > 0 and qty("match") > 0
