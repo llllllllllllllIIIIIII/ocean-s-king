@@ -104,6 +104,8 @@ func _draw_status() -> void:
 		lines.append("☀ 你在岸上，身边 %d 人 —— 左键带队走，走回滩头按 L 上船" % v.party_size())
 	if v.battle != null and not v.battle.over:
 		lines.append("⚔ %s　G 齐射/各自为战　H 冲　J 退" % v.battle.describe())
+	if v.following_route:
+		lines.append("🧭 沿航线走中（N 取消；左键自己点目标也行）")
 	elif v.ashore and v.culture.will_fight("green_cape"):
 		lines.append("⚠ 当地人是敌对的：上岸就可能打起来")
 	elif v.docked_port != "":
@@ -146,7 +148,7 @@ func _draw_banner() -> void:
 func _draw_controls() -> void:
 	draw_string(font, Vector2(16.0, size.y - 20.0),
 		"左键 目标点·带队　X 抛锚　1/2/3 帆档　+/− 操帆人数　L 登陆·返船　"
-		+ "P 靠港　Tab 帆态　C 船员　K 知识　. 快进　F5 存档　F9 读档　滚轮 缩放（拉远 = 海图）",
+		+ "P 靠港　Tab 帆态　C 船员　K 知识　N 沿航线走　. 快进　F5 存档　F9 读档　滚轮 缩放",
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.62, 0.7, 0.78))
 
 

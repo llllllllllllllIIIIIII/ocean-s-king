@@ -713,6 +713,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			if voyage.ashore:
 				voyage.move_party_to(target)
 			else:
+				# 玩家自己点了目标点 = 不跟航线走了（航线是辅助，不是抢方向盘）
+				if voyage.following_route:
+					voyage.stop_route_follow()
 				voyage.orders.set_target_point(target)
 		_update_camera()
 		return
@@ -850,6 +853,12 @@ func _key(k: InputEventKey) -> void:
 			_knowledge_panel.visible = not _knowledge_panel.visible
 			if _knowledge_panel.visible:
 				_knowledge_panel.queue_redraw()
+		KEY_N:
+			# M8：沿航线走（航海官不会绕开海岸，航线数据会）
+			if voyage.following_route:
+				voyage.say("（航线）" + voyage.stop_route_follow(), true)
+			else:
+				voyage.say("（航线）" + voyage.start_route_follow(), true)
 		KEY_ESCAPE:
 			_picker.visible = false
 			_port_panel.visible = false

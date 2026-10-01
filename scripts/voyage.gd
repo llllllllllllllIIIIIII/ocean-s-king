@@ -33,6 +33,8 @@ var events := EventPool.new()       # 三类事件池（M7）
 var knowledge := Knowledge.new()    # 知识：发现即记录（M7）
 var memory := {}                    # 世界记住你做过什么（M7）：掠夺/救人/毁约/贸易
 var reached_destination := false    # M8：四条船都到了终点港（抵达是个闩）
+var following_route := false        # M8：玩家选了"沿航线走"（一键沿着航段开）
+var route_waypoints: Array = []     # 跟着走的那串点（从当前位置最近的那个港起算）
 var ending_score := {"wealth": 0, "voyage": 0, "knowledge": 0, "crew": 0, "history": 0}
 var link: NetLink = null           # 联机（M3）：单机时是 null，走的是同一套调用
 var region_path := Sea.DATA_PATH   # 这一局用的是哪片海（静态数据，不进存档）
@@ -172,6 +174,7 @@ func tick(delta: float) -> void:
 		if battle.over:
 			_resolve_battle()
 	_check_fleet_arrival()
+	_route_tick()
 	_publish_local_summary()
 
 
@@ -189,6 +192,64 @@ func _check_fleet_arrival() -> void:
 	story.ending_ready = true
 	_say("【船队】四条船都到了圣阿莱克索。文书把这一路的账摊在桌上。", true)
 	journal.decide("船队抵达圣阿莱克索，远征走完。")
+
+
+# ------------------------------------------------------------ 沿航线走（M8 的"不会搁浅"辅助）
+
+func start_route_follow() -> String:
+	"""玩家按一下 `N`：沿着 `routes.json` 的航段一段一段开。
+
+	为什么需要它：航海官只会算"朝目标点的航法"，不会绕开海岸 ——
+	从塞维利亚直着点巴西，船会贴着西非海岸一路蹭（AI 船修好之前就是这样卡住的）。
+	航线数据本来就是为"不穿干地"设计的，让玩家也能用它。
+	"""
+	route_waypoints = _fleet_route(ship.position_m())
+	if route_waypoints.is_empty():
+		return "这片海里没有航线数据"
+	# 砍掉"身后"的点：只保留离当前位置最近的那个点之后的
+	var best := 0
+	var best_d := INF
+	for i in route_waypoints.size():
+		var d := (route_waypoints[i] as Vector2).distance_to(ship.position_m())
+		if d < best_d:
+			best_d = d
+			best = i
+	route_waypoints = route_waypoints.slice(best)
+	following_route = true
+	orders.set_target_point(route_waypoints[0] as Vector2)
+	return "沿航线走：下一段去 %s" % _route_leg_name()
+
+
+func stop_route_follow() -> String:
+	following_route = false
+	return "不再跟航线走（左键可以自己点目标）"
+
+
+func _route_leg_name() -> String:
+	if route_waypoints.is_empty():
+		return "终点"
+	var p := route_waypoints[0] as Vector2
+	for port in sea.ports():
+		if Geom2D.centroid(port["shape"]).distance_to(p) < 1.0:
+			return str(port.get("name", "下一站"))
+	return "航点 %.0f,%.0f" % [p.x, p.y]
+
+
+func _route_tick() -> void:
+	if not following_route:
+		return
+	if route_waypoints.is_empty():
+		following_route = false
+		return
+	var p := route_waypoints[0] as Vector2
+	if ship.position_m().distance_to(p) < 500.0:
+		if route_waypoints.size() <= 1:
+			following_route = false
+			_say("（航线）到终点港了。", true)
+			return
+		route_waypoints.pop_front()
+		orders.set_target_point(route_waypoints[0] as Vector2)
+		_say("（航线）下一段：%s" % _route_leg_name(), false)
 
 
 # ------------------------------------------------------------ 补给与港口（M4）
