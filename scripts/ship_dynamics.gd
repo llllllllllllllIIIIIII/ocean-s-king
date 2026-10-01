@@ -17,6 +17,9 @@ const RUDDER_MAX := 35.0            # 度
 const YAW_PER_RUDDER := 0.12        # 度/秒 每度舵角（满舵时约 4.2 度/秒）
 const WEATHER_HELM := 0.6           # 度/秒 风压偏转（船会自己往风里顶）
 const RELAX_TAU := 0.33             # 秒   速度/横倾追上目标的时间常数
+# 附连水质量：船动起来时周围的水也被拖着一起动，等效质量比船本身大。
+# 这个系数只影响"换速有多快"，不影响稳态速度（极坐标仍然归 ship_physics 管）。
+const SURGE_MASS_FACTOR := 1.25
 
 var physics: ShipPhysics
 
@@ -29,8 +32,11 @@ var _yaw_rate_dps := 0.0
 var _rudder_deg := 0.0
 var _sail_main_deg := -90.0         # 帆弦线（船体系，度）
 var _sail_jib_deg := -90.0
+var _sail_area_scale := 1.0         # 帆档：全帆 1.0 / 缩帆 0.55 / 收帆 0
+var _anchored := false
 var _wind_world := Vector2.ZERO
 var _t := 0.0
+var _last := {}                     # 上一帧的受力细节（帆态面板要读）
 
 
 func _init(phys: ShipPhysics) -> void:
@@ -79,6 +85,26 @@ func leeway_deg() -> float:
 	return rad_to_deg(atan2(_w, maxf(_u, 0.05)))
 
 
+func wind_from_dir_deg() -> float:
+	"""真风来向（世界系，度）：风**从**哪个方向来（不是吹向）。"""
+	if _wind_world.length() < 1e-6:
+		return 0.0
+	return fposmod(rad_to_deg(atan2(_wind_world.y, _wind_world.x)) + 180.0, 360.0)
+
+
+func last_forces() -> Dictionary:
+	"""上一帧的受力细节：帆态面板的矢量图直接画它。"""
+	return _last
+
+
+func sail_area_scale() -> float:
+	return _sail_area_scale
+
+
+func is_anchored() -> bool:
+	return _anchored
+
+
 func wind_ship_frame() -> Vector2:
 	"""真风在船体系里的速度矢量。"""
 	return _to_ship(_wind_world)
@@ -109,6 +135,18 @@ func twa_signed_deg() -> float:
 	return ShipPhysics.normalize180(rad_to_deg(atan2(v.y, v.x)) + 180.0)
 
 
+func wind_side() -> float:
+	"""风从哪一舷来：+1 右舷 / −1 左舷。
+
+	帆的攻角必须按舷别取符号 —— 这是"左舷受风"最容易写错的地方：
+	把攻角照抄给另一舷，帆会被收到迎风面（被风顶着），推力骤降甚至倒推。
+	"""
+	var t := twa_signed_deg()
+	if is_zero_approx(t):
+		return 1.0
+	return 1.0 if t > 0.0 else -1.0
+
+
 func awa_deg() -> float:
 	var v := apparent_wind_ship_frame()
 	if v.length() < 1e-6:
@@ -128,6 +166,16 @@ func set_sail_chords(main_deg: float, jib_deg: float) -> void:
 	_sail_jib_deg = jib_deg
 
 
+func set_sail_area_scale(scale: float) -> void:
+	"""帆档：缩帆是真的少一块帆布，不是换个数字。"""
+	_sail_area_scale = clampf(scale, 0.0, 1.0)
+
+
+func set_anchored(flag: bool) -> void:
+	"""抛锚：锚把船摁住。帆的力照样算（面板看得见），但推不动船。"""
+	_anchored = flag
+
+
 func trim_to_alpha(alpha_main: float, alpha_jib := INF) -> void:
 	"""船员按当前视风把帆收到指定攻角（Day 3 版：瞬间完成；Day 4 才加耗时与技能）。"""
 	var aw := apparent_wind_ship_frame()
@@ -135,15 +183,17 @@ func trim_to_alpha(alpha_main: float, alpha_jib := INF) -> void:
 	var aj := alpha_jib
 	if is_inf(aj):
 		aj = clampf(alpha_main + physics.jib_offset, 8.0, 90.0)
-	set_sail_chords(ad - alpha_main, ad - aj)
+	var side := wind_side()
+	set_sail_chords(ad - side * alpha_main, ad - side * aj)
 
 
 func sail_alpha_main_deg() -> float:
-	"""当前主帆的攻角（度）——帆态面板要用。"""
+	"""当前主帆攻角的**大小**（度）——帆态面板要用（舷别不影响读数）。"""
 	var aw := apparent_wind_ship_frame()
 	if aw.length() < 1e-6:
 		return 0.0
-	return ShipPhysics.normalize180(rad_to_deg(atan2(aw.y, aw.x)) - _sail_main_deg)
+	return absf(ShipPhysics.normalize180(
+		rad_to_deg(atan2(aw.y, aw.x)) - _sail_main_deg))
 
 
 func set_pose(pos_m: Vector2, heading_deg_value: float) -> void:
@@ -169,28 +219,49 @@ func step(delta: float, wind_world: Vector2) -> void:
 	var app_dir := rad_to_deg(atan2(ay, ax)) if app_speed > 1e-6 else rad_to_deg(atan2(v.y, v.x))
 
 	# 帆的力（主帆 + 前帆），横倾后桅杆倾斜 -> 水平分量乘 cos(phi)
-	var fm := physics.sail_force(app_speed, app_dir, _sail_main_deg, physics.area_main)
-	var fj := physics.sail_force(app_speed, app_dir, _sail_jib_deg, physics.area_jib)
+	# 帆档（缩帆/收帆）在这里生效：帆布少了，力和横倾一起小下去
+	var fm := physics.sail_force(app_speed, app_dir, _sail_main_deg,
+		physics.area_main * _sail_area_scale)
+	var fj := physics.sail_force(app_speed, app_dir, _sail_jib_deg,
+		physics.area_jib * _sail_area_scale)
 	var fx := fm.x + fj.x
 	var fy := fm.y + fj.y
 	var cp := cos(deg_to_rad(_heel_deg))
 	fx *= cp
 	fy *= cp
+	# 帆态面板的矢量图就是照这个画的
+	_last = {
+		"app_speed": app_speed, "app_dir": app_dir,
+		"q": 0.5 * ShipPhysics.RHO_AIR * app_speed * app_speed,
+		"fx": fx, "fy": fy, "main": fm, "jib": fj, "area_scale": _sail_area_scale,
+	}
 
 	# 船体：侧滑由龙骨抵挡，前进被船体阻力 + 龙骨诱导阻力拖住
+	# 抛锚：锚把船摁住 —— 帆的力照样算（面板能看见），但它推不动船。
 	var w_target := physics.side_slip(fy, _u, _w)
-	var u_target := physics.solve_surge(fx, fy, w_target)
 	var phi_target := rad_to_deg(asin(clampf(
 		fy * physics.h_ce / (physics.mass * ShipPhysics.GRAVITY * physics.gm),
 		-1.0, 1.0)))
 
-	var k := minf(1.0, delta / RELAX_TAU)
-	_u += k * (u_target - _u)
-	_w += k * (w_target - _w)
-	_heel_deg += k * (phi_target - _heel_deg)
+	if _anchored:
+		# 锚把船摁住：速度很快归零，而且不再漂走
+		_u = move_toward(_u, 0.0, 2.0 * delta)
+		_w = move_toward(_w, 0.0, 1.0 * delta)
+	else:
+		# ⚠️ 前进方向必须**按质量积分**，不能瞬时跳到稳态。
+		# 60 吨的船换速要几十秒 —— 这点惯性是"换舷能不能过顶"的关键：
+		# 抢风时要带着余速穿过死区，瞬时求解的话一顶风速度立刻归零，船就卡死在风里。
+		var drag_now := physics.hull_drag(_u) + physics.induced_drag(fy, _u, _w)
+		_u = maxf(0.0, _u + (fx - drag_now) / (physics.mass * SURGE_MASS_FACTOR) * delta)
+		# 侧滑与横倾的惯性小得多，维持一阶松弛就够了
+		_w += minf(1.0, delta / 2.0) * (w_target - _w)
+	_heel_deg += minf(1.0, delta / 1.5) * (phi_target - _heel_deg)
 
 	# 艏向：舵效（要有速度才转得动）+ 风压偏转
-	var speed_factor := clampf(_u / 2.0, 0.15, 1.2)
+	# 舵效与速度有关，但不能归零：真有速度才转得动，可是停住的船也能靠舵慢慢
+	# 转出去（水流、涌浪、船体本身的惯性都会给舵一点力）。这个下限很关键 ——
+	# 船在死区里停住时，全靠它才能把头转出来。
+	var speed_factor := clampf(_u / 2.0, 0.35, 1.2)
 	var weather := WEATHER_HELM * sin(deg_to_rad(app_dir + 180.0))
 	var yaw_target := _rudder_deg * YAW_PER_RUDDER * speed_factor + weather
 	_yaw_rate_dps += minf(1.0, delta / 1.5) * (yaw_target - _yaw_rate_dps)

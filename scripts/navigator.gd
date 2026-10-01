@@ -1,0 +1,117 @@
+class_name Navigator
+extends RefCounted
+
+# 航海官（船长在船上）/ 大副（船长离船）—— 同一套决策，两顶帽子。
+#
+# 它的工作（docs/01 支柱 3 的中间那一格）：
+#   玩家的目标点 + 风向 + 当前航向  ──→  航法 + 给舵手的目标航向 + 给船员的目标攻角
+#
+# 它**不碰**船的速度、位置，也不碰帆和舵 —— 那些分别是 ShipDynamics 和 Crew 的事。
+# 指挥链路因此是单向的：玩家 → 航海官 → 船员 → 帆 → 船 → 表现。
+
+const KNOT := 0.514444
+
+# 离逆风死区边界再让 8 度：贴着边界走会让船一直在"刚要失速"的刀尖上，
+# 而且舵手实际会落在目标航向的下风侧几度（风压偏转），不留余量就会被按进死区。
+# 标定出来的边界是 37 度（docs/08）。
+const NO_GO_MARGIN := 8.0
+const NO_GO_TWA := 37.0
+# 换舷迟滞：另一舷要"明显更好"才换。没有它，目标点几乎正顶风时
+# 两舷的优劣会在零点附近来回翻 —— 航海官一秒换一次舷，船就原地打转，
+# 永远攒不起速度（Day 4 现场抓到的就是这个死循环）。
+const TACK_HYSTERESIS := 12.0
+
+enum Method { HOLD, STEER, BEAT, RUN, STOP }
+
+var orders: ShipOrders
+var method: Method = Method.HOLD
+var target_heading_deg := 0.0
+var tack_side := 1.0                 # 抢风时受风的一舷：+1 右舷 / −1 左舷
+var bearing_deg := 0.0               # 目标点的方位
+var tack_count := 0                  # 换过几次舷（面板上很好用）
+var _last_method: Method = Method.HOLD
+
+
+func _init(orders_ref: ShipOrders) -> void:
+	orders = orders_ref
+
+
+func no_go_twa_deg() -> float:
+	return NO_GO_TWA + NO_GO_MARGIN
+
+
+func decide(ship: ShipDynamics) -> void:
+	"""每次配平前决策一次：这一步决定了"船往哪儿走"。"""
+	if not orders.allow_sailing():
+		method = Method.STOP
+		target_heading_deg = ship.heading_deg()
+		_remember()
+		return
+
+	if not orders.has_target_point:
+		method = Method.HOLD
+		_remember()
+		return
+
+	var to_target := orders.target_point - ship.position_m()
+	if to_target.length() < 8.0:                 # 到了：转成保持航向
+		method = Method.HOLD
+		orders.clear_target_point()
+		_remember()
+		return
+
+	bearing_deg = fposmod(rad_to_deg(atan2(to_target.y, to_target.x)), 360.0)
+	var wind_from := ship.wind_from_dir_deg()
+	var off_wind := absf(ShipPhysics.normalize180(bearing_deg - wind_from))
+
+	if off_wind >= no_go_twa_deg():
+		# 目标不在死区里：直接朝目标走。
+		# 真风角大于 140 度时这叫顺风跑，面板上分开显示。
+		method = Method.RUN if off_wind > 140.0 else Method.STEER
+		target_heading_deg = bearing_deg
+	else:
+		# 目标在死区里：抢风。选离目标更近的那一舷，贴着死区边界走。
+		# 船一旦越过目标的"正横"，方位角自己就会转出死区，
+		# 于是上一条分支接管、船直接朝目标走 —— 换舷是这么自然发生的。
+		# 起步 / 失速之后要先走得宽一点：船速不够时贴不住风，
+		# 横着漂的代价（诱导阻力）大得可怕，船会一直在一节上下打转。
+		# 真实水手也是这么干的：先松帆偏开风，把速度攒起来再往上顶。
+		var beat := no_go_twa_deg()
+		if ship.speed_ms() < 2.0:
+			beat = minf(75.0, beat + 30.0)
+		var cand_a := 1.0
+		var cand_b := -1.0
+		var err_a := absf(ShipPhysics.normalize180(
+			bearing_deg - (wind_from + beat)))
+		var err_b := absf(ShipPhysics.normalize180(
+			bearing_deg - (wind_from - beat)))
+		if err_a + TACK_HYSTERESIS < err_b:
+			tack_side = cand_a
+		elif err_b + TACK_HYSTERESIS < err_a:
+			tack_side = cand_b
+		# 两舷差不多好 -> 保持当前舷（这就是迟滞）
+		method = Method.BEAT
+		target_heading_deg = fposmod(wind_from + tack_side * beat, 360.0)
+	_remember()
+
+
+func _remember() -> void:
+	if method != _last_method:
+		if method == Method.BEAT and _last_method == Method.BEAT:
+			tack_count += 1
+		_last_method = method
+
+
+func method_name() -> String:
+	match method:
+		Method.HOLD: return "保持航向"
+		Method.STEER: return "转向目标"
+		Method.BEAT: return "抢风（%s受风）" % ("右舷" if tack_side > 0.0 else "左舷")
+		Method.RUN: return "顺风跑"
+		Method.STOP: return "停船"
+	return "?"
+
+
+func describe() -> String:
+	var tgt := "%.0f°" % target_heading_deg
+	return "航海官：%s，舵手目标 %s，换舷 %d 次" % [method_name(), tgt, tack_count]

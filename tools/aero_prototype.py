@@ -132,13 +132,16 @@ class Boat:
         return sgn * np.where(a <= fmax, keel_only, fmax / self.k_lat + extra)
 
     def induced_drag(self, side_force, u, w):
-        """诱导（漂移）阻力：横向力沿水流方向的分量 = |F_lat| * sin(侧滑角)。
+        """诱导（漂移）阻力：横向力沿水流方向的分量，**再投影回船的首尾轴**。
 
-        未失速时侧滑很小 -> 阻力很小；失速以后侧滑变大 -> 阻力暴涨。
-        这就是顶风死区的来源。没有这一项，船会违反物理地贴风航行。
+        = |F_lat| * sin(侧滑角) * cos(侧滑角) = |F_lat| * |u*w| / (u^2 + w^2)
+
+        小侧滑角时它就是经典的 F_lat * tan(侧滑角)（顶风慢、横风快都靠它）；
+        水横向流（u->0）时它趋于 0 —— 船横着漂的时候，横向力是垂直于
+        首尾轴的，不该去挡前进。这一条是"停着的船还能起得来"的物理基础。
         """
-        s = np.sqrt(u * u + w * w) + 1e-9
-        return np.abs(side_force) * np.abs(w) / s
+        s2 = u * u + w * w + 1e-9
+        return np.abs(side_force) * np.abs(u * w) / s2
 
 
 DEFAULTS = Boat()

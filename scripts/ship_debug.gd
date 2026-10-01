@@ -28,6 +28,9 @@ var physics: ShipPhysics
 var wind: WindField
 var ship: ShipDynamics
 var crew: Crew
+# --- 指挥链路（Day 4 起）：玩家 → 航海官 → 船员 → 帆 → 船 ---
+var orders: ShipOrders
+var nav: Navigator
 
 var _mode: Mode = Mode.ZOOM
 var _layer := 2                  # 2 = 主甲板
@@ -38,6 +41,8 @@ var _paused := false
 
 var _hud: Label
 var _wind_gizmo: WindGizmo
+var _panel: SailPanel
+var _show_panel := false
 var _font: Font
 var _layer_order: Array[int] = []
 var _frame := 0
@@ -58,6 +63,8 @@ func _ready() -> void:
 	wind = WindField.new(8.0, 20.0)              # 真风 8 m/s（15.6 节），来自 20°
 	ship = ShipDynamics.new(physics)
 	ship.set_pose(Vector2.ZERO, 180.0)           # 船首朝 -x：和 Day 2 的调试画面同向
+	orders = ShipOrders.new()
+	nav = Navigator.new(orders)
 	crew = Crew.new(ship)
 	crew.set_target_heading(180.0)
 	ship.step(0.0, wind.velocity_world())        # 只把风灌进去（dt=0，不推进状态）
@@ -66,6 +73,7 @@ func _ready() -> void:
 
 	_build_hud()
 	_build_wind_gizmo()
+	_build_panel()
 	_apply()
 	_shot_mode = OS.get_cmdline_user_args().has("shots")
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(SHOT_DIR))
@@ -81,7 +89,13 @@ func _process(delta: float) -> void:
 		return
 	var dt: float = minf(delta, SIM_DT_MAX)
 	wind.step(dt)
-	crew.step(dt)                                 # 船员调帆、打舵
+	# 指挥链路：玩家下的令 -> 航海官决定航法 -> 船员收放帆与打舵 -> 船在风力下自己动
+	nav.decide(ship)
+	crew.set_target_heading(nav.target_heading_deg)
+	crew.hands_on_sails = orders.hands_on_sails
+	ship.set_sail_area_scale(orders.sail_area_scale())
+	ship.set_anchored(orders.anchored)
+	crew.step(dt)                                 # 船员调帆、打舵（慢，而且不完美）
 	ship.step(dt, wind.velocity_world())          # 船在风力下自己动
 	_sync_view()
 	_apply()
@@ -139,7 +153,13 @@ func _run_shot_timeline() -> void:
 			_sail_shot(290.0, 60.0, 0.95)      # 真风角 90 度：横风最快，船是斜的
 		64:
 			_capture("08_sailing_beam_reach")
+		66:
+			_show_panel = true                 # 帆态面板（Day 4 的"看得懂"）
+			_panel.visible = true
+			_apply()
 		70:
+			_capture("09_sail_panel")
+		76:
 			print("[shots] " + view.bank.stats())
 			get_tree().quit(0)
 
@@ -176,10 +196,24 @@ func _apply() -> void:
 	view.show_grid = _show_grid
 	view.show_ghost = _show_ghost
 	view.queue_redraw()
+	queue_redraw()                                # 目标点标记在根节点上画
 
 	cam.position = view.hull_center_world_px()
 	cam.zoom = Vector2(_zoom, _zoom)
 	_update_hud()
+
+
+func _draw() -> void:
+	"""在世界上画出玩家的目标点 —— 指令链路的"发令"这一步要看得见。"""
+	if orders == null or not orders.has_target_point:
+		return
+	var t := orders.target_point * CELL
+	var c := view.hull_center_world_px()
+	draw_dashed_line(c, t, Color(0.45, 1.0, 0.65, 0.35), 2.0, 14.0)
+	draw_circle(t, 10.0, Color(0.45, 1.0, 0.65, 0.22))
+	draw_arc(t, 10.0, 0.0, TAU, 28, Color(0.55, 1.0, 0.75, 0.95), 2.0)
+	draw_line(t - Vector2(15, 0), t + Vector2(15, 0), Color(0.55, 1.0, 0.75, 0.95), 2.0)
+	draw_line(t - Vector2(0, 15), t + Vector2(0, 15), Color(0.55, 1.0, 0.75, 0.95), 2.0)
 
 
 func _capture(name: String) -> void:
@@ -212,11 +246,31 @@ func _unhandled_input(event: InputEvent) -> void:
 		var k := event as InputEventKey
 		match k.keycode:
 			KEY_LEFT, KEY_A:
-				crew.set_target_heading(crew.target_heading_deg - 10.0)
+				_nudge_target(-40.0)
 			KEY_RIGHT, KEY_D:
-				crew.set_target_heading(crew.target_heading_deg + 10.0)
+				_nudge_target(40.0)
 			KEY_SPACE:
+				orders.clear_target_point()
 				crew.set_target_heading(ship.heading_deg())
+			KEY_TAB:
+				_show_panel = not _show_panel
+				_panel.visible = _show_panel
+			KEY_1:
+				orders.set_sail_level(ShipOrders.SailLevel.FULL)
+			KEY_2:
+				orders.set_sail_level(ShipOrders.SailLevel.REEF)
+			KEY_3:
+				orders.set_sail_level(ShipOrders.SailLevel.FURLED)
+			KEY_X:
+				orders.anchored = not orders.anchored
+				if orders.anchored:
+					orders.set_sail_level(ShipOrders.SailLevel.FURLED)
+				else:
+					orders.set_sail_level(ShipOrders.SailLevel.FULL)
+			KEY_EQUAL, KEY_KP_ADD:
+				orders.set_hands(orders.hands_on_sails + 1)
+			KEY_MINUS, KEY_KP_SUBTRACT:
+				orders.set_hands(orders.hands_on_sails - 1)
 			KEY_P:
 				_paused = not _paused
 			KEY_G:
@@ -226,12 +280,23 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _steer_toward_mouse(screen_pos: Vector2) -> void:
-	"""点哪儿就往哪儿走 —— Day 4 的"选目标点"在这条链子上的雏形。"""
+	"""点哪儿就往哪儿走 —— 这是玩家能下的最重要的一条命令：设定目标点。
+
+	之后怎么走是航海官的事（顶风就自己抢风换舷），帆怎么收是船员的事。
+	"""
 	var world_px := get_viewport().get_canvas_transform().affine_inverse() * screen_pos
-	var d := world_px - view.hull_center_world_px()
-	if d.length() < 4.0:
-		return
-	crew.set_target_heading(rad_to_deg(atan2(d.y, d.x)))
+	orders.set_target_point(world_px / CELL)      # 像素 -> 米
+	queue_redraw()
+
+
+func _nudge_target(delta_deg: float) -> void:
+	"""← / → 微调目标航向（没有目标点时，就是对当前航向下手）。"""
+	var base := nav.target_heading_deg if orders.has_target_point else ship.heading_deg()
+	var h := fposmod(base + delta_deg, 360.0)
+	var reach := 260.0                            # 放到船前方一段距离作为目标点
+	var d := Vector2(cos(deg_to_rad(h)), sin(deg_to_rad(h)))
+	orders.set_target_point(ship.position_m() + d * reach)
+	queue_redraw()
 
 
 func _wheel(dir: int) -> void:
@@ -276,6 +341,8 @@ func _update_hud() -> void:
 		return
 	if _wind_gizmo:
 		_wind_gizmo.set_wind(wind.from_dir_deg, wind.tws_ms)
+	if _panel and _show_panel:
+		_panel.update_from(ship, crew, nav, orders)
 	var mode := "缩放" if _mode == Mode.ZOOM else "分层"
 	var hint := "拉远/拉近（拉到最近继续向下可沉入船舱）" if _mode == Mode.ZOOM \
 		else "向上逐层上浮，到最上层回到缩放"
@@ -283,13 +350,18 @@ func _update_hud() -> void:
 	var flag := "   ⏸ 暂停" if _paused else ""
 	_hud.text = ("L%d  %s   高程 %+.0f m   [%s]   x%.2f%s\n"
 		+ "滚轮：%s\n"
-		+ "←/→ 或 A/D 改目标航向　空格 稳住当前航向　左键点方向就走　P 暂停　G 网格　H 虚影\n"
+		+ "左键 设目标点　←/→ 微调目标　空格 保持航向　1/2/3 全帆·缩帆·收帆　X 抛锚\n"
+		+ "+/− 操帆人数　Tab 帆态面板　P 暂停　G 网格　H 虚影\n"
+		+ "玩家命令：%s\n"
+		+ "航海官：%s\n"
 		+ "%s\n"
 		+ "真风 %.1f m/s（%.1f 节）来自 %.0f°，吹向 %.0f°　%s\n"
 		+ "航向 %.0f°  船速 %.2f 节（%.1f m/s）  横倾 %+.1f°  侧滑 %+.1f°\n"
 		+ "真风角 %.0f°  视风角 %.0f°  舵 %+.0f°  主帆攻角 %.0f°  位置 (%.0f, %.0f) m") % [
 		_layer, view.layer_name(_layer), view.layer_elevation(_layer), mode, _zoom, flag,
 		hint,
+		orders.describe(),
+		nav.describe(),
 		crew.describe(),
 		wind.tws_ms, wind.tws_ms / 0.514444, fposmod(wind.from_dir_deg, 360.0),
 		fposmod(wind.from_dir_deg + 180.0, 360.0),
@@ -311,6 +383,19 @@ func _build_wind_gizmo() -> void:
 	_wind_gizmo.position = get_viewport_rect().size - Vector2(side + 18.0, side + 18.0)
 	cl.add_child(_wind_gizmo)
 	_wind_gizmo.set_wind(wind.from_dir_deg, wind.tws_ms)
+
+
+func _build_panel() -> void:
+	"""帆态面板：默认隐藏，Tab 呼出（docs/01 决策 12）。"""
+	var cl := CanvasLayer.new()
+	cl.layer = 2
+	add_child(cl)
+	_panel = SailPanel.new()
+	_panel.font = _font
+	_panel.size = SailPanel.PANEL
+	_panel.position = (get_viewport_rect().size - SailPanel.PANEL) * 0.5
+	_panel.visible = false
+	cl.add_child(_panel)
 
 
 func _pick_font() -> Font:

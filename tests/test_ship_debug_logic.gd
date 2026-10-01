@@ -90,6 +90,31 @@ func _run_assertions() -> void:
 	_check(cam_pos.is_equal_approx(expect_center),
 		"相机未对准船中心：实际 %s，应为 %s" % [str(cam_pos), str(expect_center)])
 
+	# --- Day 4：指挥链路的输入（点目标点 / 帆档 / 抛锚 / 帆态面板）---
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	click.position = Vector2(420, 300)
+	scene._unhandled_input(click)
+	_check(scene.orders.has_target_point, "左键点海面 = 设定目标点（玩家唯一能下的操船类命令）")
+	var want_world: Vector2 = scene.get_viewport().get_canvas_transform().affine_inverse() \
+		* Vector2(420, 300)
+	_check(scene.orders.target_point.distance_to(want_world / 40.0) < 1.0,
+		"目标点落在点击的位置上（%s）" % scene.orders.target_point)
+
+	_key(scene, KEY_2)
+	_check(scene.orders.sail_level == ShipOrders.SailLevel.REEF, "按 2 = 缩帆")
+	_key(scene, KEY_3)
+	_check(scene.orders.sail_area_scale() == 0.0, "按 3 = 收帆（帆不再产生推力）")
+	_key(scene, KEY_X)
+	_check(scene.orders.anchored, "按 X = 抛锚")
+	_key(scene, KEY_X)
+	_check(not scene.orders.anchored, "再按 X = 起锚")
+	_key(scene, KEY_TAB)
+	_check(scene._show_panel and scene._panel.visible, "Tab 呼出帆态面板")
+	_key(scene, KEY_TAB)
+	_check(not scene._panel.visible, "再按 Tab 收起面板")
+
 	print("--- 状态轨迹 ---")
 	for row in _trace:
 		print("  %-16s %s" % [row["step"], JSON.stringify(row["state"])])
@@ -108,6 +133,13 @@ func _wheel(scene, button: int, times: int) -> void:
 		ev.button_index = button
 		ev.pressed = true
 		scene._unhandled_input(ev)
+
+
+func _key(scene, keycode: int) -> void:
+	var ev := InputEventKey.new()
+	ev.keycode = keycode
+	ev.pressed = true
+	scene._unhandled_input(ev)
 
 
 func _snapshot(scene) -> Dictionary:

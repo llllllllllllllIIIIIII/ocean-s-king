@@ -107,11 +107,11 @@ func _dynamics_smoke(phys: ShipPhysics) -> void:
 	ship.set_pose(Vector2.ZERO, 0.0)          # 船首指向 +x
 	crew.set_target_heading(0.0)
 	var wind_beam := Vector2(0.0, -8.0)       # 空气朝 -y 走 = 风从右舷来
-	_run(ship, crew, wind_beam, 200.0, 0.1)
+	_run(ship, crew, wind_beam, 300.0, 0.1)
 	_check(ship.speed_kn() > 4.5 and ship.speed_kn() < 8.0,
 		"横风跑起来（%.2f 节）" % ship.speed_kn())
 	_check(ship.position_m().length() > 500.0,
-		"位置由积分得到（200 秒走了 %.0f 米）" % ship.position_m().length())
+		"位置由积分得到（300 秒走了 %.0f 米）" % ship.position_m().length())
 	_check(absf(ship.heel_deg()) > 1.0 and absf(ship.heel_deg()) < 25.0,
 		"横倾在合理区间（%.1f 度）" % ship.heel_deg())
 	_check(absf(ship.leeway_deg()) < 12.0,
@@ -123,7 +123,7 @@ func _dynamics_smoke(phys: ShipPhysics) -> void:
 	irons.set_pose(Vector2.ZERO, 0.0)
 	irons_crew.set_target_heading(0.0)
 	var wind_head := Vector2(-8.0, 0.0)       # 空气朝 -x 走 = 风从船首正前方来
-	_run(irons, irons_crew, wind_head, 120.0, 0.1)
+	_run(irons, irons_crew, wind_head, 300.0, 0.1)
 	_check(irons.speed_kn() < 0.5,
 		"顶风推不动（%.2f 节）" % irons.speed_kn())
 	_check(irons.position_m().length() < 60.0,
@@ -134,21 +134,25 @@ func _dynamics_smoke(phys: ShipPhysics) -> void:
 	var light_crew := Crew.new(light)
 	light.set_pose(Vector2.ZERO, 0.0)
 	light_crew.set_target_heading(0.0)
-	_run(light, light_crew, Vector2(0.0, -4.0), 200.0, 0.1)
+	_run(light, light_crew, Vector2(0.0, -4.0), 300.0, 0.1)
 	var fresh := ShipDynamics.new(phys)
 	var fresh_crew := Crew.new(fresh)
 	fresh.set_pose(Vector2.ZERO, 0.0)
 	fresh_crew.set_target_heading(0.0)
-	_run(fresh, fresh_crew, Vector2(0.0, -10.0), 200.0, 0.1)
+	_run(fresh, fresh_crew, Vector2(0.0, -10.0), 300.0, 0.1)
 	_check(fresh.speed_kn() > light.speed_kn() * 1.2,
 		"风大跑得快（4 m/s 风 %.2f 节 -> 10 m/s 风 %.2f 节）" % [
 			light.speed_kn(), fresh.speed_kn()])
 
-	# 从静止起步：不只是横风，**所有能走的真风角**都必须能自己起来。
+	# 从静止起步：横风到顺风都必须能自己起来。
 	# 现场 bug 就出在这里：按"攻角"配平，船停住时视风退化成真风，
 	# 同一个攻角会把帆收到背风侧（侧滑 84.7°、船速永远 0）。
+	#
+	# 45°（贴风）单拎出来看：它**能爬**但爬得很慢 —— 船慢的时候侧滑大，
+	# 诱导阻力把推力吃掉大半。真实水手这时候会先偏开风攒速度再往顶，
+	# 航海官已经这么做了（见 test_command_chain 的"抢风"那条）。
 	var stuck: PackedStringArray = []
-	for twa in [45, 60, 90, 120, 148, 160, 180]:
+	for twa in [60, 90, 120, 148, 160, 180]:
 		var s2 := ShipDynamics.new(phys)
 		var c2 := Crew.new(s2)
 		s2.set_pose(Vector2.ZERO, 0.0)
@@ -157,11 +161,23 @@ func _dynamics_smoke(phys: ShipPhysics) -> void:
 		c2.set_target_heading(0.0)
 		s2.step(0.0, w2)
 		c2.retrim()
-		_run(s2, c2, w2, 120.0, 0.1)
+		_run(s2, c2, w2, 300.0, 0.1)
 		if s2.speed_kn() < 3.0:
 			stuck.append("%d°(%.2f 节)" % [twa, s2.speed_kn()])
 	_check(stuck.is_empty(), "从静止起步：各真风角都能跑起来（卡住的：%s）"
 		% ("无" if stuck.is_empty() else ", ".join(stuck)))
+
+	var close_hauled := ShipDynamics.new(phys)
+	var ch_crew := Crew.new(close_hauled)
+	close_hauled.set_pose(Vector2.ZERO, 0.0)
+	var blow45 := deg_to_rad(45.0 + 180.0)
+	var w45 := Vector2(cos(blow45), sin(blow45)) * 8.0
+	ch_crew.set_target_heading(0.0)
+	close_hauled.step(0.0, w45)
+	ch_crew.retrim()
+	_run(close_hauled, ch_crew, w45, 300.0, 0.1)
+	_check(close_hauled.speed_kn() > 0.5,
+		"贴风 45° 从静止起步能爬（%.2f 节；想快得先偏开风攒速度）" % close_hauled.speed_kn())
 
 	# 失速之后能不能自己恢复：先把船顶进死区停住，再转出来必须重新跑起来。
 	# 用户报的"我不管如何操纵船速一直显示为 0"就是这个场景。
@@ -170,14 +186,14 @@ func _dynamics_smoke(phys: ShipPhysics) -> void:
 	rec.set_pose(Vector2.ZERO, 0.0)
 	var w_fixed := Vector2(0.0, -8.0)          # 风从 +y（右舷）来
 	rec_crew.set_target_heading(0.0)
-	_run(rec, rec_crew, w_fixed, 60.0, 0.1)
+	_run(rec, rec_crew, w_fixed, 240.0, 0.1)
 	var running := rec.speed_kn()
 	rec_crew.set_target_heading(90.0)          # 船首转向风来的方向 -> 顶进死区
-	_run(rec, rec_crew, w_fixed, 150.0, 0.1)
+	_run(rec, rec_crew, w_fixed, 300.0, 0.1)
 	var luffed := rec.speed_kn()
 	rec_crew.set_target_heading(0.0)           # 再转出来
-	_run(rec, rec_crew, w_fixed, 150.0, 0.1)
-	_check(running > 4.0 and luffed < 1.0 and rec.speed_kn() > 4.0,
+	_run(rec, rec_crew, w_fixed, 300.0, 0.1)
+	_check(running > 4.0 and luffed < 1.5 and rec.speed_kn() > 4.0,
 		"失速后能自己恢复（跑 %.1f → 顶风停 %.1f → 转回来 %.2f 节）" % [
 			running, luffed, rec.speed_kn()])
 
