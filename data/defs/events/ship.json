@@ -1,0 +1,35 @@
+{
+  "_comment": "船内事件池（M7）：四十个人和一条船之间的事。后果全部落在已有的系统上（货舱 / 损伤 / 健康 / 社会）。",
+  "version": 1,
+  "pool": "ship",
+  "events": [
+    {
+      "id": "rats_in_hold", "name": "舱里进了老鼠", "priority": 1,
+      "requires": { "days_min": 4 },
+      "effects": { "supplies": { "food": -25 }, "mood": -0.03,
+        "message": "硬饼干被啃掉了一角。事务长把账记在了那两只猫头上。" },
+      "text": "老鼠比船员先吃到肉。"
+    },
+    {
+      "id": "galley_fire", "name": "伙房起火", "priority": 3,
+      "requires": { "days_min": 8 },
+      "effects": { "damage": { "hull": 0.02, "mast": 0.02 }, "mood": -0.05, "tension": 0.06,
+        "message": "伙房的火引着了木炭。水手长带人把火拍灭，烧伤了两个手掌。" },
+      "text": "海上的火比水更吓人。"
+    },
+    {
+      "id": "fever", "name": "热病", "priority": 2,
+      "requires": { "days_min": 12 },
+      "effects": { "health": -0.15, "mood": -0.06, "tension": 0.05,
+        "message": "底舱有人发起热来。外科医生说要通风，可外面正下着雨。" },
+      "text": "海上最会杀人的不是炮，是热病。"
+    },
+    {
+      "id": "dolphins", "name": "海豚跟着船", "priority": 1,
+      "requires": { "days_min": 6 },
+      "effects": { "mood": 0.08,
+        "message": "十几条海豚在前头领着船走。连最闷的那个人都到舷边看了半天。" },
+      "text": "好天气里的好兆头。"
+    }
+  ]
+}

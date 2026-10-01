@@ -1,0 +1,45 @@
+{
+  "_comment": "自然环境（M7）。天气不是随机播放的动画：它要真的改风、改损伤、改瞭望距离、改火器的哑火率 —— 否则验收第 3 条（风暴真的改变航行结果）不成立。",
+  "version": 1,
+  "_units": "damage_per_hour 是每**航程小时**往船体/桅杆上砸多少损伤；wind_mult 乘在风场上。",
+  "states": [
+    {
+      "id": "clear", "name": "晴", "wind_mult": 1.0, "misfire_weather": "dry",
+      "visibility_m": 8000, "fatigue_mult": 1.0, "mood_bias": 0.02,
+      "damage_per_hour": {}, "hours": [6.0, 30.0],
+      "text": "信风稳稳地吹，海面像一块蓝铁。"
+    },
+    {
+      "id": "squall", "name": "雷暴", "wind_mult": 1.35, "misfire_weather": "rain",
+      "visibility_m": 900, "fatigue_mult": 1.5, "mood_bias": -0.05,
+      "damage_per_hour": { "hull": 0.0015, "mast": 0.003 }, "hours": [1.0, 5.0],
+      "text": "一条黑线压过来，甲板上先落了几滴雨，接着是整片水。"
+    },
+    {
+      "id": "storm", "name": "风暴", "wind_mult": 1.9, "misfire_weather": "rain",
+      "visibility_m": 300, "fatigue_mult": 2.0, "mood_bias": -0.14,
+      "damage_per_hour": { "hull": 0.006, "mast": 0.009, "rudder": 0.003 }, "hours": [2.0, 8.0],
+      "text": "桅杆在响。每一道浪都比甲板高，掌舵的人要绑在舵柄上。"
+    },
+    {
+      "id": "fog", "name": "浓雾", "wind_mult": 0.7, "misfire_weather": "damp",
+      "visibility_m": 150, "fatigue_mult": 1.15, "mood_bias": -0.05,
+      "damage_per_hour": {}, "hours": [1.0, 6.0],
+      "text": "什么都看不见。瞭望员只能听 —— 听浪、听鸟、听别人的钟。"
+    },
+    {
+      "id": "calm", "name": "无风带", "wind_mult": 0.22, "misfire_weather": "damp",
+      "visibility_m": 8000, "fatigue_mult": 1.25, "mood_bias": -0.08,
+      "damage_per_hour": {}, "hours": [3.0, 12.0],
+      "text": "帆垂着不动。正午的甲板烫得站不住人，四十个人挤在阴影里等风。"
+    }
+  ],
+  "_bands": "按**世界坐标的 y**（南北）分带：风与天气的脾气不一样。y 越小越靠北。",
+  "bands": [
+    { "id": "north", "y_max": 12000, "states": ["clear", "clear", "fog", "storm", "squall"], "name": "比斯开湾以北" },
+    { "id": "trades", "y_max": 26000, "states": ["clear", "clear", "squall", "fog"], "name": "信风带" },
+    { "id": "doldrums", "y_max": 36000, "states": ["calm", "calm", "squall", "fog"], "name": "赤道无风带" },
+    { "id": "tropical", "y_max": 48001, "states": ["squall", "clear", "storm", "squall"], "name": "热带海岸" }
+  ],
+  "_chain_trigger": "事件池要的那一环：打进风暴带的航程——events.json 里的 storm_belt 靠它。"
+}

@@ -28,6 +28,10 @@ var society := Society.new()       # 船上社会（M5，本船）
 var dilemmas := Dilemma.new()      # 三个高压抉择（M5，本船）
 var battle: LandBattle = null      # 上岸打起来的那一场（M6，null = 没在打）
 var culture := Culture.new()        # 当地文明的三档态度（M6）
+var weather := Weather.new()        # 自然环境（M7）
+var events := EventPool.new()       # 三类事件池（M7）
+var knowledge := Knowledge.new()    # 知识：发现即记录（M7）
+var memory := {}                    # 世界记住你做过什么（M7）：掠夺/救人/毁约/贸易
 var ending_score := {"wealth": 0, "voyage": 0, "knowledge": 0, "crew": 0, "history": 0}
 var link: NetLink = null           # 联机（M3）：单机时是 null，走的是同一套调用
 var region_path := Sea.DATA_PATH   # 这一局用的是哪片海（静态数据，不进存档）
@@ -52,6 +56,7 @@ var reef_hit := false
 var docked_port := ""              # 现在靠在哪个港（空 = 在海上）
 var shortage_events := 0           # 欠过几次粮（M5 要拿它算士气）
 var _supply_acc := 0.0             # 补给结算的累加器（游戏秒）
+var _weather_acc := 0.0            # 风暴磨损的累加器（游戏秒）
 
 # --- 登陆 ---
 var ashore := false
@@ -93,6 +98,9 @@ func setup(region := Sea.DATA_PATH, ship_id := "trinidad", inherited := {}) -> v
 	society.setup(roster)
 	dilemmas.setup()
 	culture.setup()
+	weather.setup()
+	events.setup()
+	memory = {}
 	story.load_data()
 	# 陆地：船开不上干地（沙滩那一圈是浅水，可以靠上去登陆）。
 	# M2 起陆地是一张形状表（海岸 + 多个岛），不再是"一个圆心加一个半径"。
@@ -118,9 +126,11 @@ func tick(delta: float) -> void:
 	var pos := ship.position_m()
 	journal.advance(_prev_pos, pos)
 	_prev_pos = pos
+	weather.step(delta, pos)           # 天气先走：它改风、改损伤、改瞭望距离
 	# 洋流与背风区：同一个风，在岛后面就是软的；同一片水，在洋流带上自己会动
 	ship.current_world = sea.current_at(pos)
-	var wind_vec := wind.velocity_world() * sea.lee_factor(pos)
+	# **天气真的改风**：风暴里同样的信风是 1.9 倍，无风带里只剩两成
+	var wind_vec := wind.velocity_world() * sea.lee_factor(pos) * weather.wind_mult()
 	# 指挥链路（船长在不在船上都一样：不在就是大副在管）
 	nav.decide(ship)
 	crew.set_target_heading(nav.target_heading_deg)
@@ -152,6 +162,8 @@ func tick(delta: float) -> void:
 		_walk_ashore(delta)
 		if party.boarding and party.boarded_all():
 			_finish_boarding()
+	_weather_wear(delta)
+	events.tick(delta, self)
 	_consume_supplies(delta)
 	if battle != null and not battle.over:
 		battle.tick(delta, cargo)
@@ -239,8 +251,9 @@ func _consume_supplies(delta: float) -> void:
 
 func _society_tick(delta: float) -> void:
 	"""船上社会：规则给的乘数灌进名册，关系与紧张度往前走，事件冒出来。"""
-	roster.fatigue_mult = rules.fatigue_mult()
-	roster.mood_bias = rules.mood_bias()
+	# 规矩管一半，天气管另一半：风暴里更累、更闷（M7 把天气接进 M5 的两个乘数）
+	roster.fatigue_mult = rules.fatigue_mult() * weather.fatigue_mult()
+	roster.mood_bias = rules.mood_bias() + weather.mood_bias()
 	var near_land: bool = (not sea.land_containing(ship.position_m()).is_empty()) \
 		or float(sea.nearest_shore(ship.position_m())["distance_m"]) < 2500.0
 	society.tick(delta, roster, rules, cargo, near_land)
@@ -251,6 +264,31 @@ func _society_tick(delta: float) -> void:
 		if m.job == "deserted" and not fired.has("deserted_" + m.id):
 			fired["deserted_" + m.id] = true
 	dilemmas.check(self)
+
+
+func _weather_wear(delta: float) -> void:
+	"""风暴每小时往船体和桅杆上砸损伤 —— 这是"风暴真的改变航行结果"的一半
+	（另一半是 `wind_mult`：同样的航程，风暴里到得晚、伤得多）。"""
+	var per_hour := weather.damage_per_hour()
+	if per_hour.is_empty():
+		return
+	_weather_acc += delta
+	if _weather_acc < 60.0:
+		return
+	_weather_acc = 0.0
+	var hours := 60.0 * VoyageJournal.voyage_time_scale / 3600.0
+	for part in per_hour.keys():
+		ship.apply_damage(str(part), float(per_hour[part]) * hours)
+
+
+func _note_weather() -> void:
+	"""天气也是知识：第一次遇到风暴/浓雾/无风带的人会把它写下来。"""
+	if weather.state_id == "clear" or knowledge.has("current", "weather_" + weather.state_id):
+		return
+	if weather.spells == 0 and weather.hours_left > 30.0:
+		return                        # 开局那一段不算"遇到过"
+	knowledge.note("current", "weather_" + weather.state_id,
+		"天气：%s" % weather.state_name(), str(weather.state().get("text", "")), t)
 
 
 func set_rule(rule_id: String, option_id: String) -> bool:
@@ -385,6 +423,9 @@ func dock() -> String:
 	var p := sea.port_at(ship.position_m())
 	docked_port = str(p.get("id", ""))
 	journal.decide("靠上%s，开始盘点货舱。" % str(p.get("name", "港口")))
+	# 知识：到过的港都记一条（M7 的"发现即记录"）
+	knowledge.note("trade", "port_" + docked_port,
+		"港口：%s" % str(p.get("name", "")), "锚地在这一带。", t)
 	_say("靠上%s。" % str(p.get("name", "港口")), true)
 	return ""
 
@@ -410,7 +451,8 @@ func can_trade_here() -> bool:
 	客户端可以看价格与库存（只读），但按不下"买"—— 这条写进 docs/17 的限制清单，
 	两段式确认（申请→房主执行→回执）留给以后。
 	"""
-	return docked_port != "" and not is_client()
+	# M7：因果链里那一环 —— 坏名声会让港口不做你的生意（`ports_refuse`）
+	return docked_port != "" and not is_client() and not fired.has("ports_refuse")
 
 
 func port_buy(item: String, n: int) -> Dictionary:
@@ -626,6 +668,8 @@ func _survey_at(pos: Vector2) -> void:
 			continue
 		if Geom2D.center_dist(f["shape"], pos) <= Geom2D.extent(f["shape"]) + LOOKOUT_M:
 			known_places[id] = true
+			# 知识：认出一块陆地就记一条（M7 的"发现即记录"）
+			knowledge.note("chart", "land_" + id, "陆地：%s" % str(f.get("name", id)), "", t)
 	# 港口和陆地一样：走到了才在地图上写得出名字（出发港开局就在脚下）
 	for p in sea.world.ports():
 		var pid := str(p["id"])
@@ -742,6 +786,19 @@ func _walk_ashore(delta: float) -> void:
 	if visited.has(id):
 		return
 	visited[id] = true
+	# 知识：上岸看到的东西按类记下来（遗迹/村落/溪流各有各的类别）
+	match id:
+		"ruins":
+			knowledge.note("language", "ruins_mark", "遗迹上的刻字",
+				str(poi.get("text", "")), t)
+		"village":
+			knowledge.note("culture", "village_contact", "部落村落（初次接触）",
+				str(poi.get("text", "")), t)
+		"stream":
+			knowledge.note("chart", "fresh_water", "岛上的淡水溪流",
+				str(poi.get("text", "")), t)
+		_:
+			knowledge.note("chart", "poi_" + id, str(poi.get("name", id)), "", t)
 	journal.landfall(str(poi["name"]), str(poi.get("text", "")), t)
 	_say("【%s】%s" % [str(poi["name"]), str(poi.get("text", ""))], true)
 	if id == "ruins" and not fired.has("ruins"):
@@ -937,6 +994,11 @@ func capture_world_state() -> Dictionary:
 		"fleet": fleet.capture_state(),
 		# 港口库存与价格：房主权威（docs/14 第 2 节）
 		"ports": ports.capture_state(),
+		# M7：自然环境、事件池、知识、世界记忆 —— 同一片海对所有人一样，所以都在世界状态里
+		"weather": weather.capture_state(),
+		"events": events.capture_state(),
+		"knowledge": knowledge.capture_state(),
+		"memory": memory.duplicate(),
 		"reef_hit": reef_hit,
 		"shortage_events": shortage_events,
 		"last_message": last_message,
@@ -962,6 +1024,10 @@ func apply_world_state(d: Dictionary) -> void:
 	known_places = (d.get("known_places", {}) as Dictionary).duplicate()
 	fleet.apply_state(d.get("fleet", []))
 	ports.apply_state(d.get("ports", {}))
+	weather.apply_state(d.get("weather", {}))
+	events.apply_state(d.get("events", {}))
+	knowledge.apply_state(d.get("knowledge", {}))
+	memory = (d.get("memory", {}) as Dictionary).duplicate()
 	reef_hit = bool(d.get("reef_hit", false))
 	shortage_events = int(d.get("shortage_events", 0))
 	last_message = str(d.get("last_message", ""))

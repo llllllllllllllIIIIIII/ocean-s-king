@@ -293,6 +293,9 @@ func _feature(s: Sea, id: String) -> Dictionary:
 func _test_survey_and_fog() -> void:
 	var v := Voyage.new()
 	v.setup(GEO)
+	# 这一段测的是"航线本身不用蹭滩"：把天气按成晴天，免得风暴磨损混进来
+	# （风暴会真的造成船体损伤是 M7 的事，另外有断言）
+	v.weather.force("clear", 9999.0)
 	_check(v.total_tiles() == 9, "海图上 9 个分块（%d）" % v.total_tiles())
 	_check(v.discovered_tiles() >= 1 and v.discovered_tiles() <= 4,
 		"开局只亮了身边那几块（%d / 9）" % v.discovered_tiles())
@@ -355,8 +358,11 @@ func _test_real_passage() -> void:
 			break
 	_check(reach, "从外海真的开进了登陆距离（%.0f 秒游戏时间，离岸 %.0f 米）" % [
 		secs, float(v.sea.nearest_shore(v.ship.position_m())["distance_m"])])
-	_check(v.ship.damage_of("hull") == 0.0,
-		"这条航线不用蹭滩（船体损伤 %.0f%%）" % (v.ship.damage_of("hull") * 100.0))
+	# 低于一次蹭滩（6%）就说明这条路线上没有被 ashore 挡住过；
+	# （M7 起天气与事件也会造成损伤，所以不写成"必须等于 0"）
+	_check(v.ship.damage_of("hull") < 0.06,
+		"这条航线不用蹭滩（船体损伤 %.0f%%，低于一次蹭滩的 6%%）" % (
+			v.ship.damage_of("hull") * 100.0))
 	_check(v.fired.has("lookout") and v.island_known,
 		"路上瞭望员报告了陆地 —— 第二幕在这条航线上会落下来")
 	# 上岸也真的走得通

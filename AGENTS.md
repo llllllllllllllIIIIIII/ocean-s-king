@@ -121,6 +121,9 @@ python tools/gen_ship.py                                               # 重新�
 | 战斗单位用局部坐标 | 仗打在世界原点（地图角上），画面上一片空 | `LandBattle.setup()` 收一个 `origin`：打起来的地方就是队伍站的地方 |
 | 小样本比概率 | 一场战斗只有十来发，"雨天哑火率是晴天的 3 倍"时通时不通 | 小样本只断言方向；比例断言用一千发的确定性硬币（模型层） |
 | 遭遇距离太近 | 齐射只来得及打一轮，"火枪厉害"与"近战有用"两件事都测不出来 | 起始间距写进常量（`START_GAP_M`）：够打三四轮齐射再见面 |
+| 天气磨损按"游戏小时"给 | 尺度会差十倍（一趟两天的航程掉 16% 船体，一夜把船开报废） | 一律按**航程小时**给（`damage_per_hour × 60 游戏秒 × 125 / 3600`） |
+| 用粗步长跑船的物理 | 位置变成 `-nan` | 天气/事件/社会可以用 60 秒一步；**船的物理必须 `SIM_DT`**：测试里两种步长分开跑 |
+| 事件冷却比某个状态的寿命还长 | 链子那一环永远等不到（冷却 900 游戏秒 vs 风暴 12 航程小时 = 345 游戏秒） | 让状态活得比冷却长（链子里的风暴改成 48 小时） |
 
 ---
 
@@ -129,10 +132,10 @@ python tools/gen_ship.py                                               # 重新�
 > 完整说明在 `docs/13-v0.5开发计划.md` 第 8 节。这里只留最短的版本。
 
 **每期开工前**
-1. 跑一遍上一期的全部验证通道，确认没坏（到 M6 为止：176/81/15/17/84/62/90/63/82/20/37/22/41/54/69/**48**/**28** + `check_motion_ownership`。
-   后八条是 M3–M6 的：`test_fleet`、`test_net_loopback`（约 20 秒）、`test_resources`、
-   `test_ports`、`test_society`（约 34 秒）、`test_weapons`、`test_land_battle`。
-   另外 `python tools/weapons_prototype.py --mode metrics` 也是这一期的一道闸）
+1. 跑一遍上一期的全部验证通道，确认没坏（到 M7 为止：176/81/15/17/84/62/90/63/82/20/37/22/41/54/69/48/28/**44** + `check_motion_ownership`。
+   后九条是 M3–M7 的：`test_fleet`、`test_net_loopback`（约 20 秒）、`test_resources`、
+   `test_ports`、`test_society`（约 34 秒）、`test_weapons`、`test_land_battle`、`test_events`。
+   另外 `python tools/weapons_prototype.py --mode metrics` 也是那道闸）
 2. 读 `docs/07-交接.md`
 3. 在 `docs/13` 当期卡片下写下"这一期的第一个动作"
 

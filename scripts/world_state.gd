@@ -17,6 +17,8 @@ const FIELDS := [
 	"fleet",
 	# M4：四个港口的库存与价格（房主权威）+ 欠粮次数
 	"ports", "shortage_events",
+	# M7：自然环境、事件池、知识、世界记忆（都是"同一片海对所有人一样"的东西）
+	"weather", "events", "knowledge", "memory",
 	"last_message", "message_timer", "log_lines", "pending_reports",
 	"_shore_cooldown", "story", "journal",
 ]

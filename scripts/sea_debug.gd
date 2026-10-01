@@ -66,6 +66,7 @@ var _net: NetLink                  # M3：把船队与世界接上网络的胶�
 var _room: RoomPanel               # M3：房间界面（开房间 / 加入 / 单机）
 var _port_panel: PortPanel         # M4：港口面板（补给 / 修船 / 买卖）
 var _dilemma_card: DilemmaCard     # M5：抉择卡（缺粮 / 重伤病 / 部落冲突）
+var _knowledge_panel: KnowledgePanel  # M7：知识与日志页（K）
 var _panel: SailPanel
 var _show_panel := false
 var _crew_panel: CrewPanel
@@ -380,6 +381,7 @@ func _draw() -> void:
 	if a > 0.01:
 		_draw_terrain(a)
 	_draw_tile_seams(a)
+	_draw_weather_tint()
 	# 船：交给真正的 ShipRenderer 画（海图和船内视图是同一个渲染器）
 	_sync_ship_view()
 	_draw_fleet_marks(a)
@@ -482,6 +484,26 @@ func _draw_terrain(a: float) -> void:
 			draw_arc(v, float(poi.get("radius_m", 0.0)) * PPM, 0, TAU, 24,
 				Color(col, 0.45 * a), 1.5)
 			_label(v, str(poi["name"]), col)
+
+
+func _draw_weather_tint() -> void:
+	"""天气的**画面**：风暴压暗、起白头浪，浓雾糊一层灰，无风带发白。
+
+	它只是表现（不改任何数）—— 数在 `scripts/weather.gd` 里改风、改损伤、改瞭望。
+	"""
+	var w := voyage.weather
+	if w == null or w.state_id == "clear":
+		return
+	var size_px := voyage.sea.size_m() * PPM
+	match w.state_id:
+		"storm":
+			draw_rect(Rect2(Vector2.ZERO, size_px), Color(0.05, 0.08, 0.12, 0.35), true)
+		"squall":
+			draw_rect(Rect2(Vector2.ZERO, size_px), Color(0.08, 0.11, 0.16, 0.2), true)
+		"fog":
+			draw_rect(Rect2(Vector2.ZERO, size_px), Color(0.72, 0.76, 0.8, 0.42), true)
+		"calm":
+			draw_rect(Rect2(Vector2.ZERO, size_px), Color(0.6, 0.66, 0.7, 0.12), true)
 
 
 func _draw_battle() -> void:
@@ -644,6 +666,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if _port_panel != null and _port_panel.visible and event is InputEventKey \
 			and (event as InputEventKey).pressed and not (event as InputEventKey).echo:
 		if _port_panel.handle_key(event as InputEventKey):
+			return
+	if _knowledge_panel != null and _knowledge_panel.visible and event is InputEventKey \
+			and (event as InputEventKey).pressed and not (event as InputEventKey).echo:
+		if _knowledge_panel.handle_key(event as InputEventKey):
 			return
 	# 抉择卡优先：桌上摊着一件要拿主意的事，别的键先让它
 	if _dilemma_card != null and _dilemma_card.visible and event is InputEventKey \
@@ -812,6 +838,11 @@ func _key(k: InputEventKey) -> void:
 			if voyage.battle != null and not voyage.battle.over:
 				voyage.battle.intent = "withdraw"
 				voyage.say("（陆战）慢慢退回海滩。", true)
+		KEY_K:
+			# M7：知识与日志页
+			_knowledge_panel.visible = not _knowledge_panel.visible
+			if _knowledge_panel.visible:
+				_knowledge_panel.queue_redraw()
 		KEY_ESCAPE:
 			_picker.visible = false
 			_port_panel.visible = false
@@ -879,6 +910,13 @@ func _build_hud() -> void:
 	_port_panel.size = get_viewport_rect().size
 	_port_panel.visible = false
 	cl2.add_child(_port_panel)
+	# M7：知识与日志页
+	_knowledge_panel = KnowledgePanel.new()
+	_knowledge_panel.font = _font
+	_knowledge_panel.voyage = voyage
+	_knowledge_panel.size = get_viewport_rect().size
+	_knowledge_panel.visible = false
+	cl2.add_child(_knowledge_panel)
 
 
 func _build_overlays() -> void:
@@ -937,6 +975,8 @@ func _update_hud() -> void:
 		_crew_panel.update_from(voyage.roster)
 	if _port_panel.visible:
 		_port_panel.queue_redraw()
+	if _knowledge_panel.visible:
+		_knowledge_panel.queue_redraw()
 	# M5：有抉择等着，就把卡摊开（卡片自己从 Voyage 读，不替玩家决定）
 	_dilemma_card.refresh()
 	_hud.time_scale = _time_scales[_time_scale_idx]
@@ -1203,6 +1243,25 @@ func _run_shot_timeline() -> void:
 		109:
 			_capture("45_dilemma")
 		110:
+			# M7：知识与日志页 + 风暴的画面
+			_dilemma_card.visible = false
+			while voyage.dilemmas.current() != "":
+				var opts2: Array = voyage.dilemmas.take_current().get("options", [])
+				if opts2.is_empty():
+					break
+				voyage.answer_dilemma(str((opts2[0] as Dictionary).get("id", "")))
+			voyage.knowledge.note("current", "storm_seen", "风暴带", "桅杆在响的那两天。", voyage.t)
+			_knowledge_panel.visible = true
+		111:
+			_capture("47_knowledge")
+		112:
+			_knowledge_panel.visible = false
+			voyage.weather.force("storm", 48.0)      # 画面上看看风暴长什么样
+			_zoom = 1.0
+			_warp(2.0)
+		113:
+			_capture("48_storm")
+		114:
 			get_tree().quit(0)
 
 

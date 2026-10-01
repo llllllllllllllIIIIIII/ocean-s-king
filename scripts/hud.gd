@@ -96,6 +96,7 @@ func _draw_status() -> void:
 	lines.append("%s　已探明 %d/%d 块海图" % [
 		v.roster.describe(), v.discovered_tiles(), v.total_tiles()])
 	lines.append("船队：%s" % v.fleet.describe_short())
+	lines.append("天气：%s　知识 %d 条（按 K 看）" % [v.weather.state_name(), v.knowledge.count()])
 	lines.append("货舱 %.1f/%.1f 吨　金币 %d　%s" % [
 		v.cargo.used_kg() / 1000.0, v.cargo.capacity_kg / 1000.0, v.cargo.money,
 		"⚠ 缺粮缺水" if v.cargo.starving else "补给尚可"])
@@ -145,7 +146,7 @@ func _draw_banner() -> void:
 func _draw_controls() -> void:
 	draw_string(font, Vector2(16.0, size.y - 20.0),
 		"左键 目标点·带队　X 抛锚　1/2/3 帆档　+/− 操帆人数　L 登陆·返船　"
-		+ "P 靠港·港口　Tab 帆态　C 船员　. 快进　F5 存档　F9 读档　滚轮 缩放（拉远 = 海图）",
+		+ "P 靠港　Tab 帆态　C 船员　K 知识　. 快进　F5 存档　F9 读档　滚轮 缩放（拉远 = 海图）",
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.62, 0.7, 0.78))
 
 

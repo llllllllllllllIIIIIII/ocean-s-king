@@ -1,0 +1,58 @@
+{
+  "_comment": "**因果链**（M7 验收第 1 条）。这六条不是散的事件，是一条链子上的六个环：部落冲突 → 当地人敌意 → 港口拒绝贸易 → 补给断 → 闯进风暴带 → 风暴损伤 → 船员绝望。每一环的 requires 都盯着**别的系统**里的真实状态（culture / ports / cargo / weather / society）。",
+  "version": 1,
+  "pool": "chain",
+  "events": [
+    {
+      "id": "locals_anger", "name": "当地人敌意", "priority": 10,
+      "requires": { "culture_hostile": ["green_cape"] },
+      "effects": { "flag": "locals_hostile", "tension": 0.08,
+        "message": "岸上的鼓声一直敲到天黑 —— 你们被记住了。" },
+      "text": "从那一天起，这一带的海岸上不再有人举着手走过来。",
+      "knowledge": { "category": "war", "id": "green_cape_hostile", "title": "绿岬岛：敌意",
+        "text": "当地人记住了我们做过的事。靠近时要按敌意对待。" }
+    },
+    {
+      "id": "port_refused", "name": "港口拒绝贸易", "priority": 10,
+      "requires": { "flags_all": ["locals_hostile"] },
+      "effects": { "flag": "ports_refuse", "memory_add": { "broken_faith": 1 },
+        "message": "港口的管事说：你们的事已经传过来了。面粉、水、火药 —— 一样也不卖。" },
+      "text": "消息比船快。接下来的港口都不做你们的生意了。",
+      "knowledge": { "category": "trade", "id": "ports_refuse", "title": "贸易情报：被拒",
+        "text": "毁约与杀伤会传遍整条航线。补给要靠自己去别处找。" }
+    },
+    {
+      "id": "supplies_run_out", "name": "补给断了", "priority": 10,
+      "requires": { "flags_all": ["ports_refuse"], "supplies_below": { "water": 4 } },
+      "effects": { "flag": "supplies_gone", "mood": -0.10, "tension": 0.10,
+        "message": "水只剩最后三桶。有人说听见了岸上的狗叫 —— 那是幻觉。" },
+      "text": "补给断了，只能咬着牙往前。",
+      "knowledge": { "category": "trade", "id": "no_supply_run", "title": "被迫的航法",
+        "text": "没有补给港，就只能闯进那片没人愿意走的海。" }
+    },
+    {
+      "id": "storm_belt", "name": "闯进风暴带", "priority": 10,
+      "requires": { "flags_all": ["supplies_gone"] },
+      "effects": { "flag": "storm_hit", "weather": { "id": "storm", "hours": 48.0 },
+        "message": "为了省时间，你下令扎进那片发黑的海 —— 天在两小时里就黑了。" },
+      "text": "被逼出来的近路，穿过的是一片风暴。",
+      "knowledge": { "category": "current", "id": "storm_belt", "title": "风暴带",
+        "text": "这一带的海在夏末会连成一条黑带。省时间的代价是桅杆。" }
+    },
+    {
+      "id": "storm_damage", "name": "风暴损伤", "priority": 10,
+      "requires": { "flags_all": ["storm_hit"], "weather_is": ["storm"] },
+      "effects": { "flag": "storm_damaged", "damage": { "hull": 0.08, "mast": 0.06 },
+        "mood": -0.12, "tension": 0.08,
+        "message": "桅杆裂了半尺，船底在漏。木匠喊着要人拿桶。" },
+      "text": "风暴真在船上留了印记。"
+    },
+    {
+      "id": "crew_despair", "name": "船员绝望", "priority": 10,
+      "requires": { "flags_all": ["storm_damaged"], "tension_min": 0.45 },
+      "effects": { "flag": "despair", "mood": -0.18, "tension": 0.20, "discipline": -0.10,
+        "message": "有人在夜里问：我们还在往新大陆开吗，还是只是在往海上开。" },
+      "text": "船没沉，人心先沉了。"
+    }
+  ]
+}

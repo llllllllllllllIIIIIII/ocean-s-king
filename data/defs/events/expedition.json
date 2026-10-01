@@ -1,0 +1,42 @@
+{
+  "_comment": "探险事件池（M7）：上岸之后遇到的东西。态度（M6 的 culture）在这里起作用。",
+  "version": 1,
+  "pool": "expedition",
+  "events": [
+    {
+      "id": "ruins_writing", "name": "遗迹上的字", "priority": 2,
+      "requires": { "ashore": true, "flags_all": ["ruins"], "flags_none": ["read_writing"] },
+      "effects": { "flag": "read_writing", "memory_add": { "knowledge": 1 },
+        "message": "文书把那面墙上的字全抄了下来 —— 三十七个字母，一个也不认识。" },
+      "text": "有人比我们更早到过这里。",
+      "knowledge": { "category": "language", "id": "old_writing", "title": "陌生的文字",
+        "text": "遗迹墙上的字母与《圣经》的完全不同。也许是一种语言。" }
+    },
+    {
+      "id": "new_species", "name": "没见过的鸟", "priority": 1,
+      "requires": { "ashore": true, "days_min": 5 },
+      "effects": { "mood": 0.05,
+        "message": "一只从来没有见过的鸟落在帆桁上，看了我们一会儿又飞走了。" },
+      "text": "新大陆的鸟也是新的。",
+      "knowledge": { "category": "species", "id": "unknown_bird", "title": "未知的鸟",
+        "text": "红胸、长喙、不怕人。带回欧洲也许值钱。" }
+    },
+    {
+      "id": "friendly_trade", "name": "一次交换", "priority": 2,
+      "requires": { "ashore": true, "culture_stance": { "green_cape": "friendly" } },
+      "effects": { "supplies": { "food": 40, "water": 4 }, "mood": 0.06,
+        "memory_add": { "traded": 1 },
+        "message": "他们用鱼干和淡水换走了几把刀。临走时两边都笑了。" },
+      "text": "交换比开火便宜。",
+      "knowledge": { "category": "culture", "id": "green_cape_friendly", "title": "绿岬岛：可交换",
+        "text": "他们会用食物和水换铁器。手势够用。" }
+    },
+    {
+      "id": "snake_bite", "name": "毒蛇", "priority": 3,
+      "requires": { "ashore": true, "days_min": 6 },
+      "effects": { "health": -0.2, "mood": -0.05,
+        "message": "走在队伍第三个的人被咬了小腿。外科医生割开伤口，用火烫。" },
+      "text": "岸上比船上更危险。"
+    }
+  ]
+}

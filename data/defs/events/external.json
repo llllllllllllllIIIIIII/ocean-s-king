@@ -1,0 +1,43 @@
+{
+  "_comment": "外部事件池（M7）：海上的东西，不是船里的东西。砍单预案按每类 4 条做。",
+  "version": 1,
+  "pool": "external",
+  "events": [
+    {
+      "id": "sail_sighted", "name": "帆影", "priority": 1,
+      "requires": { "days_min": 3 },
+      "effects": { "mood": 0.02,
+        "message": "瞭望员看见北边有一片帆影，两刻钟后就不见了 —— 谁也没追上谁。" },
+      "text": "大西洋上有别人。",
+      "knowledge": { "category": "trade", "id": "sails_west", "title": "别人的帆",
+        "text": "这条航线上不止我们一支船队。" }
+    },
+    {
+      "id": "derelict", "name": "沉船残骸", "priority": 1,
+      "requires": { "days_min": 6 },
+      "effects": { "supplies": { "wood": 6 }, "mood": -0.04, "memory_add": { "salvage": 1 },
+        "message": "水面上飘着一截断桅和两只空桶。木匠说这些木头还能用。" },
+      "text": "别人的终点成了我们的补给。",
+      "knowledge": { "category": "chart", "id": "derelict_1", "title": "沉船位置",
+        "text": "这一段海底下躺着至少一条船。" }
+    },
+    {
+      "id": "new_shoal", "name": "新出现的浅滩", "priority": 2,
+      "requires": { "days_min": 4 },
+      "effects": { "damage": { "hull": 0.03 }, "mood": -0.03,
+        "message": "水色突然变浅。测深的人喊了一声，舵手把船头压开了半链。" },
+      "text": "海图上没有的地方，都得自己画。",
+      "knowledge": { "category": "chart", "id": "shoal_1", "title": "未标注的浅滩",
+        "text": "这里有一片海图上没有的浅滩。要记下来。" }
+    },
+    {
+      "id": "turtle_school", "name": "海龟群", "priority": 1,
+      "requires": { "days_min": 10 },
+      "effects": { "supplies": { "food": 30 }, "mood": 0.06,
+        "message": "成百只海龟从船边过。两天里每个人都吃上了新鲜肉。" },
+      "text": "海给了我们一顿饭。",
+      "knowledge": { "category": "species", "id": "turtle_school", "title": "海龟群",
+        "text": "这一段海在特定时候有成群的海龟 —— 也是食物。" }
+    }
+  ]
+}
