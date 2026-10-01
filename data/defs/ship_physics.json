@@ -1,0 +1,32 @@
+{
+  "_comment": "船体物理与帆的气动参数（docs/01 支柱 2）。这里是船的**固有属性**，不是会变的运行时状态——速度、帆角、损伤、船员位置一律只在内存里（AGENTS.md 铁律 1）。tools/aero_prototype.py 和 scripts/ship_physics.gd 读的是同一份数字，改这里两边一起变。",
+  "version": 1,
+  "ship_id": "caravel_60",
+  "_calibrated_by": "python tools/aero_prototype.py --mode criteria（四项硬指标全过；标的文件见 docs/08）",
+  "hull": {
+    "mass_kg": 60000.0,
+    "gm_m": 0.55,
+    "h_ce_m": 10.5,
+    "k_lat_n_per_ms": 20000.0,
+    "c_lin_n_per_ms": 137.0,
+    "c_quad_n_per_ms2": 172.0,
+    "c_wave_n_per_ms4": 9.0
+  },
+  "keel": {
+    "_comment": "龙骨侧向力封顶在 F_max = k_stall * (u^2+w^2+u_min^2)；顶不住的部分由船体横流阻力 c_cross * w^2 承担。诱导（漂移）阻力 = |F_lat| * sin(侧滑角)。四项硬指标的标定就落在这一组数字上（tools/aero_prototype.py --mode criteria 全过）。",
+    "k_stall_n_per_ms2": 800.0,
+    "c_cross_n_per_ms2": 12000.0,
+    "u_min_ms": 0.3
+  },
+  "sails": {
+    "main_area_m2": 62.0,
+    "jib_area_m2": 28.0,
+    "jib_attack_offset_deg": -8.0
+  },
+  "sail_polar": {
+    "_comment": "软帆（含桅杆干扰）的升力/阻力系数表，线性插值。18 度附近最大升力，之后失速。",
+    "alpha_deg": [0.0, 5.0, 10.0, 15.0, 18.0, 25.0, 35.0, 50.0, 70.0, 90.0],
+    "cl": [0.00, 0.40, 0.78, 1.05, 1.15, 1.05, 0.82, 0.55, 0.34, 0.20],
+    "cd": [0.02, 0.04, 0.09, 0.16, 0.24, 0.45, 0.75, 1.00, 1.15, 1.20]
+  }
+}

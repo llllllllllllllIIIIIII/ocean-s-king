@@ -22,6 +22,7 @@ Desktop.ini
 *.tmp
 *.log
 _scratch/
+__pycache__/
 
 # 截图产物：写在 .shots/ 里（点开头目录 Godot 不会当资源导入，不污染仓库）
 .shots/

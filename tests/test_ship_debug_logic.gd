@@ -83,11 +83,9 @@ func _run_assertions() -> void:
 	_check(state["mode"] == "ZOOM", "在最上层继续向上应回到缩放模式，实际 %s" % state["mode"])
 	_check(state["layer"] == 2, "回到甲板应为 L2，实际 L%d" % state["layer"])
 
-	# --- 相机必须始终对准船中心 ---
-	var ship: Dictionary = scene.get_node("ShipView").ship
-	var expect_center := Vector2(
-		float(ship["hull"]["cells_x"]) * 40.0 * 0.5,
-		float(ship["hull"]["cells_y"]) * 40.0 * 0.5)
+	# --- 相机必须始终对准船中心（船自 Day 3 起会动，所以要问渲染器要当前中心）---
+	var view = scene.get_node("ShipView")
+	var expect_center: Vector2 = view.hull_center_world_px()
 	var cam_pos: Vector2 = scene.get_node("Camera2D").position
 	_check(cam_pos.is_equal_approx(expect_center),
 		"相机未对准船中心：实际 %s，应为 %s" % [str(cam_pos), str(expect_center)])
