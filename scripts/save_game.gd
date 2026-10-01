@@ -31,7 +31,8 @@ static func save_game(v: Voyage, slot := "auto") -> Dictionary:
 		"saved_at": Time.get_datetime_string_from_system(false, true),
 		"slot": slot,
 		"world": v.capture_world_state(),
-		"ships": [v.capture_ship_state()],
+		# ships[]：本机那条是 detailed，其余是 abstract（docs/14 第 4.1 节）
+		"ships": v.capture_fleet(),
 	}
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
@@ -71,7 +72,7 @@ static func load_into(v: Voyage, slot := "auto") -> Dictionary:
 	if ships.is_empty():
 		return {"ok": false, "reason": "存档里没有任何船（%s）" % path}
 	v.apply_world_state(d.get("world", {}))
-	v.apply_ship_state(ships[0])
+	v.apply_fleet(ships)
 	return {"ok": true, "path": path, "slot": slot}
 
 

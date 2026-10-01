@@ -11,7 +11,7 @@ extends RefCounted
 # 那是 M3 的事，M1 先只放"细化船"的字段。
 
 const FIELDS := [
-	"id", "kind", "ship", "orders", "nav", "crew", "roster",
+	"id", "kind", "ship_name", "ship", "orders", "nav", "crew", "roster",
 	"ashore", "captain_pos", "captain_target", "ashore_count", "landing_point",
 	"landing_land_id", "party",
 ]

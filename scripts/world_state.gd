@@ -13,6 +13,8 @@ const FIELDS := [
 	"t", "day", "wind", "fired", "island_known", "visited",
 	# M2：地图的发现记录（哪些 16km 分块已经"看见过"、哪块陆地已经认得名字）
 	"discovered", "known_places", "reef_hit",
+	# M3：船队里除本机以外的船（AI 船 / 别人的船）的摘要
+	"fleet",
 	"last_message", "message_timer", "log_lines", "pending_reports",
 	"_shore_cooldown", "story", "journal",
 ]

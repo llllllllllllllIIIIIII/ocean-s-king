@@ -95,6 +95,7 @@ func _draw_status() -> void:
 		v.ship.describe_damage(), v.crew.hands_on_sails])
 	lines.append("%s　已探明 %d/%d 块海图" % [
 		v.roster.describe(), v.discovered_tiles(), v.total_tiles()])
+	lines.append("船队：%s" % v.fleet.describe_short())
 	if v.ashore:
 		lines.append("☀ 你在岸上，身边 %d 人 —— 左键带队走，走回滩头按 L 上船" % v.party_size())
 	elif v.can_land():

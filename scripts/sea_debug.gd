@@ -24,6 +24,8 @@ const SIM_DT := 0.05
 # 海图淡入的窗口：zoom 0.45 还是纯地形，0.16 以下全是海图符号（中间是交叉淡入）
 const CHART_FADE_HI := 0.45
 const CHART_FADE_LO := 0.16
+# 别人的船：拉到这个倍率以下就只画标记与摘要（海图尺度上没人想看四条船的帆）
+const FLEET_DETAIL_ZOOM := 0.7
 # 一路滚到底的"船内视图"倍率：0.5 × 80 = 40 像素/米，正好等于船内调试视图的比例。
 # 也就是说这个场景的相机是**连续的**：整片海 → 海图 → 船 → 船舱，同一套东西。
 const SHIP_ZOOM := 80.0
@@ -58,6 +60,10 @@ var _shot_dir := "res://.shots"
 var _wind_gizmo: WindGizmo
 var _ship_view: ShipRenderer       # 海图上用**真正的 SVG 船**，不是占位三角块
 var _chart: ChartView              # M2：拉远之后淡入的海图层
+var _fleet_views := {}             # M3：别人的船（id -> ShipRenderer）——只看外观，没有逐人细节
+var _session: NetSession           # M3：联机会话（单机时也在，只是没开）
+var _net: NetLink                  # M3：把船队与世界接上网络的胶水
+var _room: RoomPanel               # M3：房间界面（开房间 / 加入 / 单机）
 var _panel: SailPanel
 var _show_panel := false
 var _crew_panel: CrewPanel
@@ -75,6 +81,16 @@ func _ready() -> void:
 	_chart.voyage = voyage
 	_chart.px_per_m = PPM
 	add_child(_chart)
+	# 别人的船：一艘一个渲染器，只画外观。它们**没有**船员点 —— 别人船上
+	# 没有逐人模拟，这是 docs/14 那条 UI 规矩的画面形态。
+	for rid in voyage.fleet.others():
+		var rv := ShipRenderer.new()
+		rv.px_per_m = PPM
+		rv.draw_sea = false
+		rv.show_ghost = false
+		add_child(rv)
+		rv.setup()
+		_fleet_views[rid] = rv
 	_ship_view = ShipRenderer.new()
 	_ship_view.px_per_m = PPM
 	_ship_view.draw_sea = false        # 海面由这个场景自己画
@@ -91,6 +107,7 @@ func _ready() -> void:
 	_chart.font = _font
 	_build_hud()
 	_build_overlays()
+	_build_net()
 	_zoom = 0.8                         # 开局在港里：看得见自己的船、锚地和这段海岸
 	_update_camera()
 	_update_hud()
@@ -99,17 +116,114 @@ func _ready() -> void:
 	_started = _shot_mode
 	if not _shot_mode:
 		_act_card_seconds = 9.0
-		_show_overlay(_title, true)
+		# 先摆房间界面：单机 / 开房间 / 加入。选完才开始一局。
+		_show_overlay(_title, false)
+		_hud_layer.visible = false
+		_panel_layer.visible = false
+		_room.open()
 	else:
 		_act_card_seconds = 2.0
+
+
+func _build_net() -> void:
+	"""联机的接线（M3）。**单机也走这一套对象**，只是没有开网络：
+	这样"1 个人 + 3 条 AI"和"4 个人"共用同一条代码路径（docs/13 M3 卡片第 4 条）。"""
+	_session = NetSession.new()
+	_session.name = "NetSession"        # RPC 按节点路径找方法：两端必须同名同路径
+	add_child(_session)
+	_net = NetLink.new()
+	_net.name = "NetLink"
+	add_child(_net)
+	_net.welcome.connect(_on_welcome)
+	_net.rejected.connect(_on_rejected)
+
+	var cl := CanvasLayer.new()
+	cl.layer = 10                        # 比标题卡还高一层
+	add_child(cl)
+	_room = RoomPanel.new()
+	_room.font = _font
+	_room.session = _session
+	_room.voyage = voyage
+	_room.size = get_viewport_rect().size
+	_room.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_room.visible = false
+	_room.choose.connect(_on_room_choose)
+	cl.add_child(_room)
+
+
+func _on_room_choose(mode: String, ip: String) -> void:
+	match mode:
+		RoomPanel.MODE_SOLO:
+			_room.visible = false
+			_begin_voyage(true)
+		RoomPanel.MODE_HOST:
+			var r := _session.host_game(NetSession.PORT, "房主")
+			if not bool(r.get("ok", false)):
+				_room.hint = str(r.get("reason", "开不了房间"))
+				_room.queue_redraw()
+				return
+			_net.attach(voyage, _session)
+			_room.visible = false
+			voyage.say("（船队）房间开在 %d 端口。别人用你的 IP 连进来。" % NetSession.PORT, true)
+			_begin_voyage(true)
+		RoomPanel.MODE_JOIN:
+			var ip2 := ip.strip_edges()
+			var port := NetSession.PORT
+			if ip2.contains(":"):
+				var parts := ip2.split(":")
+				ip2 = parts[0]
+				port = int(parts[1])
+			var r2 := _session.join_game(ip2, port, "水手")
+			if not bool(r2.get("ok", false)):
+				_room.hint = str(r2.get("reason", "连不上"))
+				_room.queue_redraw()
+				return
+			# 连上之后**等 WELCOME**：房主会告诉我们开哪条船、世界现在什么样
+			_net.attach(voyage, _session)
+			_room.hint = "连上了，等房主分配船位…"
+			_room.queue_redraw()
+
+
+func _on_welcome(ship_id: String, summary: Dictionary, world: Dictionary) -> void:
+	"""客户端拿到船位：按房主的分配把这一局重新生出来（同一个 Voyage 对象，引用不失效）。"""
+	var region := str(world.get("region", Sea.ATLANTIC_PATH))
+	voyage.setup(region, ship_id, summary)
+	NetProtocol.apply_world_projection(voyage, world)
+	_ship_view.apply_pose(voyage.ship.position_m(), voyage.ship.heading_deg())
+	_chart.world = voyage.sea.world
+	_zoom = 0.8
+	_room.visible = false
+	_started = true
+	voyage.say("（船队）你接手了 %s。海上的风与时间跟着房主走。" % voyage.fleet.name_of(ship_id), true)
+	_update_camera()
+
+
+func _on_rejected(reason: String) -> void:
+	_room.hint = reason
+	_room.queue_redraw()
+	_room.visible = true
+	_session.leave()
+
+
+func _begin_voyage(show_title: bool) -> void:
+	_room.visible = false
+	_started = not show_title
+	if show_title:
+		_show_overlay(_title, true)
+	else:
+		_hud_layer.visible = true
+		_panel_layer.visible = true
 
 
 func _process(delta: float) -> void:
 	if _shot_mode:
 		_run_shot_timeline()
 		return
+	if _session != null:
+		_session.poll(delta)
 	if _started:
 		_tick_sim(delta)
+		voyage.tick_real(delta)        # 网络与远端船插值走**真实时间**（不跟快进）
 		voyage.tick_ui(delta)          # 消息条按真实时间消失，不跟着快进闪过去
 	if _act_card_timer > 0.0:
 		_act_card_timer = maxf(0.0, _act_card_timer - delta)
@@ -254,6 +368,7 @@ func _draw() -> void:
 	_draw_tile_seams(a)
 	# 船：交给真正的 ShipRenderer 画（海图和船内视图是同一个渲染器）
 	_sync_ship_view()
+	_draw_fleet_marks(a)
 	# 拉远到看不清船的时候，给一个明显的光点，免得找不到自己的船
 	if _zoom < 0.7:
 		var sp := voyage.ship.position_m() * PPM
@@ -354,6 +469,55 @@ func _draw_terrain(a: float) -> void:
 			_label(v, str(poi["name"]), col)
 
 
+func _sync_fleet_views() -> void:
+	"""把船队摘要灌进"别人的船"的渲染器（位姿 / 帆档 / 锚 / 缩放）。
+
+	别人船上没有逐人模拟，所以这里**没有**船员点可选 —— 那不是省事，是规矩。
+	"""
+	for id in _fleet_views.keys():
+		var rv: ShipRenderer = _fleet_views[id]
+		var sm := voyage.fleet.summary_of(id)
+		if sm.is_empty():
+			rv.visible = false
+			continue
+		var p: Array = sm["pos"]
+		rv.apply_pose(Vector2(float(p[0]), float(p[1])), float(sm["heading"]))
+		rv.sail_state = int(sm["sail_level"])
+		rv.anchored = bool(sm["anchored"])
+		rv.zoom = _zoom
+		rv.draw_sea = false
+		rv.show_ghost = false
+		# 拉远到看不清船了：只留标记与摘要（海图尺度上没人想看四条船的帆）
+		rv.visible = _zoom >= FLEET_DETAIL_ZOOM and not voyage.ashore
+		rv.queue_redraw()
+
+
+func _draw_fleet_marks(_a: float) -> void:
+	"""别人的船：近处看外观，远处看一个点 + 名字 + 它自己在干什么 + 船体%。"""
+	_sync_fleet_views()
+	var eff := _zoom * (2.0 if voyage.ashore else 1.0)
+	for id in _fleet_views.keys():
+		var sm := voyage.fleet.summary_of(id)
+		if sm.is_empty():
+			continue
+		var p: Array = sm["pos"]
+		var at := Vector2(float(p[0]), float(p[1])) * PPM
+		var hull := float(sm.get("hull_pct", 1.0))
+		var col := Color(0.88, 0.93, 1.0, 0.95) if hull > 0.6 \
+			else Color(1.0, 0.72, 0.55, 0.95)
+		if randf() < 2.0:                         # 便宜的点：远近都画一个亮点
+			draw_circle(at, 5.0 / maxf(eff, 0.05), Color(0.06, 0.09, 0.13, 0.8))
+			draw_circle(at, 3.0 / maxf(eff, 0.05), col)
+		if eff > 8.0:
+			continue
+		# 摘要行：**只有**名字、在干什么、船体% —— 别人的船能看到的就这些
+		var size := maxi(9, int(13.0 / maxf(eff, 0.05)))
+		if _font != null:
+			draw_string(_font, at + Vector2(9.0, -8.0) / maxf(eff, 0.05),
+				"%s　%s　%.0f%%" % [str(sm["name"]), str(sm["action"]), hull * 100.0],
+				HORIZONTAL_ALIGNMENT_LEFT, -1, size, col)
+
+
 func _draw_tile_seams(a: float) -> void:
 	"""分块的缝：世界是 16km 一块拼起来的，拉远到能看见一整块以上时淡淡地标出来。
 
@@ -414,6 +578,11 @@ func _marker_scale() -> float:
 func _unhandled_input(event: InputEvent) -> void:
 	if _shot_mode:
 		return
+	# 房间界面摊在桌上：它的键它自己吃（1/2/3、I 编辑 IP、回车连接）
+	if _room != null and _room.visible and event is InputEventKey \
+			and (event as InputEventKey).pressed and not (event as InputEventKey).echo:
+		if _room.handle_key(event as InputEventKey):
+			return
 	# 标题卡还摊在桌上：任何键、任何一次点击 = 开始（这是"陌生人 15 分钟"的第一道门）
 	if _title.visible:
 		var pressed := (event is InputEventKey and (event as InputEventKey).pressed) \
@@ -676,13 +845,21 @@ func _run_shot_timeline() -> void:
 	queue_redraw()
 	match _frame:
 		1:
-			_show_overlay(_title, true)       # 开场：先给陌生人一页交代
+			# M3：开场先摆房间界面（单机 / 开房间 / 加入），这里先截一张
+			_room.open()
+			_hud_layer.visible = false
+			_panel_layer.visible = false
 		2:
-			_capture("19_title_card")
+			_capture("42_room")
 		3:
+			_room.visible = false
+			_show_overlay(_title, true)       # 然后才是开场：先给陌生人一页交代
+		4:
+			_capture("19_title_card")
+		5:
 			_show_overlay(_title, false)
 			_started = true
-		4:
+		6:
 			# M2 的头号画面证据：拉到最远 = 整张大西洋海图，没去过的区域全是雾
 			_zoom = _min_zoom()
 			_warp(2.0)                        # 让第一幕落下来（目标卡要有内容）

@@ -103,6 +103,11 @@ python tools/gen_ship.py                                               # 重新�
 | 海图/世界坐标里的线宽不除 zoom | 拉到最远时线宽与圆点都成了亚像素，地图"消失" | 画在世界坐标里的**屏幕恒定**尺寸一律 `1/zoom` 补偿（文字同理） |
 | 拉到最远只看宽度 | 世界竖向被切掉两截 | 最小缩放按**两轴**取小；再把相机夹住（装得下就居中，装不下就贴边） |
 | 手绘第二份海岸线 | 海图上的岸与"船能不能开过去"的岸对不上 | 海图轮廓与地形查询**共用** `Geom2D` 的那两个形状（同铁律 4） |
+| `SceneTree` 的 root 在 `_initialize()` 里还没进树 | 那时 `multiplayer` 是 `null`，一开房就 "Invalid access ... on a null instance" | 网络在**第一帧之后**再建（测试脚本里是 `_boot()`） |
+| ENet 不显式给通道数 | `Unable to send packet on channel 0, max channels: 0` | `create_server(port, n, 4)` / `create_client(ip, port, 4)` 都要写 |
+| 网络只接了半条线 | 客户端能发、房主一个包都不发（表现："别人的船一直停在原地"） | `NetLink.attach()` 里双向接上（`voyage.link` 与 `link.voyage` 都要设） |
+| 游戏时间和真实时间混用 | ×36 快进时插值、心跳、发包节奏全乱（别人的船每包跳 40 米） | `voyage.tick(dt)`（游戏时间）与 `voyage.tick_real(dt)`（真实时间）分开 |
+| 测试进程没退干净 | 端口被占，下一次开房 `Couldn't create an ENet host` | 手工实验后确认没有残留 Godot 进程；测试脚本跑完要自己 `quit()` |
 
 ---
 
@@ -111,7 +116,8 @@ python tools/gen_ship.py                                               # 重新�
 > 完整说明在 `docs/13-v0.5开发计划.md` 第 8 节。这里只留最短的版本。
 
 **每期开工前**
-1. 跑一遍上一期的全部验证通道，确认没坏（到 M2 为止：176/81/15/17/84/62/90/55/**80**/20 + `check_motion_ownership`）
+1. 跑一遍上一期的全部验证通道，确认没坏（到 M3 为止：176/81/15/17/84/62/90/57/80/20/**37**/**22** + `check_motion_ownership`。
+   最后两条是 M3 的：`test_fleet` 与 `test_net_loopback`，后者要跑约 20 秒真实时间）
 2. 读 `docs/07-交接.md`
 3. 在 `docs/13` 当期卡片下写下"这一期的第一个动作"
 

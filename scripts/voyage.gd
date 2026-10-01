@@ -13,9 +13,15 @@ extends RefCounted
 
 const KNOT := 0.514444
 const LOOKOUT_M := 8000.0          # 瞭望视野（= tile 的一半）：看见即"发现"
+# 四艘船的起航位置（在出发港附近的水面上散开，免得画成一坨）
+const FLEET_OFFSETS := [
+	Vector2(0, 0), Vector2(330, 300), Vector2(-340, 360), Vector2(80, 720),
+]
 
 var sea := Sea.new()
 var wind := WindField.new()
+var fleet := Fleet.new()           # 世界里的 4 艘远征船（M3）
+var link: NetLink = null           # 联机（M3）：单机时是 null，走的是同一套调用
 var region_path := Sea.DATA_PATH   # 这一局用的是哪片海（静态数据，不进存档）
 var ship: ShipDynamics
 var orders: ShipOrders
@@ -51,9 +57,11 @@ var _shore_cooldown := 0.0         # 蹭滩提示的冷却
 var _prev_pos := Vector2.ZERO      # 上一帧的船位：只用来算航程
 
 
-func setup(region := Sea.DATA_PATH) -> void:
+func setup(region := Sea.DATA_PATH, ship_id := "trinidad", inherited := {}) -> void:
 	region_path = region
 	sea.setup(region)
+	fleet.setup()
+	fleet.claim_local(ship_id)
 	var w: Dictionary = sea.wind()
 	wind = WindField.new(float(w.get("base_tws_ms", 8.0)), float(w.get("base_from_deg", 20.0)))
 	ship = ShipDynamics.new(ShipPhysics.load_default())
@@ -75,13 +83,19 @@ func setup(region := Sea.DATA_PATH) -> void:
 	_prev_pos = ship.position_m()
 	journal.record(0.0, "story", "%s，圣卢卡尔港。五艘船出海，你带的是那艘六十吨的拉丁帆船。" % VoyageJournal.date_cn(0.0))
 	log_event("出发：%s。" % str(port_d.get("name", "出发港")))
+	_setup_fleet_ships(Vector2(float(pos[0]), float(pos[1])))
+	if not inherited.is_empty():
+		_take_over(inherited)
 	_survey()
+	_publish_local_summary()
 
 
 func tick(delta: float) -> void:
 	t += delta
 	day = VoyageJournal.day_index(t)
 	wind.step(delta)
+	# 船队：AI 船与"别人的船"各自往前走一步。本机那条走下面的细化链路。
+	fleet.step_game(delta, sea)
 	var pos := ship.position_m()
 	journal.advance(_prev_pos, pos)
 	_prev_pos = pos
@@ -105,17 +119,128 @@ func tick(delta: float) -> void:
 		ship.apply_damage("hull", 0.06)
 		journal.decide("船底蹭上滩头，船体损伤 6% —— 靠得太近了。")
 		_say("船底蹭上滩头，木匠皱着眉头看了一眼。", true)
-	_events(delta)
-	story.tick(self, delta)
-	for msg in story.take_messages():
-		# 演出的弹窗只给玩家看，不进"文书最后写下的一条"（否则第三幕的收尾句会被顶掉）
-		_say(str(msg), true, false)
+	if not is_client():
+		# 世界事件与剧情是**房主权威**：客户端这一块只读（WORLD 包每 0.5 秒覆盖一次）
+		_events(delta)
+		story.tick(self, delta)
+		for msg in story.take_messages():
+			# 演出的弹窗只给玩家看，不进"文书最后写下的一条"（否则第三幕的收尾句会被顶掉）
+			_say(str(msg), true, false)
 	if ashore:
 		party.tick(delta)
 		captain_pos = party.captain
 		_walk_ashore(delta)
 		if party.boarding and party.boarded_all():
 			_finish_boarding()
+	_publish_local_summary()
+
+
+func tick_real(real_delta: float) -> void:
+	"""真实时间的那一帧：网络收发与远端船插值。
+
+	和 `tick()` 分开是刻意的：游戏时间可以被快进 ×36，**网络不行** ——
+	20Hz 是真实世界的 20Hz，插值的 100ms 也是真实世界的 100ms。
+	"""
+	fleet.advance_clock(real_delta)
+	if link != null:
+		link.step(real_delta)
+
+
+func attach_link(l: NetLink) -> void:
+	link = l
+	if l != null:
+		l.voyage = self
+		# 客户端不自己推 AI 船：它们的动态只从房主发出
+		fleet.mirror_world = l.session != null and l.session.is_client()
+
+
+func is_client() -> bool:
+	return link != null and link.session != null and link.session.is_client()
+
+
+# ------------------------------------------------------------ 船队（M3）
+
+func _setup_fleet_ships(port_pos: Vector2) -> void:
+	"""四艘船摆在出发港外的水面上；没人开的那三条由 AI 带着走。
+
+	单机 = 1 条细化 + 3 条 AI，联机 = 每个玩家各自细化自己那条、其余交回 AI ——
+	**两条路径是同一条代码路径**（docs/13 M3 卡片第 4 条验收）。
+	"""
+	var target := default_destination()
+	for i in fleet.slots.size():
+		var s: Dictionary = fleet.slots[i]
+		var id := str(s["id"])
+		if id == fleet.local_id:
+			continue
+		var a := AbstractShip.new()
+		var at := port_pos + (FLEET_OFFSETS[i % FLEET_OFFSETS.size()] as Vector2)
+		if sea.is_dry_land(at):
+			at = port_pos
+		a.setup(id, str(s["name"]), at, 90.0)
+		if target != Vector2.ZERO:
+			a.target = target
+			a.has_target = true
+		s["ship"] = a
+		s["kind"] = Fleet.KIND_AI
+
+
+func default_destination() -> Vector2:
+	"""这一程要往哪儿去：优先第二个港（v0.5 的加那利），没有就奔那座岛。
+
+	AI 船用它当目标；玩家掉线时房主也用它把那艘船接过去继续开。
+	"""
+	var ports := sea.ports()
+	if ports.size() > 1:
+		return Geom2D.centroid(ports[1]["shape"])
+	var isl := sea.island()
+	if not isl.is_empty():
+		var c: Array = isl.get("center", [0, 0])
+		return Vector2(float(c[0]), float(c[1]))
+	return Vector2.ZERO
+
+
+func _take_over(summary: Dictionary) -> void:
+	"""中途加入 / 重进：按**继承来的摘要**把这条船接着开（docs/13 第 5.3 节）。
+
+	继承的是"别人的船"那几个数：船体% / 人数 / 位置 / 艏向 / 帆档 / 锚。
+	逐人细节（谁在哪儿、累不累）没有继承，也不该有 —— 名册按同一份数据集重新生成，
+	这也正是"不允许进入别人的船的内部视图"那条规矩的技术形态。
+	"""
+	var p: Array = summary.get("pos", [
+		ship.position_m().x, ship.position_m().y])
+	ship.set_pose(Vector2(float(p[0]), float(p[1])), float(summary.get("heading", 0.0)))
+	ship.apply_damage("hull", 1.0 - float(summary.get("hull_pct", 1.0)))
+	orders.set_sail_level(int(summary.get("sail_level", 0)) as ShipOrders.SailLevel)
+	orders.anchored = bool(summary.get("anchored", false))
+	crew.retrim()
+	_prev_pos = ship.position_m()
+	_survey()
+
+
+func _publish_local_summary() -> void:
+	"""把本机这条船压成摘要 —— 它就是 20Hz 广播出去的那一份。
+
+	**只有这一份上网**：40 个人的逐人状态、帆的实时攻角、舵的积分项都不出去。
+	"""
+	fleet.set_local_summary(local_summary())
+
+
+func local_summary() -> Dictionary:
+	var on_board := 0
+	for m in roster.members:
+		if not m.ashore:
+			on_board += 1
+	return {
+		"id": fleet.local_id,
+		"name": fleet.name_of(fleet.local_id),
+		"pos": [ship.position_m().x, ship.position_m().y],
+		"heading": ship.heading_deg(),
+		"sail_level": int(orders.sail_level),
+		"anchored": orders.anchored,
+		"hull_pct": 1.0 - ship.damage_of("hull"),
+		"crew_count": on_board,
+		"action": ("抛锚" if orders.anchored else nav.method_name()),
+	}
 
 
 # ------------------------------------------------------------ 剧情事件
@@ -128,7 +253,22 @@ func _survey() -> void:
 	因为 tile 是 16km、视野是 8km，所以跨块**之前**邻块就已经亮了 ——
 	不会出现"开过界了地形才突然冒出来"。
 	"""
-	var pos := ship.position_m()
+	if is_client():
+		return            # 已发现的图是房主权威，客户端只读覆盖
+	# 地图是**全队**探出来的：本机那条 + 船队里其他船的摘要位置都算
+	for pos in _survey_points():
+		_survey_at(pos)
+
+
+func _survey_points() -> Array:
+	var out := [ship.position_m()]
+	for id in fleet.others():
+		if fleet.kind_of(id) != Fleet.KIND_LOCAL:
+			out.append(fleet.pose_of(id))
+	return out
+
+
+func _survey_at(pos: Vector2) -> void:
 	for ty in sea.tiles().y:
 		for tx in sea.tiles().x:
 			var t := Vector2i(tx, ty)
@@ -149,6 +289,15 @@ func _survey() -> void:
 			continue
 		if Geom2D.center_dist(p["shape"], pos) <= Geom2D.extent(p["shape"]) + LOOKOUT_M:
 			known_places[pid] = true
+
+
+func record_decision(text: String) -> void:
+	"""玩家做的一个决定。联机时它要进**房主**那本日志（客户端的日志是镜像）。"""
+	if link != null:
+		link.record_decision(text)
+	else:
+		journal.decide(text)
+		journal.record(t, "decision", text)
 
 
 static func _rect_dist(p: Vector2, r: Rect2) -> float:
@@ -325,8 +474,7 @@ func land(ids: Array, hands := 6) -> String:
 	party.start(party_crew, landing_point, ship.position_m(), taken)
 	var msg := "带 %s 和 %d 名水手上岸。" % [
 		"、".join(names) if names.size() > 0 else "（不带关键船员）", ashore_count]
-	journal.decide(msg)
-	journal.record(t, "decision", msg)
+	record_decision(msg)
 	_say(msg, true)
 	return msg
 
@@ -441,6 +589,8 @@ func capture_world_state() -> Dictionary:
 		"visited": visited.duplicate(),
 		"discovered": discovered.duplicate(),
 		"known_places": known_places.duplicate(),
+		# 船队：AI 船与"别人的船"的摘要（房主权威，docs/14 第 2 节）
+		"fleet": fleet.capture_state(),
 		"reef_hit": reef_hit,
 		"last_message": last_message,
 		"message_timer": message_timer,
@@ -463,6 +613,7 @@ func apply_world_state(d: Dictionary) -> void:
 	visited = (d.get("visited", {}) as Dictionary).duplicate()
 	discovered = (d.get("discovered", {}) as Dictionary).duplicate()
 	known_places = (d.get("known_places", {}) as Dictionary).duplicate()
+	fleet.apply_state(d.get("fleet", []))
 	reef_hit = bool(d.get("reef_hit", false))
 	last_message = str(d.get("last_message", ""))
 	message_timer = float(d.get("message_timer", 0.0))
@@ -475,8 +626,9 @@ func apply_world_state(d: Dictionary) -> void:
 
 func capture_ship_state() -> Dictionary:
 	return {
-		"id": "player",
+		"id": fleet.local_id,
 		"kind": "detailed",
+		"ship_name": fleet.name_of(fleet.local_id),
 		"ship": ship.capture_state(),
 		"orders": orders.capture_state(),
 		"nav": nav.capture_state(),
@@ -517,3 +669,23 @@ func apply_ship_state(d: Dictionary) -> void:
 	# 航程累计用的"上一帧船位"是派生值：读档后必须对齐到读回来的位置，
 	# 否则这一刻会被当成一次瞬移（或者被算成几百米的航程）。
 	_prev_pos = ship.position_m()
+
+
+# ------------------------------------------------------------ 船队存档（M3）
+# docs/14 第 4.1 节的 `ships[]`：**本机那条是 detailed（带 40 人名册），
+# 其余是 abstract（只有摘要）**。这正是 v0.5 第 2 节第 5 条说的形状 ——
+# 存档和网络要的是同一样东西：清楚的状态边界。
+
+func capture_fleet() -> Array:
+	var out := [capture_ship_state()]
+	for entry in fleet.capture_state():
+		out.append(entry)
+	return out
+
+
+func apply_fleet(arr: Array) -> void:
+	for raw in arr:
+		var d: Dictionary = raw
+		if str(d.get("kind", "")) == "detailed":
+			apply_ship_state(d)
+	# 抽象船那一半由 apply_world_state 里的 fleet.apply_state 负责（它在世界状态里）

@@ -252,7 +252,11 @@ func _test_scene_wiring() -> void:
 	"""
 	var sc = _scene
 	_check(sc.voyage != null, "场景起来了，voyage 存在")
-	# 开场标题卡挡在前面：任何键都会把它收起来（这是设计，不是 bug）
+	# M3 起开场先摆**房间界面**（单机 / 开房间 / 加入），按 1 = 单机出海
+	_check(sc._room != null and sc._room.visible, "开局先摆房间界面")
+	_key(sc, KEY_1)
+	_check(not sc._room.visible, "选了单机，房间界面收起")
+	# 然后是开场标题卡：任何键都会把它收起来（这是设计，不是 bug）
 	_check(sc._title.visible, "开局标题卡是摊开的")
 	_key(sc, KEY_F1)
 	_check(not sc._title.visible, "按了一下键，标题卡收起、游戏开始")
