@@ -14,17 +14,24 @@ const MAX_HOURS := 25.0
 
 func _initialize() -> void:
 	print("=== 情形 A：照原样的天气（会撞上无风带），只跑到第 12 小时 ===")
-	_case("A", false, Vector2.ZERO, 12.0)
+	_case("A", false, Vector2.ZERO, 12.0, false)
 	print("=== 情形 B：天气按成晴天（隔离「无风带」这个变量）===")
-	_case("B", true, Vector2.ZERO, MAX_HOURS)
+	_case("B", true, Vector2.ZERO, MAX_HOURS, false)
 	print("=== 情形 C：把船直接摆到卡住的位置，看航海官在下什么命令 ===")
-	_case("C", false, Vector2(8559.0, 34420.0), 3.0)
+	_case("C", false, Vector2(8559.0, 34420.0), 3.0, false)
+	print("=== 情形 D：原样天气，但**不让那场「风向突变」发生** ===")
+	_case("D", false, Vector2.ZERO, MAX_HOURS, true)
 	quit(0)
 
 
-func _case(label: String, force_clear: bool, at: Vector2, max_hours: float) -> void:
+func _case(label: String, force_clear: bool, at: Vector2, max_hours: float,
+		no_wind_shift: bool) -> void:
 	var v := Voyage.new()
 	v.setup(GEO)
+	if no_wind_shift:
+		# `_events()` 里那条脚本事件：t > 300 秒时 `base_from_dir += 55°`（永久）。
+		# 把旗标先立起来就跳过它 —— 用来隔离"风被判成东南之后才进不去"这个变量。
+		v.fired["wind_shift"] = true
 	var goal := v.default_destination()
 	if at != Vector2.ZERO:
 		# 摆到实测卡住的地方，直接对着终点下目标点（不走航线跟随）

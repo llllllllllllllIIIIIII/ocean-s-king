@@ -22,6 +22,7 @@ func _initialize() -> void:
 	_test_verdicts()
 	_test_fleet_rows()
 	_test_fleet_sails_to_brazil()
+	_test_player_sails_to_brazil()
 	_test_fleet_arrival_settles()
 	_test_text_page()
 	_finish()
@@ -200,6 +201,33 @@ func _test_fleet_sails_to_brazil() -> void:
 			moved += 1
 	_check(moved == 3, "三条 AI 船都真的往巴西去了（到位或走了一半以上：%d/3，跑了 %.0f 游戏秒）" % [
 		moved, t])
+
+
+func _test_player_sails_to_brazil() -> void:
+	"""验收第 1 条里**玩家那条船**的那一半：跟着航线走，真的开得到巴西。
+
+	为什么非有这一条不可：AI 船用的是糙模型（**不认识风**），所以"AI 能到"不等于"到得了"。
+	实测踩过：风向突变（脚本事件，永久 +55°）之后，终点港的正北方向成了**正逆风**，
+	而港外正好是赤道无风带 —— 船会失速卡在离港 2.3 公里处，19 个游戏小时一步没进。
+	修法是把最后 3 公里改成**从东边横着进港**（`routes.json` 的 `verde_brazil`）。
+	这条断言就是那个修法的护栏：谁把航点删了、或者把风向调回去，这里会当场变红。
+	"""
+	var v := _v()
+	v.start_route_follow()
+	var goal := _goal()
+	var dt := 0.5
+	var limit := 10.0 * 3600.0            # 实测 8.0 个游戏小时到；给到 10 小时
+	var t := 0.0
+	while t < limit and v.ship.position_m().distance_to(goal) > 500.0:
+		v.tick(dt)
+		t += dt
+	var d := v.ship.position_m().distance_to(goal)
+	_check(d <= 500.0, "玩家跟着航线走能开到巴西（%.1f 个游戏小时，最后离终点 %.0f 米）" % [
+		t / 3600.0, d])
+	if d <= 500.0:
+		_check(not v.sea.port_at(v.ship.position_m()).is_empty(),
+			"到了的时候船就在港里（锚地圈内），能直接抛锚靠港")
+		_check(v.discovered_tiles() > 0, "这一趟真的探明了海图（%d 块）" % v.discovered_tiles())
 
 
 func _test_fleet_arrival_settles() -> void:
