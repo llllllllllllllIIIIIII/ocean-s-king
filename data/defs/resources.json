@@ -1,0 +1,52 @@
+{
+  "_comment": "资源与货物的真源（docs/13 M4 卡片）。和 ship_physics.json / weapons.json 同等地位：数值只有这一份，GDScript 与界面都读它，不许在代码里硬编码。",
+  "version": 1,
+  "money": { "id": "ducats", "name": "杜卡特", "short": "金币" },
+  "_weight": "kg 是**一个单位**的重量。它决定占多少载重 —— 一桶淡水六十公斤，一匹帆布十五公斤。",
+  "items": [
+    { "id": "food", "name": "食物", "unit": "份", "kg": 1.5, "kind": "consumable",
+      "per_person_day": 1.0, "base_price": 2,
+      "text": "咸肉、硬饼干、豆子。一个水手一天一份。" },
+    { "id": "water", "name": "淡水", "unit": "桶", "kg": 60, "kind": "consumable",
+      "liters": 60, "per_person_day_l": 3.0, "base_price": 1,
+      "text": "一桶六十升。四十个人一天两桶。" },
+    { "id": "wood", "name": "木材", "unit": "捆", "kg": 40, "kind": "repair",
+      "base_price": 6, "text": "修船底、换舵、补肋骨。" },
+    { "id": "canvas", "name": "帆布", "unit": "匹", "kg": 15, "kind": "repair",
+      "base_price": 8, "text": "补帆、换缆。风大的时候消耗得比木头快。" },
+    { "id": "powder", "name": "火药", "unit": "桶", "kg": 25, "kind": "ammo",
+      "base_price": 20, "text": "受潮就不能用了（M6 会真的算这件事）。" },
+    { "id": "lead", "name": "铅弹", "unit": "磅", "kg": 0.45, "kind": "ammo",
+      "base_price": 1, "text": "火绳枪与轻型炮共用。" },
+    { "id": "match", "name": "火绳", "unit": "捆", "kg": 2, "kind": "ammo",
+      "base_price": 3, "text": "火绳枪的点火绳，一直在烧。" },
+    { "id": "medicine", "name": "药品", "unit": "箱", "kg": 8, "kind": "consumable",
+      "base_price": 14, "text": "外科医生的箱子。" },
+    { "id": "ivory", "name": "象牙", "unit": "根", "kg": 12, "kind": "goods",
+      "base_price": 30, "text": "非洲货。在欧洲值三倍的价钱。" },
+    { "id": "brazilwood", "name": "巴西红木", "unit": "捆", "kg": 80, "kind": "goods",
+      "base_price": 18, "text": "染料木。新大陆最值钱的东西之一。" },
+    { "id": "cloth", "name": "欧洲呢绒", "unit": "匹", "kg": 20, "kind": "goods",
+      "base_price": 25, "text": "带出去卖的东西：在非洲和美洲都有人要。" },
+    { "id": "wine", "name": "葡萄酒", "unit": "桶", "kg": 90, "kind": "goods",
+      "base_price": 22, "text": "既是货物，也是船员的盼头。" },
+    { "id": "salt", "name": "盐", "unit": "袋", "kg": 50, "kind": "goods",
+      "base_price": 5, "text": "腌肉用。廉价，但哪一站都缺。" }
+  ],
+  "consumption": {
+    "_comment": "按**航程日**算（见 docs/15 第 6 节的压缩系数）。口粮档位是 M5 的规则表，这一期先固定 1.0。",
+    "ration_per_person_day": 1.0,
+    "water_l_per_person_day": 3.0
+  },
+  "repair": {
+    "_comment": "修满 100% 需要多少料。修一半就是一半。",
+    "hull": { "wood": 12, "canvas": 6, "ducats": 200 },
+    "mast": { "wood": 4, "canvas": 8, "ducats": 120 },
+    "rudder": { "wood": 6, "canvas": 2, "ducats": 80 }
+  },
+  "start_load": {
+    "_comment": "出发时船上本来就有的一点存货（塞维利亚装好的）。它**不够**走到巴西 —— 中间必须补给。",
+    "food": 120, "water": 8, "wood": 4, "canvas": 3,
+    "powder": 2, "lead": 40, "match": 6, "medicine": 2, "ducats": 200
+  }
+}

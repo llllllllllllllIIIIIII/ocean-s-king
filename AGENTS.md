@@ -68,6 +68,10 @@ python tools/gen_ship.py                                               # 重新�
     不许在 GDScript 里硬编码口径、装填时间、射程、哑火率。
 13. **音频素材一律用 CC0 / 公有领域**，来源与许可证逐条写进 `assets/audio/LICENSES.md`。
     来源不明的音频不许进仓库。
+14. **资源数值只有一个真源**：`data/defs/resources.json`（与 `ship_physics.json` 同等地位）。
+    一个单位多重、一天吃多少、修满船体要多少料、出发时带什么，全在那儿；
+    不许在 GDScript 里硬编码重量、口粮、修船用料。
+    载重上限来自**船的数据**（`caravel_60.json` 的 `deadweight_t`，由 `tools/gen_ship.py` 生成）。
 
 ---
 
@@ -108,6 +112,9 @@ python tools/gen_ship.py                                               # 重新�
 | 网络只接了半条线 | 客户端能发、房主一个包都不发（表现："别人的船一直停在原地"） | `NetLink.attach()` 里双向接上（`voyage.link` 与 `link.voyage` 都要设） |
 | 游戏时间和真实时间混用 | ×36 快进时插值、心跳、发包节奏全乱（别人的船每包跳 40 米） | `voyage.tick(dt)`（游戏时间）与 `voyage.tick_real(dt)`（真实时间）分开 |
 | 测试进程没退干净 | 端口被占，下一次开房 `Couldn't create an ENet host` | 手工实验后确认没有残留 Godot 进程；测试脚本跑完要自己 `quit()` |
+| 消耗按"整件"结算 | 一次结算至少扣一件 → 水被放大六倍，一上午喝光一船水 | 小数记账：不足一件的先攒着（`Cargo._take`） |
+| 地图是压缩的，日历按真实算 | 不乘压缩系数的话，一趟跨洋横渡只吃两顿饭 | 世界数据里放 `real_km_per_map_km`，日历与补给乘它（M4 起 ×125） |
+| 载重上限写死在代码里 | 换一条船就错 | 从船的数据读（`caravel_60.json` 的 `deadweight_t`，由 `gen_ship.py` 生成） |
 
 ---
 
@@ -116,8 +123,9 @@ python tools/gen_ship.py                                               # 重新�
 > 完整说明在 `docs/13-v0.5开发计划.md` 第 8 节。这里只留最短的版本。
 
 **每期开工前**
-1. 跑一遍上一期的全部验证通道，确认没坏（到 M3 为止：176/81/15/17/84/62/90/57/80/20/**37**/**22** + `check_motion_ownership`。
-   最后两条是 M3 的：`test_fleet` 与 `test_net_loopback`，后者要跑约 20 秒真实时间）
+1. 跑一遍上一期的全部验证通道，确认没坏（到 M4 为止：176/81/15/17/84/62/90/59/82/20/37/22/**41**/**54** + `check_motion_ownership`。
+   最后五条是 M3/M4 的：`test_fleet`、`test_net_loopback`（约 20 秒真实时间）、
+   `test_resources`、`test_ports`）
 2. 读 `docs/07-交接.md`
 3. 在 `docs/13` 当期卡片下写下"这一期的第一个动作"
 

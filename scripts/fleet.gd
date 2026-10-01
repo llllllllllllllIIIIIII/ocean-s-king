@@ -202,6 +202,8 @@ func receive_summary(d: Dictionary) -> void:
 		"hull_pct": float(d.get("hull_pct", 1.0)),
 		"crew_count": int(d.get("crew_count", 40)),
 		"action": str(d.get("action", "")),
+		"hold_kg": float(d.get("hold_kg", 0.0)),
+		"money": int(d.get("money", 0)),
 	}
 	if not _buf.has(id):
 		_buf[id] = []
@@ -257,6 +259,8 @@ func _apply_sample(s: Dictionary, sample: Dictionary) -> void:
 	a.hull_pct = float(sample["hull_pct"])
 	a.crew_count = int(sample["crew_count"])
 	a.action = str(sample["action"])
+	a.hold_kg = float(sample.get("hold_kg", 0.0))
+	a.money = int(sample.get("money", 0))
 
 
 # ------------------------------------------------------------ 给视图与 UI 的读数

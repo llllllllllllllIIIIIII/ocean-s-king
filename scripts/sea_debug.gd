@@ -64,6 +64,7 @@ var _fleet_views := {}             # M3：别人的船（id -> ShipRenderer）�
 var _session: NetSession           # M3：联机会话（单机时也在，只是没开）
 var _net: NetLink                  # M3：把船队与世界接上网络的胶水
 var _room: RoomPanel               # M3：房间界面（开房间 / 加入 / 单机）
+var _port_panel: PortPanel         # M4：港口面板（补给 / 修船 / 买卖）
 var _panel: SailPanel
 var _show_panel := false
 var _crew_panel: CrewPanel
@@ -583,6 +584,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			and (event as InputEventKey).pressed and not (event as InputEventKey).echo:
 		if _room.handle_key(event as InputEventKey):
 			return
+	if _port_panel != null and _port_panel.visible and event is InputEventKey \
+			and (event as InputEventKey).pressed and not (event as InputEventKey).echo:
+		if _port_panel.handle_key(event as InputEventKey):
+			return
 	# 标题卡还摊在桌上：任何键、任何一次点击 = 开始（这是"陌生人 15 分钟"的第一道门）
 	if _title.visible:
 		var pressed := (event is InputEventKey and (event as InputEventKey).pressed) \
@@ -699,8 +704,26 @@ func _key(k: InputEventKey) -> void:
 		KEY_C:
 			_show_crew_panel = not _show_crew_panel
 			_crew_panel.visible = _show_crew_panel
+		KEY_P:
+			# M4：靠港与港口面板。没靠港就先抛锚靠上去 —— 面板不自己动船，
+			# 它只是把"能不能靠港"这件事说清楚。
+			if _port_panel.visible:
+				_port_panel.visible = false
+			elif voyage.docked_port != "":
+				_port_panel.row = 0
+				_port_panel.visible = true
+			elif voyage.can_dock():
+				var r := voyage.dock()
+				if r == "":
+					_port_panel.row = 0
+					_port_panel.visible = true
+				else:
+					voyage.say("（港口）" + r, true)
+			else:
+				voyage.say("靠港要先抛锚（X），而且得停在港口的锚地圈里。", true)
 		KEY_ESCAPE:
 			_picker.visible = false
+			_port_panel.visible = false
 		KEY_F5:
 			# 存档：M1 的界面先做到"两个键 + 一条消息"（docs/13 的砍单预案允许这样）
 			var r := SaveGame.save_game(voyage, "auto")
@@ -757,6 +780,13 @@ func _build_hud() -> void:
 	_crew_panel.position = (get_viewport_rect().size - CrewPanel.PANEL) * 0.5
 	_crew_panel.visible = false
 	cl2.add_child(_crew_panel)
+	# M4：港口面板 —— 和帆态/船员面板同一层，靠港时按 P 摊开
+	_port_panel = PortPanel.new()
+	_port_panel.font = _font
+	_port_panel.voyage = voyage
+	_port_panel.size = get_viewport_rect().size
+	_port_panel.visible = false
+	cl2.add_child(_port_panel)
 
 
 func _build_overlays() -> void:
@@ -813,6 +843,8 @@ func _update_hud() -> void:
 		_panel.update_from(voyage.ship, voyage.crew, voyage.nav, voyage.orders)
 	if _show_crew_panel:
 		_crew_panel.update_from(voyage.roster)
+	if _port_panel.visible:
+		_port_panel.queue_redraw()
 	_hud.time_scale = _time_scales[_time_scale_idx]
 	_hud.act_card_timer = _act_card_timer
 	_hud.mode_line = ("船舱 L%d %s　高程 %+.0f 米（向上滚回甲板）" % [
@@ -872,11 +904,29 @@ func _run_shot_timeline() -> void:
 			_warp(240.0)
 		12:
 			_capture("20_sea_overview")       # 出港：看得见伊比利亚那段海岸
+		13:
+			# M4：靠港看一眼港口面板（补给 / 修船 / 买卖都在这一屏）
+			voyage.ship.set_pose(voyage.sea.port_pos(), 180.0)
+			voyage.orders.anchored = true
+			voyage.orders.set_sail_level(ShipOrders.SailLevel.FURLED)
+			_warp(2.0)
+			voyage.dock()
+			_port_panel.row = 0
+			_port_panel.visible = true
 		14:
-			_capture("20b_act1_card")         # 第一幕落下来的剧情卡
+			_capture("43_port_panel")
+		15:
+			_port_panel.visible = false
+			voyage.undock()
+			voyage.orders.anchored = false
+			voyage.orders.set_sail_level(ShipOrders.SailLevel.FULL)
+			voyage.orders.set_target_point(Vector2(41000, 10400))
+			_warp(30.0)
 		16:
-			_capture("21_under_way")
+			_capture("20b_act1_card")         # 第一幕落下来的剧情卡
 		17:
+			_capture("21_under_way")
+		18:
 			_show_panel = true                # 教学第 2 步：帆态面板
 			_panel.visible = true
 			voyage.story.note("open_sail_panel")

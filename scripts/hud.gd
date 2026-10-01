@@ -96,10 +96,17 @@ func _draw_status() -> void:
 	lines.append("%s　已探明 %d/%d 块海图" % [
 		v.roster.describe(), v.discovered_tiles(), v.total_tiles()])
 	lines.append("船队：%s" % v.fleet.describe_short())
+	lines.append("货舱 %.1f/%.1f 吨　金币 %d　%s" % [
+		v.cargo.used_kg() / 1000.0, v.cargo.capacity_kg / 1000.0, v.cargo.money,
+		"⚠ 缺粮缺水" if v.cargo.starving else "补给尚可"])
 	if v.ashore:
 		lines.append("☀ 你在岸上，身边 %d 人 —— 左键带队走，走回滩头按 L 上船" % v.party_size())
+	elif v.docked_port != "":
+		lines.append("⚓ 靠在%s：按 P 补给 / 修船 / 买卖；按 X 起锚出海" % v.port_name())
 	elif v.can_land():
 		lines.append("★ 就在滩头旁边：按 L 选人登陆（先按 X 抛锚）")
+	elif v.can_dock():
+		lines.append("⚓ 停在锚地里：按 P 靠港补给")
 	if mode_line != "":
 		lines.append(mode_line)
 	var h := 12.0 + 20.0 * float(lines.size())
@@ -134,7 +141,7 @@ func _draw_banner() -> void:
 func _draw_controls() -> void:
 	draw_string(font, Vector2(16.0, size.y - 20.0),
 		"左键 目标点·带队　X 抛锚　1/2/3 帆档　+/− 操帆人数　L 登陆·返船　"
-		+ "Tab 帆态　C 船员　. 快进　F5 存档　F9 读档　滚轮 缩放（拉远 = 海图）",
+		+ "P 靠港·港口　Tab 帆态　C 船员　. 快进　F5 存档　F9 读档　滚轮 缩放（拉远 = 海图）",
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.62, 0.7, 0.78))
 
 

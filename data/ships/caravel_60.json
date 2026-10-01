@@ -11,6 +11,7 @@
     "length_m": 24.0,
     "beam_m": 7.0,
     "displacement_t": 60,
+    "deadweight_t": 27,
     "cells_x": 24,
     "cells_y": 7,
     "origin_cell": [

@@ -301,6 +301,10 @@ def build_ship():
             'length_m': NX * M_PER_CELL,
             'beam_m': NY * M_PER_CELL,
             'displacement_t': 60,
+            # 载重（M4 起）：能装多少货。60 吨的拉丁帆船 deadweight 约 24–30 吨，
+            # 取 27 吨 —— 补给、火药、货物全都占这一份。船是数据，所以它在这里，
+            # 不在 GDScript 里。
+            'deadweight_t': 27,
             'cells_x': NX,
             'cells_y': NY,
             'origin_cell': [MAST[0], MAST[1]],

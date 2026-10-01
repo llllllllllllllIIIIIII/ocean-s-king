@@ -84,6 +84,12 @@ func _test_field_coverage() -> void:
 			["id_hash", "is_key", "display_name", "post", "post_es",
 			 "traits", "relations", "skills"]],
 		["LandingParty", v.party, v.party.capture_state(), []],
+		["Cargo", v.cargo, v.cargo.capture_state(),
+			# defs 是资源表、capacity_kg 来自船的数据 —— 都是静态的，读档时重新加载
+			["defs", "capacity_kg"]],
+		["Ports", v.ports, v.ports.capture_state(),
+			# 港口表与基准库存是静态的，只有"现在还剩多少"会变
+			["defs", "base_stock"]],
 	]
 	for p in pairs:
 		var label := str(p[0])

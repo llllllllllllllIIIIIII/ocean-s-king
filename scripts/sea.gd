@@ -59,6 +59,16 @@ func wind() -> Dictionary:
 	return world.wind
 
 
+func real_time_scale() -> float:
+	"""地图的压缩系数：1 个地图公里 = 多少真实公里（v0.5 的大西洋是 125）。
+
+	船在图上的速度、两个港之间的距离都是地图尺度；**日历、补给、价格**这些
+	"跟真实航程有关"的东西要乘这个系数，否则 48km 的一趟横渡只吃两顿饭。
+	迷你海域（test_sea）没有这个字段，默认 1.0。
+	"""
+	return maxf(1.0, float(data.get("real_km_per_map_km", 1.0)))
+
+
 func size_m() -> Vector2:
 	return world.size_m()
 
@@ -142,6 +152,13 @@ func ports() -> Array:
 func port_pos() -> Vector2:
 	var p := world.port()
 	return Geom2D.centroid(p["shape"]) if not p.is_empty() else Vector2.ZERO
+
+
+func port_name_of(id: String) -> String:
+	for p in world.ports():
+		if str(p.get("id", "")) == id:
+			return str(p.get("name", id))
+	return id
 
 
 func island() -> Dictionary:

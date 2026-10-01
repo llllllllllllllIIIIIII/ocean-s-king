@@ -27,6 +27,8 @@ var anchored := false
 var hull_pct := 1.0
 var crew_count := 40
 var action := "停泊"                 # 一句话概括它在干什么（海图上会写）
+var hold_kg := 0.0                   # 装了多重（M4：别人的船只有这个汇总）
+var money := 0
 var target := Vector2.ZERO
 var has_target := false
 var speed_ms := 0.0
@@ -103,6 +105,8 @@ func to_summary() -> Dictionary:
 		"hull_pct": hull_pct,
 		"crew_count": crew_count,
 		"action": action,
+		"hold_kg": hold_kg,
+		"money": money,
 	}
 
 
@@ -119,6 +123,8 @@ func apply_summary(d: Dictionary) -> void:
 	hull_pct = float(d.get("hull_pct", hull_pct))
 	crew_count = int(d.get("crew_count", crew_count))
 	action = str(d.get("action", action))
+	hold_kg = float(d.get("hold_kg", hold_kg))
+	money = int(d.get("money", money))
 
 
 # ------------------------------------------------------------ 存档（docs/14 第 3 节：抽象船专用）

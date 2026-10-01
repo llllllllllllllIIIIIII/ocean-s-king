@@ -58,8 +58,8 @@ func _test_slots() -> void:
 	# 别的船没有名册这个概念
 	var ai_id: String = v.fleet.ids_of_kind(Fleet.KIND_AI)[0]
 	var slot := v.fleet.slot_of(ai_id)
-	_check(slot["ship"] is AbstractShip and slot["ship"].to_summary().size() == 9,
-		"AI/别人的船只是一个 9 键摘要，没有名册（%d 键）" % slot["ship"].to_summary().size())
+	_check(slot["ship"] is AbstractShip and slot["ship"].to_summary().size() == 11,
+		"AI/别人的船只是一个 11 键摘要，没有名册（%d 键）" % slot["ship"].to_summary().size())
 	_check(v.local_summary()["id"] == "trinidad", "本机的摘要是从细化运行时压出来的")
 	_check(v.local_summary()["crew_count"] == 40, "摘要里有船上人数（%d）" % v.local_summary()["crew_count"])
 
@@ -69,7 +69,8 @@ func _test_slots() -> void:
 func _test_abstract_shape() -> void:
 	"""上网的那一份必须**只有**这几个键：多一个键就等于多传了不该传的东西。"""
 	var want := ["id", "name", "pos", "heading", "sail_level", "anchored",
-		"hull_pct", "crew_count", "action"]
+		"hull_pct", "crew_count", "action",
+		"hold_kg", "money"]      # M4：装了多重、有多少钱（别人的船看得到的就是这些）
 	var a := AbstractShip.new()
 	a.setup("victoria", "维多利亚", Vector2(100, 200), 45.0)
 	var d := a.to_summary()

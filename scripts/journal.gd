@@ -16,6 +16,10 @@ const EPOCH_YEAR := 1519
 const EPOCH_MONTH := 9
 const EPOCH_DAY := 20
 const DAY_SECONDS := 86400.0
+# 时间压缩系数（M4）：1 个游戏秒 = 多少"真实航程秒"。地图是压缩过的
+# （48km ↔ 6000km），船在图上按真实速度走，但**日历要按真实航程翻页** ——
+# 不然圣卢卡尔到加那利只过了一个上午。默认 1.0（迷你海域与纯函数测试用）。
+static var voyage_time_scale := 1.0
 
 var entries: Array = []          # [{ t, kind, text }]，按时间顺序
 var decisions: Array = []        # 玩家做过的决定（一句话一条，去重）
@@ -90,8 +94,12 @@ static func days_in_month(y: int, m: int) -> int:
 
 
 static func date_parts(elapsed: float) -> Dictionary:
-	"""从 1519-09-20 00:00 起算的日期。游戏时间 1 秒 = 世界 1 秒。"""
-	var sec := maxf(0.0, elapsed)
+	"""从 1519-09-20 00:00 起算的日期。
+
+	入参是**游戏秒**；先乘 `voyage_time_scale` 换成"真实航程秒"，再按一天 86400 秒翻页。
+	v0.5 的大西洋是 ×125，所以一段 1.7 游戏小时的航程 = 7.4 个航程日。
+	"""
+	var sec := maxf(0.0, elapsed) * maxf(voyage_time_scale, 1e-6)
 	var days := int(floor(sec / DAY_SECONDS))
 	var y := EPOCH_YEAR
 	var m := EPOCH_MONTH

@@ -1,0 +1,47 @@
+{
+  "_comment": "四个史实港口的**经济**（M4）。位置与形状在 geography.json 里（那是地形）；这里只有库存、价格、服务。库存与价格是 WorldState —— 房主权威，客户端只读（docs/14 第 2 节）。",
+  "version": 1,
+  "_price_rule": "价格随库存浮动：price = base × clamp(2 − 库存/基准库存, 0.5, 2)。买光了就贵一倍，堆满了就便宜一半。买卖真的会推着价格走，所以「低买高卖」是要挑时候的。",
+  "ports": [
+    {
+      "id": "sanlucar",
+      "services": ["supply", "repair", "trade"],
+      "stock": {
+        "food": 900, "water": 90, "wood": 60, "canvas": 30,
+        "powder": 12, "lead": 400, "match": 40, "medicine": 12,
+        "cloth": 40, "wine": 30, "salt": 40
+      },
+      "mul": { "ivory": 1.6, "brazilwood": 1.5, "cloth": 0.8, "wine": 0.8 }
+    },
+    {
+      "id": "santa_cruz",
+      "services": ["supply", "repair", "trade"],
+      "stock": {
+        "food": 240, "water": 40, "wood": 25, "canvas": 12,
+        "powder": 6, "lead": 160, "match": 16, "medicine": 4,
+        "cloth": 8, "wine": 6, "salt": 20
+      },
+      "mul": { "ivory": 1.3, "brazilwood": 1.3, "cloth": 1.0, "wine": 1.0 }
+    },
+    {
+      "id": "santiago",
+      "services": ["supply", "repair", "trade"],
+      "stock": {
+        "food": 160, "water": 30, "wood": 18, "canvas": 8,
+        "powder": 4, "lead": 90, "match": 10, "medicine": 3,
+        "cloth": 4, "wine": 3, "salt": 14, "ivory": 60
+      },
+      "mul": { "ivory": 0.7, "brazilwood": 1.1, "cloth": 2.0, "wine": 2.0, "salt": 0.8 }
+    },
+    {
+      "id": "sao_aleixo",
+      "services": ["supply", "repair", "trade"],
+      "stock": {
+        "food": 120, "water": 24, "wood": 14, "canvas": 6,
+        "powder": 3, "lead": 60, "match": 8, "medicine": 1,
+        "cloth": 2, "wine": 2, "salt": 10, "brazilwood": 80
+      },
+      "mul": { "ivory": 1.2, "brazilwood": 0.6, "cloth": 2.2, "wine": 2.2, "salt": 0.9 }
+    }
+  ]
+}

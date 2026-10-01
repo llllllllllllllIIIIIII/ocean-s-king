@@ -21,6 +21,8 @@ const FLEET_OFFSETS := [
 var sea := Sea.new()
 var wind := WindField.new()
 var fleet := Fleet.new()           # 世界里的 4 艘远征船（M3）
+var cargo := Cargo.new()           # 本船的货舱（M4，拥有者权威）
+var ports := Ports.new()           # 四个港口的库存与价格（M4，房主权威）
 var link: NetLink = null           # 联机（M3）：单机时是 null，走的是同一套调用
 var region_path := Sea.DATA_PATH   # 这一局用的是哪片海（静态数据，不进存档）
 var ship: ShipDynamics
@@ -41,6 +43,9 @@ var visited := {}                  # 到过的地标
 var discovered := {}               # 已发现的地图分块（tile 键 -> true）—— 房主权威
 var known_places := {}             # 已经认得名字的地方：陆地与港口（特征 id -> true）
 var reef_hit := false
+var docked_port := ""              # 现在靠在哪个港（空 = 在海上）
+var shortage_events := 0           # 欠过几次粮（M5 要拿它算士气）
+var _supply_acc := 0.0             # 补给结算的累加器（游戏秒）
 
 # --- 登陆 ---
 var ashore := false
@@ -60,11 +65,15 @@ var _prev_pos := Vector2.ZERO      # 上一帧的船位：只用来算航程
 func setup(region := Sea.DATA_PATH, ship_id := "trinidad", inherited := {}) -> void:
 	region_path = region
 	sea.setup(region)
+	# 时间尺度：地图是压缩过的（48km ↔ 6000km），日历与补给按**真实航程**算
+	VoyageJournal.voyage_time_scale = sea.real_time_scale()
+	ports.setup()
 	fleet.setup()
 	fleet.claim_local(ship_id)
 	var w: Dictionary = sea.wind()
 	wind = WindField.new(float(w.get("base_tws_ms", 8.0)), float(w.get("base_from_deg", 20.0)))
 	ship = ShipDynamics.new(ShipPhysics.load_default())
+	cargo.setup(Cargo.deadweight_from_ship())
 	var port_d: Dictionary = sea.port()
 	var pos: Array = port_d.get("pos", [700, 4000])
 	ship.set_pose(Vector2(float(pos[0]), float(pos[1])), 0.0)
@@ -132,7 +141,192 @@ func tick(delta: float) -> void:
 		_walk_ashore(delta)
 		if party.boarding and party.boarded_all():
 			_finish_boarding()
+	_consume_supplies(delta)
 	_publish_local_summary()
+
+
+# ------------------------------------------------------------ 补给与港口（M4）
+
+func crew_on_board() -> int:
+	var n := 0
+	for m in roster.members:
+		if not m.ashore:
+			n += 1
+	return n
+
+
+func voyage_days_for(distance_m: float, speed_kn := 5.0) -> float:
+	"""一段航程要几个"航程日"：地图距离 × 压缩系数 ÷ 真实日速。
+
+	速度取 5 节（这艘船在常见风下的巡航速度），算的是"要带多少天的口粮"，
+	不是导航预测 —— 真正的用时由风和操帆决定。
+	"""
+	var real_km := distance_m / 1000.0 * sea.real_time_scale()
+	var km_per_day := maxf(1.0, speed_kn * 1.852 * 24.0)
+	return real_km / km_per_day
+
+
+func supply_need_for(distance_m: float, speed_kn := 5.0, crew := -1) -> Dictionary:
+	"""按距离算这一程要多少口粮与淡水（验收第 1 条的那把尺子）。"""
+	var c := crew if crew >= 0 else crew_on_board()
+	var days := voyage_days_for(distance_m, speed_kn)
+	var cons: Dictionary = Cargo.defs_data().get("consumption", {})
+	var food := int(ceil(float(c) * float(cons.get("ration_per_person_day", 1.0)) * days))
+	var water := int(ceil(float(c) * float(cons.get("water_l_per_person_day", 3.0)) * days
+		/ Cargo.item_liters("water")))
+	return {"days": days, "crew": c, "food": food, "water": water}
+
+
+func next_port_id() -> String:
+	"""下一个没到过的港（没有就回出发港）——"要不要补给"这个问题问的是它。"""
+	var best := ""
+	var best_d := INF
+	for p in sea.ports():
+		var id := str(p.get("id", ""))
+		if id == docked_port:
+			continue
+		var d := Geom2D.centroid(p["shape"]).distance_to(ship.position_m())
+		if d < best_d:
+			best_d = d
+			best = id
+	return best
+
+
+func next_port_position() -> Vector2:
+	for p in sea.ports():
+		if str(p.get("id", "")) == next_port_id():
+			return Geom2D.centroid(p["shape"])
+	return sea.port_pos()
+
+
+func _consume_supplies(delta: float) -> void:
+	"""按**航程日**扣口粮与淡水：每 60 个游戏秒结算一次。
+
+	60 游戏秒 = 0.5 个航程小时（×125 的压缩系数），所以一程横渡下来
+	要吃掉几十个航程日的东西 —— 这正是"不带够就走不到巴西"的那个"够"。
+	"""
+	_supply_acc += delta
+	if _supply_acc < 60.0:
+		return
+	var days := 60.0 * VoyageJournal.voyage_time_scale / 86400.0
+	_supply_acc = 0.0
+	var was_starving := cargo.starving
+	var r := cargo.consume(days, crew_on_board())
+	if int(r["short"]) > 0 and not was_starving:
+		shortage_events += 1
+		_say("桶匠把最后几桶淡水锁了起来：船上开始缺粮缺水。", true)
+		journal.decide("补给见底，还在海上 —— 只能咬牙往前。")
+	elif int(r["short"]) == 0 and was_starving:
+		cargo.starving = false
+		_say("在港口补上了水和食物，船上又有了底气。", true)
+
+
+func can_dock() -> bool:
+	if ashore or docked_port != "" or not orders.anchored:
+		return false
+	return not sea.port_at(ship.position_m()).is_empty()
+
+
+func dock() -> String:
+	if docked_port != "":
+		return "已经靠在港里了"
+	if not can_dock():
+		return "要先抛锚，而且得停在港里（锚地那个圈）"
+	var p := sea.port_at(ship.position_m())
+	docked_port = str(p.get("id", ""))
+	journal.decide("靠上%s，开始盘点货舱。" % str(p.get("name", "港口")))
+	_say("靠上%s。" % str(p.get("name", "港口")), true)
+	return ""
+
+
+func undock() -> String:
+	if docked_port == "":
+		return "本来就没靠港"
+	var name := docked_port
+	docked_port = ""
+	journal.decide("从%s出海。" % name)
+	return ""
+
+
+func port_name() -> String:
+	if docked_port == "":
+		return ""
+	return sea.port_name_of(docked_port)
+
+
+func can_trade_here() -> bool:
+	"""买卖会动**港口库存**（房主权威），所以 v0.5 只让房主在港里交易。
+
+	客户端可以看价格与库存（只读），但按不下"买"—— 这条写进 docs/17 的限制清单，
+	两段式确认（申请→房主执行→回执）留给以后。
+	"""
+	return docked_port != "" and not is_client()
+
+
+func port_buy(item: String, n: int) -> Dictionary:
+	if not can_trade_here():
+		return {"ok": false, "reason": "只能在靠港时交易（联机时由房主交易）"}
+	var r := ports.buy(docked_port, item, n, cargo)
+	if bool(r.get("ok", false)):
+		_say("买了 %d %s %s，花了 %d 金币。" % [
+			int(r["qty"]), cargo.item_name(item), cargo.item_unit(item), int(r["cost"])], true)
+	return r
+
+
+func port_sell(item: String, n: int) -> Dictionary:
+	if not can_trade_here():
+		return {"ok": false, "reason": "只能在靠港时交易（联机时由房主交易）"}
+	var r := ports.sell(docked_port, item, n, cargo)
+	if bool(r.get("ok", false)):
+		_say("卖了 %d %s %s，得到 %d 金币。" % [
+			int(r["qty"]), cargo.item_name(item), cargo.item_unit(item), int(r["gain"])], true)
+	return r
+
+
+func port_supply_bundle(margin := 1.15) -> Dictionary:
+	"""一键补给：按"开到下一个港要多少"买齐，留一点余量。"""
+	if not can_trade_here():
+		return {"ok": false, "reason": "先靠港"}
+	var need := supply_need_for(next_port_position().distance_to(ship.position_m()))
+	var want_food := int(ceil(float(need["food"]) * margin)) - cargo.qty("food")
+	var want_water := int(ceil(float(need["water"]) * margin)) - cargo.qty("water")
+	var spent := 0
+	var bought := []
+	for pair in [["food", want_food], ["water", want_water]]:
+		var item := str(pair[0])
+		var n := int(pair[1])
+		if n <= 0:
+			continue
+		var afford := mini(n, int(floor(float(cargo.money) / maxf(1.0, float(ports.buy_price(docked_port, item))))))
+		afford = mini(afford, ports.stock_of(docked_port, item))
+		afford = mini(afford, cargo.how_many_fit(item))
+		if afford <= 0:
+			continue
+		var r := ports.buy(docked_port, item, afford, cargo)
+		if bool(r.get("ok", false)):
+			spent += int(r["cost"])
+			bought.append("%d %s" % [afford, cargo.item_name(item)])
+	if bought.is_empty():
+		return {"ok": false, "reason": "补给已经够了，或者买不起"}
+	_say("补给了 %s，花了 %d 金币。" % ["、".join(bought), spent], true)
+	return {"ok": true, "bought": bought, "spent": spent, "need": need}
+
+
+func port_repair(part: String, amount := 1.0) -> Dictionary:
+	if not can_trade_here():
+		return {"ok": false, "reason": "先靠港"}
+	var have := ship.damage_of(part)
+	var do_amount := minf(amount, have)
+	if do_amount <= 0.001:
+		return {"ok": false, "reason": "这一处没有损伤"}
+	var r := ports.repair(docked_port, part, do_amount, cargo, ship)
+	if bool(r.get("ok", false)):
+		_say("修好了 %s 的 %.0f%%。" % [
+			{"hull": "船体", "mast": "桅杆", "rudder": "舵"}.get(part, part),
+			do_amount * 100.0], true)
+		journal.decide("在%s修船：%s %.0f%%。" % [port_name(),
+			{"hull": "船体", "mast": "桅杆", "rudder": "舵"}.get(part, part), do_amount * 100.0])
+	return r
 
 
 func tick_real(real_delta: float) -> void:
@@ -226,10 +420,7 @@ func _publish_local_summary() -> void:
 
 
 func local_summary() -> Dictionary:
-	var on_board := 0
-	for m in roster.members:
-		if not m.ashore:
-			on_board += 1
+	var on_board := crew_on_board()
 	return {
 		"id": fleet.local_id,
 		"name": fleet.name_of(fleet.local_id),
@@ -240,6 +431,9 @@ func local_summary() -> Dictionary:
 		"hull_pct": 1.0 - ship.damage_of("hull"),
 		"crew_count": on_board,
 		"action": ("抛锚" if orders.anchored else nav.method_name()),
+		# M4：别人的船能看到的"装了多少 / 有多少钱"（docs/14 第 3 节的 cargo_summary）
+		"hold_kg": cargo.used_kg(),
+		"money": cargo.money,
 	}
 
 
@@ -591,7 +785,10 @@ func capture_world_state() -> Dictionary:
 		"known_places": known_places.duplicate(),
 		# 船队：AI 船与"别人的船"的摘要（房主权威，docs/14 第 2 节）
 		"fleet": fleet.capture_state(),
+		# 港口库存与价格：房主权威（docs/14 第 2 节）
+		"ports": ports.capture_state(),
 		"reef_hit": reef_hit,
+		"shortage_events": shortage_events,
 		"last_message": last_message,
 		"message_timer": message_timer,
 		"log_lines": log_lines.duplicate(),
@@ -614,7 +811,9 @@ func apply_world_state(d: Dictionary) -> void:
 	discovered = (d.get("discovered", {}) as Dictionary).duplicate()
 	known_places = (d.get("known_places", {}) as Dictionary).duplicate()
 	fleet.apply_state(d.get("fleet", []))
+	ports.apply_state(d.get("ports", {}))
 	reef_hit = bool(d.get("reef_hit", false))
+	shortage_events = int(d.get("shortage_events", 0))
 	last_message = str(d.get("last_message", ""))
 	message_timer = float(d.get("message_timer", 0.0))
 	log_lines = (d.get("log_lines", []) as Array).duplicate()
@@ -641,6 +840,9 @@ func capture_ship_state() -> Dictionary:
 		"landing_point": StateIO.v2(landing_point),
 		"landing_land_id": str(landing_land.get("id", "")),
 		"party": party.capture_state(),
+		# 货舱与金币是本船状态（拥有者权威，docs/14 第 3 节）
+		"cargo": cargo.capture_state(),
+		"docked_port": docked_port,
 	}
 
 
@@ -666,6 +868,8 @@ func apply_ship_state(d: Dictionary) -> void:
 			landing_land = f
 			break
 	party.apply_state(d.get("party", {}), roster)
+	cargo.apply_state(d.get("cargo", {}))
+	docked_port = str(d.get("docked_port", ""))
 	# 航程累计用的"上一帧船位"是派生值：读档后必须对齐到读回来的位置，
 	# 否则这一刻会被当成一次瞬移（或者被算成几百米的航程）。
 	_prev_pos = ship.position_m()

@@ -15,6 +15,8 @@ const FIELDS := [
 	"discovered", "known_places", "reef_hit",
 	# M3：船队里除本机以外的船（AI 船 / 别人的船）的摘要
 	"fleet",
+	# M4：四个港口的库存与价格（房主权威）+ 欠粮次数
+	"ports", "shortage_events",
 	"last_message", "message_timer", "log_lines", "pending_reports",
 	"_shore_cooldown", "story", "journal",
 ]

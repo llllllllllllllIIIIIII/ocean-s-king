@@ -372,6 +372,8 @@ func _test_real_passage() -> void:
 # ---------------------------------------------------------------- 6 日历
 
 func _test_calendar() -> void:
+	# 纯函数的检查用 1:1 的尺度（日期换算本身与压缩系数无关）
+	VoyageJournal.voyage_time_scale = 1.0
 	_check(VoyageJournal.date_of(0.0) == "1519-09-20", "第一天是 1519-09-20")
 	_check(VoyageJournal.clock_of_day(0.0) == "00:00", "零点（%s）" % VoyageJournal.clock_of_day(0.0))
 	_check(VoyageJournal.clock_of_day(7.0 * 3600.0 + 5.0 * 60.0) == "07:05", "当天时刻")
@@ -387,15 +389,22 @@ func _test_calendar() -> void:
 	var v := Voyage.new()
 	v.setup(GEO)
 	_check(v.date_string() == "1519-09-20" and v.day == 0, "一局从 1519-09-20 开始")
+	_check(VoyageJournal.voyage_time_scale == 125.0,
+		"大西洋是压缩过的：日历按真实航程翻页（×%.0f）" % VoyageJournal.voyage_time_scale)
+	var leg := v.voyage_days_for(
+		v.sea.port_pos().distance_to(Vector2(36000, 12800)))
+	_check(leg > 4.0 and leg < 6.0,
+		"圣卢卡尔→加那利 ≈ %.1f 个航程日（图上 8.5km × 125 = 1059 真实公里）" % leg)
 	for _i in int(200.0 / DT):
 		v.tick(DT)
 	_check(v.clock_string() == VoyageJournal.clock_of_day(v.t), "时钟跟着游戏时间走（%s）" % v.clock_string())
-	# 把时间推过午夜：日期要翻页，day 要加一（不是只改显示）
-	v.t = 86400.0 - 60.0
+	# 把时间推过午夜（×125 之下的午夜 = 691.2 游戏秒）：日期要翻页，day 要加一
+	v.t = 86400.0 / VoyageJournal.voyage_time_scale - 60.0
 	for _i in int(120.0 / DT):
 		v.tick(DT)
 	_check(v.date_string() == "1519-09-21", "跨过午夜就翻页（%s）" % v.date_string())
 	_check(v.day == 1, "day 跟着翻（%d）" % v.day)
+	VoyageJournal.voyage_time_scale = 1.0
 
 
 # ---------------------------------------------------------------- 7 老海域不退化

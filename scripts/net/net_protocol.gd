@@ -42,6 +42,9 @@ static func ship_summary(d: Dictionary) -> Dictionary:
 		"hull_pct": float(d.get("hull_pct", 1.0)),
 		"crew_count": int(d.get("crew_count", 0)),
 		"action": str(d.get("action", "")),
+		# M4：货舱里装了多少、手上有多少钱（别人的船看得到的就这两样）
+		"hold_kg": float(d.get("hold_kg", 0.0)),
+		"money": int(d.get("money", 0)),
 	}
 
 
