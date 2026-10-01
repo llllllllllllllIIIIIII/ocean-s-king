@@ -23,6 +23,10 @@ var layer := 2
 var zoom := 1.0
 var sail_main_rad := -0.45         # 主帆弦线方向（**画布系**弧度）
 var sail_jib_rad := -0.75          # 前帆弦线方向（画布系弧度）
+# 帆的形态：0 全帆 / 1 缩帆 / 2 收帆。三种形态是**三个不同的 SVG 部件**，
+# 不是把同一张图缩一缩 —— 缩帆要看得见少了多少帆布，收帆要看得见卷在桁上。
+var sail_state := 0
+var anchored := false              # 抛锚中：船首前面会画锚链与锚
 var show_grid := false
 var show_ghost := true
 
@@ -109,8 +113,37 @@ func _draw() -> void:
 			var dz: float = absf(layer_elevation(above) - layer_elevation(layer))
 			# 高度差越大，虚影偏移越多 —— 这是"层叠"的视觉暗示
 			_draw_layer(above, GHOST_ALPHA, Vector2(-2.0, -3.0) * (dz / 2.0), true)
+	_draw_anchor_rig()
 	if show_grid:
 		_draw_grid()
+
+
+func _draw_anchor_rig() -> void:
+	"""抛锚：从船首伸出一条绷直的锚链，末端是落底的锚与两圈涟漪。
+
+	俯视图里"锚在水下"本来看不见，但玩家需要一眼知道船为什么不动 ——
+	所以把链和锚画在水面之上，用颜色和涟漪说明它沉在下面。
+	"""
+	if not anchored:
+		return
+	var bow := _cell_center(Vector2i(1, 3))
+	var tip := bow + Vector2(-2.6 * CELL, 0.7 * CELL)
+	var chain := Color(0.36, 0.38, 0.44)
+	draw_line(bow, tip, chain, 5.0)
+	# 链环：沿着链均匀点几节，比一根实线更像链
+	var steps := 7
+	for i in range(1, steps):
+		var p := bow.lerp(tip, float(i) / float(steps))
+		draw_circle(p, 4.0, Color(0.22, 0.24, 0.28))
+	# 锚本体（部件坐标系里锚是竖着画的，转过来让它躺在链的末端）
+	var wu := world_ppu()
+	var ru := raster_ppu()
+	if not bank.draw_part(self, "anchor_icon", tip, PI * 0.42, wu, ru,
+			Color(1, 1, 1, 0.95)):
+		draw_circle(tip, 10.0, chain)
+	# 涟漪：两道圈说明它落在水底
+	draw_arc(tip, 30.0, 0.0, TAU, 28, Color(0.6, 0.85, 1.0, 0.22), 2.0)
+	draw_arc(tip, 46.0, 0.0, TAU, 32, Color(0.6, 0.85, 1.0, 0.13), 2.0)
 
 
 func _draw_sea() -> void:
@@ -173,11 +206,18 @@ func _draw_rig(alpha: float, offset: Vector2) -> void:
 	# 帆要半透明：它物理上确实在甲板之上、会挡住甲板，
 	# 但纯俯视视角下必须能看见甲板，否则玩家读不出船的状态。
 	var sail_tint := Color(1, 1, 1, alpha * SAIL_ALPHA)
-	bank.draw_part(self, "sail_main", at, sail_main_rad, wu, ru, sail_tint)
-	bank.draw_part(self, "sail_jib", at, sail_jib_rad, wu, ru,
+	bank.draw_part(self, _sail_part("sail_main", sail_state), at, sail_main_rad, wu, ru, sail_tint)
+	bank.draw_part(self, _sail_part("sail_jib", sail_state), at, sail_jib_rad, wu, ru,
 		Color(1, 1, 1, alpha * SAIL_ALPHA * 0.86))
 	bank.draw_part(self, "yard", at, sail_main_rad, wu, ru, tint)
 	bank.draw_part(self, "mast", at, 0.0, wu, ru, tint)
+
+
+func _sail_part(base: String, state: int) -> String:
+	match state:
+		1: return base + "_reefed"
+		2: return base + "_furled"
+	return base
 
 
 func _draw_prop(prop: Dictionary, alpha: float, offset: Vector2) -> void:

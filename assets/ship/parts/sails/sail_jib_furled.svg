@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="430" viewBox="0 0 780 430">
+  <!-- 前帆·收帆（俯视）：同样卷起来绑在帆桁上。 -->
+  <path d="M 30 215 C 150 186, 380 178, 600 190 C 644 202, 654 230, 600 242
+           C 380 252, 150 244, 30 215 Z"
+        fill="#b0a488" stroke="#6a6152" stroke-width="8" stroke-linejoin="round"/>
+  <g stroke="#c4b99c" stroke-width="5" fill="none" stroke-linecap="round">
+    <path d="M 180 194 C 300 206, 440 210, 560 198"/>
+    <path d="M 180 238 C 300 226, 440 222, 560 234"/>
+  </g>
+  <g stroke="#6f6653" stroke-width="8" stroke-linecap="round">
+    <path d="M 150 196 L 150 236"/>
+    <path d="M 280 186 L 280 246"/>
+    <path d="M 420 184 L 420 248"/>
+    <path d="M 540 190 L 540 242"/>
+  </g>
+</svg>

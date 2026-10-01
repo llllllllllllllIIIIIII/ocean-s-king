@@ -108,6 +108,9 @@ func _sync_view() -> void:
 	# 帆弦线：物理里是船体系角度（0 = 船首），画布的 +x 是船尾，所以要 180 - a
 	view.sail_main_rad = deg_to_rad(180.0 - float(snap["sail_main_deg"]))
 	view.sail_jib_rad = deg_to_rad(180.0 - float(snap["sail_jib_deg"]))
+	# 帆的形态与锚的状态：这两条是"看不见的物理状态"在画面上的出口
+	view.sail_state = int(orders.sail_level)
+	view.anchored = ship.is_anchored()
 	view.queue_redraw()
 
 
@@ -161,7 +164,30 @@ func _run_shot_timeline() -> void:
 			_apply()
 		72:
 			_capture("09_sail_panel")
+		74:
+			_show_panel = false
+			_panel.visible = false
+			orders.set_sail_level(ShipOrders.SailLevel.FULL)
+			_sail_shot(335.0, 200.0, 1.55)
 		78:
+			_capture("10_sail_full")
+		80:
+			orders.set_sail_level(ShipOrders.SailLevel.REEF)
+			_sail_shot(335.0, 60.0, 1.55)
+		84:
+			_capture("11_sail_reefed")
+		86:
+			orders.set_sail_level(ShipOrders.SailLevel.FURLED)
+			_sail_shot(335.0, 40.0, 1.55)
+		90:
+			_capture("12_sail_furled")
+		92:
+			orders.anchored = true
+			orders.set_sail_level(ShipOrders.SailLevel.FURLED)
+			_sail_shot(335.0, 60.0, 1.55)
+		96:
+			_capture("13_anchored")
+		102:
 			print("[shots] " + view.bank.stats())
 			get_tree().quit(0)
 
@@ -181,11 +207,15 @@ func _sail_shot(heading: float, seconds: float, zoom: float) -> void:
 	# 航速都是真的算出来的，不是摆拍。
 	ship.set_pose(Vector2.ZERO, heading)
 	crew.set_target_heading(heading)
+	# 玩家的指令（帆档、锚）也要按同一条路灌进物理，否则照片和游戏不一致
+	ship.set_sail_area_scale(orders.sail_area_scale())
+	ship.set_anchored(orders.anchored)
 	_mode = Mode.ZOOM
 	_layer = 2
 	_zoom = zoom
 	var dt := 0.05
 	for _i in int(seconds / dt):
+		crew.hands_on_sails = orders.hands_on_sails
 		crew.step(dt)
 		ship.step(dt, wind.velocity_world())
 	_sync_view()

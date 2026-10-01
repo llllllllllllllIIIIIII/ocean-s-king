@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="620" viewBox="0 0 1120 620">
+  <!-- 主帆·缩帆（俯视）。画布与锚点和全帆版完全一致，所以换部件不影响拼装位置。
+       缩帆 = 帆布少了下面一段：帆短了一截，靠近桁的那两条是收帆带（reef band）。 -->
+  <path d="M 40 310 C 190 168, 430 122, 640 142 L 640 462 C 430 486, 190 452, 40 310 Z"
+        fill="#e8dfc8" stroke="#8a7f66" stroke-width="9" stroke-linejoin="round"/>
+  <g stroke="#cfc4a8" stroke-width="6" fill="none" stroke-linecap="round">
+    <path d="M 190 205 C 330 235, 480 268, 640 150"/>
+    <path d="M 190 415 C 330 385, 480 352, 640 454"/>
+  </g>
+  <!-- 收帆带：两道绑绳 + 一排索环，让"少了多少帆"一眼看得出来 -->
+  <g stroke="#b0a488" stroke-width="7" stroke-linecap="round">
+    <path d="M 470 132 L 470 476"/>
+    <path d="M 566 136 L 566 470"/>
+  </g>
+  <g fill="#6f6653">
+    <circle cx="470" cy="196" r="9"/><circle cx="470" cy="310" r="9"/><circle cx="470" cy="424" r="9"/>
+    <circle cx="566" cy="204" r="8"/><circle cx="566" cy="310" r="8"/><circle cx="566" cy="416" r="8"/>
+  </g>
+</svg>

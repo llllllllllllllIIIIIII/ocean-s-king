@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="620" viewBox="0 0 1120 620">
+  <!-- 主帆·收帆（俯视）：帆布整个卷起来绑在桁上，只剩一条"帆卷"。
+       它和桁用同一个角度绘制，所以看上去就是绑在桁上的那一卷。 -->
+  <path d="M 40 310 C 220 268, 560 258, 880 270 C 932 286, 944 334, 880 350
+           C 560 362, 220 352, 40 310 Z"
+        fill="#b8ac90" stroke="#6a6152" stroke-width="9" stroke-linejoin="round"/>
+  <!-- 帆布的螺旋感：两道浅浅的卷边线 -->
+  <g stroke="#cfc4a8" stroke-width="6" fill="none" stroke-linecap="round">
+    <path d="M 260 276 C 420 292, 600 296, 800 282"/>
+    <path d="M 260 344 C 420 328, 600 324, 800 338"/>
+  </g>
+  <!-- 绑绳：横跨帆卷的六道绳子，这是"已经收好"最直接的视觉信号 -->
+  <g stroke="#6f6653" stroke-width="9" stroke-linecap="round">
+    <path d="M 210 282 L 210 340"/>
+    <path d="M 360 272 L 360 350"/>
+    <path d="M 520 268 L 520 354"/>
+    <path d="M 680 270 L 680 352"/>
+    <path d="M 820 276 L 820 346"/>
+    <path d="M 900 288 L 900 332"/>
+  </g>
+</svg>

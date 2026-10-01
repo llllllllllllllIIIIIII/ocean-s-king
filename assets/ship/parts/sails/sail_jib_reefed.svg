@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="430" viewBox="0 0 780 430">
+  <!-- 前帆·缩帆（俯视）。画布与锚点和全帆版一致。 -->
+  <path d="M 30 215 C 140 112, 320 84, 480 100 L 480 330 C 320 346, 140 318, 30 215 Z"
+        fill="#ded4bb" stroke="#8a7f66" stroke-width="8" stroke-linejoin="round"/>
+  <g stroke="#c4b99c" stroke-width="5" fill="none" stroke-linecap="round">
+    <path d="M 130 150 C 240 172, 350 196, 480 108"/>
+    <path d="M 130 282 C 240 260, 350 236, 480 322"/>
+  </g>
+  <g stroke="#b0a488" stroke-width="6" stroke-linecap="round">
+    <path d="M 350 92 L 350 338"/>
+  </g>
+  <g fill="#6f6653">
+    <circle cx="350" cy="160" r="8"/><circle cx="350" cy="215" r="8"/><circle cx="350" cy="270" r="8"/>
+  </g>
+</svg>
