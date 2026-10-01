@@ -24,6 +24,11 @@ static func ensure_dir() -> void:
 
 
 static func save_game(v: Voyage, slot := "auto") -> Dictionary:
+	# 陆战打到一半不许存：战斗本身（`LandBattle`）不在存档契约里，存下去会把这一仗
+	# **静默丢掉**（读档回来人还在岸上，但没有这场遭遇）。规矩是"失败要让人看见"，
+	# 所以这里明说，不许静默。（M8 收尾做阶段扫描时发现：四个阶段里只有战斗中会丢东西。）
+	if v.battle != null and not v.battle.over:
+		return {"ok": false, "reason": "打起来了 —— 这一场还没打完，打完再存（存档不保存进行中的陆战）"}
 	ensure_dir()
 	var path := slot_path(slot)
 	var payload := {

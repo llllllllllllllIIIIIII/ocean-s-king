@@ -13,7 +13,10 @@ extends SceneTree
 
 const DT := 0.5
 const SLOT := "test_roundtrip"
+const STAGE_SLOT := "test_stage"
 const SCENE := "res://scenes/sea_debug.tscn"
+# 阶段扫描跑的是**主场景那个大西洋世界**（48km / 四港），不是 8km 的回归海域
+const GEO := "res://data/world/atlantic/geography.json"
 
 var _checks := 0
 var _fails: PackedStringArray = []
@@ -30,6 +33,7 @@ func _initialize() -> void:
 	_test_continue_after_load()
 	_test_file_io_and_rejection()
 	_test_ai_route_roundtrip()
+	_test_stage_roundtrips()
 	# 场景那一半要等引擎推过一帧（_ready() 还没跑时场景内部是空的）
 	_scene = load(SCENE).instantiate()
 	root.add_child(_scene)
@@ -303,6 +307,157 @@ func _test_ai_route_roundtrip() -> void:
 	var p := ProjectSettings.globalize_path(SaveGame.slot_path("test_ai_route"))
 	if FileAccess.file_exists(p):
 		DirAccess.remove_absolute(p)
+
+
+# ---------------------------------------------------------------- 4.6 阶段扫描
+
+func _test_stage_roundtrips() -> void:
+	"""在**五个阶段**各存一次读一次。
+
+	为什么单独扫一遍：M8 收尾那个真 bug（AI 航点被 JSON 写成字符串）只在"读档之后"发作，
+	而当时所有断言都在存/读的当口就结束了，`test_save` 的退出码还是 0。
+	只看"存的时候对不对"不够 —— 要按游戏进程一段一段验。
+	"""
+	var v := Voyage.new()
+	v.setup(GEO)
+	_run(v, 120.0)
+	_stage_roundtrip(v, "A 刚出海")
+
+	# B 跟着航线走：这一段专门验 M8 收尾新加的 following_route / route_waypoints
+	v.start_route_follow()
+	_run(v, 300.0)
+	var b := _stage_roundtrip(v, "B 沿航线走")
+	_check(b != null and b.following_route,
+		"「沿航线走」这个开关活过了存档（不然读档回来船开到下一段就停）")
+	if b != null:
+		_check(b.route_waypoints.size() == v.route_waypoints.size(),
+			"剩下的航点也活过了存档（%d 段）" % b.route_waypoints.size())
+
+	# C 靠港 / 买卖
+	var port := Vector2.ZERO
+	for p in v.sea.ports():
+		if str(p.get("id", "")) == "santa_cruz":
+			port = Geom2D.centroid(p["shape"])
+	v.stop_route_follow()
+	v.ship.set_pose(port, 180.0)
+	v.orders.anchored = true
+	var money_before := v.cargo.money
+	v.dock()
+	var bought := v.port_buy("water", 3)
+	_check(bool(bought.get("ok", false)), "在加那利买到了淡水（%s）" % str(bought.get("reason", "")))
+	var c := _stage_roundtrip(v, "C 靠港 / 买卖")
+	if c != null:
+		_check(c.docked_port == v.docked_port, "靠港的状态活过了存档（%s）" % c.docked_port)
+		_check(c.cargo.money == money_before - int(bought.get("cost", 0)),
+			"买完水的钱数也活过了存档（%d）" % c.cargo.money)
+
+	# D 上岸打一仗：**战斗中不许存档**（战斗不在存档契约里，明说比静默丢好）
+	var spot := _landing_spot(v, port)
+	_check(spot != Vector2.ZERO, "在加那利外海找得到一个能上岸的浅水点")
+	if spot != Vector2.ZERO:
+		v.undock()
+		v.ship.set_pose(spot, 180.0)
+		v.orders.anchored = true
+		var ids := []
+		for m in v.landing_candidates():
+			ids.append(m.id)
+		v.land(ids, 6)
+		_check(v.ashore, "船长带人上岸了（%d 个人）" % v.party_size())
+		var br := v.begin_land_battle(8, "clear")
+		_check(bool(br.get("ok", false)), "打起来了（%s）" % str(br.get("reason", "")))
+		var refused := SaveGame.save_game(v, STAGE_SLOT)
+		_check(not bool(refused.get("ok", true)), "战斗中存档被拒绝，不是静默丢东西")
+		_check(str(refused.get("reason", "")).find("打完") >= 0,
+			"拒绝的理由说得清（%s）" % str(refused.get("reason", "")))
+		var bt := 0.0
+		while v.battle != null and not v.battle.over and bt < 3600.0:
+			v.tick(DT)
+			bt += DT
+		_check(v.battle != null and v.battle.over, "这一仗打完了（%.0f 游戏秒）" % bt)
+		_run(v, 60.0)
+		var d := _stage_roundtrip(v, "D 打完仗 / 人在岸上")
+		if d != null:
+			_check(d.party_size() == v.party_size(),
+				"岸上那队人活过了存档（%d 个）" % d.party_size())
+
+	# E 风暴 + 事件
+	v.weather.force("storm", 24.0)
+	v.events.try_fire("storm_wreck", v)
+	_run(v, 300.0)
+	var e := _stage_roundtrip(v, "E 风暴 / 事件")
+	if e != null:
+		_check(e.weather.state_id == v.weather.state_id,
+			"天气活过了存档（%s）" % e.weather.state_id)
+
+	var path := ProjectSettings.globalize_path(SaveGame.slot_path(STAGE_SLOT))
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(path)
+
+
+func _landing_spot(v: Voyage, near: Vector2) -> Vector2:
+	"""从 `near` 往外扫 500 米一格的网格，挑一个"不是干地、离岸 380 米以内"的点。"""
+	for gx in range(-40, 41):
+		for gy in range(-40, 41):
+			var p := near + Vector2(float(gx) * 500.0, float(gy) * 500.0)
+			if v.sea.is_dry_land(p):
+				continue
+			if float(v.sea.nearest_shore(p)["distance_m"]) < 380.0:
+				return p
+	return Vector2.ZERO
+
+
+func _stage_snapshot(v: Voyage) -> Dictionary:
+	"""阶段扫描要比的量：跨阶段都拿得到、而且"读档后必须一样"的那些。"""
+	return {
+		"t": v.t,
+		"day": v.day,
+		"docked": v.docked_port,
+		"ashore": v.ashore,
+		"party": v.party_size(),
+		"money": v.cargo.money,
+		"head": v.story.head,
+		"sail": int(v.orders.sail_level),
+		"anchored": v.orders.anchored,
+		"pos": v.ship.position_m(),
+		"heading": v.ship.heading_deg(),
+		"crew": v.crew_on_board(),
+		"tiles": v.discovered_tiles(),
+		"know": v.knowledge.count(),
+		"weather": v.weather.state_id,
+		"following_route": v.following_route,
+	}
+
+
+func _stage_roundtrip(v: Voyage, label: String) -> Voyage:
+	"""存 → 读 → 比关键量 → 让读回来的世界再跑 2 分钟游戏时间。"""
+	var before := _stage_snapshot(v)
+	var r := SaveGame.save_game(v, STAGE_SLOT)
+	_check(bool(r.get("ok", false)), "%s：存得下去（%s）" % [label, str(r.get("reason", ""))])
+	if not bool(r.get("ok", false)):
+		return null
+	var b := Voyage.new()
+	b.setup(GEO)
+	var r2 := SaveGame.load_into(b, STAGE_SLOT)
+	_check(bool(r2.get("ok", false)), "%s：读得回来（%s）" % [label, str(r2.get("reason", ""))])
+	if not bool(r2.get("ok", false)):
+		return null
+	var after := _stage_snapshot(b)
+	var diff := PackedStringArray()
+	for k in before.keys():
+		var a = before[k]
+		var c = after[k]
+		if typeof(a) == TYPE_VECTOR2:
+			if (a as Vector2).distance_to(c) > 0.05:
+				diff.append("%s %s→%s" % [str(k), str(a), str(c)])
+		elif typeof(a) == TYPE_FLOAT:
+			if absf(float(a) - float(c)) > 0.005:
+				diff.append("%s %.3f→%.3f" % [str(k), float(a), float(c)])
+		elif a != c:
+			diff.append("%s %s→%s" % [str(k), str(a), str(c)])
+	_check(diff.is_empty(), "%s：存/读后 %d 个关键量一致%s" % [
+		label, before.size(), "" if diff.is_empty() else "（不一致：%s）" % ", ".join(diff)])
+	_run(b, 120.0)
+	return b
 
 
 func _key(scene, code: int) -> void:

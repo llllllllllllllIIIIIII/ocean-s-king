@@ -15,6 +15,8 @@ const FIELDS := [
 	"ashore", "captain_pos", "captain_target", "ashore_count", "landing_point",
 	"landing_land_id", "party", "cargo", "docked_port",
 	"rules", "society", "dilemmas", "ending_score",
+	# M8 收尾：玩家那艘船的"沿航线走"开关与剩下的航点
+	"following_route", "route_waypoints",
 	"culture",
 ]
 

@@ -1184,6 +1184,10 @@ func capture_ship_state() -> Dictionary:
 		"dilemmas": dilemmas.capture_state(),
 		"ending_score": ending_score.duplicate(),
 		"culture": culture.capture_state(),
+		# M8 收尾：按 `N` 沿航线走的状态。它是"这条船现在怎么开"，算本船状态；
+		# 不存的话，存档时正在跟航线、读档回来就跟丢了（航点没了，船开到下一段就停）。
+		"following_route": following_route,
+		"route_waypoints": StateIO.v2_list(route_waypoints),
 	}
 
 
@@ -1216,6 +1220,10 @@ func apply_ship_state(d: Dictionary) -> void:
 	dilemmas.apply_state(d.get("dilemmas", {}))
 	ending_score = (d.get("ending_score", {}) as Dictionary).duplicate()
 	culture.apply_state(d.get("culture", {}))
+	following_route = bool(d.get("following_route", false))
+	route_waypoints = StateIO.to_v2_list(d.get("route_waypoints", []))
+	if following_route and route_waypoints.is_empty():
+		following_route = false          # 没剩下航点就没什么可跟的了
 	# 航程累计用的"上一帧船位"是派生值：读档后必须对齐到读回来的位置，
 	# 否则这一刻会被当成一次瞬移（或者被算成几百米的航程）。
 	_prev_pos = ship.position_m()

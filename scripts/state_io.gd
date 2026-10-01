@@ -23,6 +23,39 @@ static func to_v2(a) -> Vector2:
 	return Vector2(float(a[0]), float(a[1]))
 
 
+static func v2_list(arr: Array) -> Array:
+	"""一串 Vector2 → 一串 [x, y]。落盘一律走这里。"""
+	var out := []
+	for p in arr:
+		if typeof(p) == TYPE_VECTOR2 or typeof(p) == TYPE_ARRAY:
+			out.append(v2(p))
+	return out
+
+
+static func to_v2_list(raw) -> Array:
+	"""读档：三种形态都要认 ——
+	① `Vector2`（内存里）；② `[x, y]`（**现存档的写法**）；
+	③ `"(x, y)"`（早期把 Vector2 直接 stringify 出来的，得救回来 —— 见 docs/14 第 7 节）。"""
+	var out := []
+	if typeof(raw) == TYPE_PACKED_VECTOR2_ARRAY:
+		for p in (raw as PackedVector2Array):
+			out.append(p)
+		return out
+	if typeof(raw) != TYPE_ARRAY:
+		return out
+	for p in raw:
+		if typeof(p) == TYPE_VECTOR2:
+			out.append(p)
+		elif typeof(p) == TYPE_ARRAY:
+			out.append(to_v2(p))
+		elif typeof(p) == TYPE_STRING:
+			var bits := str(p).strip_edges().trim_prefix("(").trim_suffix(")").split(",")
+			if bits.size() >= 2:
+				out.append(Vector2(String(bits[0]).strip_edges().to_float(),
+					String(bits[1]).strip_edges().to_float()))
+	return out
+
+
 static func v3i(v) -> Array:
 	if typeof(v) == TYPE_ARRAY:
 		return [int(v[0]), int(v[1]), int(v[2])]
