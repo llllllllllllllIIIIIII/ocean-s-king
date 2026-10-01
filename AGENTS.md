@@ -75,6 +75,7 @@ python tools/gen_ship.py                                               # 重新�
 | 世界像素比和栅格化倍率混用同一个值 | 摄像机缩放被应用两次，整艘船大一圈（或小一圈） | 两个值分开：`world_ppu` 是固定值，只有 `raster_ppu` 乘 zoom |
 | 改了 `half_beam` / `WIDTHS` 没重排房间坐标 | 校验器报"房间的格子在 Lx 上不可走" | 动船体曲线后**必须**重跑 `validate_ship.gd` |
 | SVG 部件锚点在画布外 | 部件被画到错误位置 | `test_svg_parts.gd` 会检查锚点落在画布内 |
+| `.cmd` 里写 `--path "%~dp0"` | 启动器一闪就没、Godot 根本不打开 | `%~dp0` 结尾是反斜杠，紧挨右引号会把引号转义掉；写 `"%~dp0."` |
 
 ---
 

@@ -5,6 +5,11 @@ REM  Just double-click this file.
 REM
 REM  ASCII only on purpose: cmd.exe on a Chinese Windows reads
 REM  .cmd/.bat as GBK, and non-ASCII characters corrupt the parser.
+REM
+REM  NOTE: --path uses "%~dp0." (with a trailing dot) on purpose.
+REM  "%~dp0" ends with a backslash, and a backslash right before the
+REM  closing quote escapes that quote -- Godot then gets a mangled
+REM  path and exits instantly (the launcher "flashes and does nothing").
 REM ============================================================
 
 set "GODOT=D:\Godot\Godot_v4.7.2-stable_win64.exe"
@@ -17,4 +22,4 @@ if not exist "%GODOT%" (
 )
 
 echo Launching ship debug view...
-start "" "%GODOT%" --path "%~dp0" res://scenes/ship_debug.tscn
+start "" "%GODOT%" --path "%~dp0." res://scenes/ship_debug.tscn
