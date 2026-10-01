@@ -22,6 +22,7 @@ const BUF_KEEP := 0.6               # 插值缓冲保留多久
 const KIND_LOCAL := "local"
 const KIND_AI := "ai"
 const KIND_REMOTE := "remote"
+const ARRIVE_RADIUS_M := 900.0       # 进入这个圈就算"抵达终点"（和结算页同一把尺子）
 
 var slots: Array = []               # [{id, name, captain, kind, owner_peer, owner_name, ship}]
 var local_id := ""
@@ -30,6 +31,9 @@ var t := 0.0                        # 本机的真实时间（插值用真实时
 var mirror_world := false
 var _buf: Dictionary = {}           # id -> [{t, pos, heading, ...}]
 var _local_summary: Dictionary = {} # 本机那条船的摘要（由 Voyage 每帧灌进来）
+var goal := Vector2.ZERO            # 这一程的终点港（抵达判定用它）
+var arrived: Dictionary = {}        # id -> true（**抵达是个闩**：到过一次就一直算到过）
+var _left_goal: Dictionary = {}     # id -> true（先离开过终点圈，回来才算"抵达"）
 
 
 func setup(path := DATA_PATH) -> void:
@@ -162,6 +166,29 @@ func set_ai_target(id: String, target: Vector2) -> void:
 	(s["ship"] as AbstractShip).has_target = true
 
 
+func set_ai_waypoints(id: String, points: Array) -> void:
+	var s := slot_of(id)
+	if s.is_empty() or s["ship"] == null:
+		return
+	var a := s["ship"] as AbstractShip
+	a.waypoints = points.duplicate()
+	a.has_target = not points.is_empty()
+
+
+func place_ai(id: String, pos: Vector2, heading := 90.0) -> void:
+	"""把一条 AI 船摆到某处（测试与"接管/交还"时用）。"""
+	var s := slot_of(id)
+	if s.is_empty() or s["ship"] == null:
+		return
+	var a := s["ship"] as AbstractShip
+	a.pos = pos
+	a.heading_deg = heading
+	a.waypoints = []
+	a.has_target = false
+	a.speed_ms = 0.0
+	a.action = "抵达待命"
+
+
 # ------------------------------------------------------------ 每帧
 
 func advance_clock(real_delta: float) -> void:
@@ -182,6 +209,21 @@ func step_game(delta: float, sea: Sea) -> void:
 				_sample_remote(s)
 			_:
 				pass                      # 本机那条由 Voyage 的细化运行时推进
+	# 抵达判定：AI 与远端都算（本机那条由 Voyage 自己灌摘要，位置一样从这里读）
+	if goal != Vector2.ZERO:
+		for s in slots:
+			var id := str(s["id"])
+			if arrived.has(id):
+				continue
+			var p := pose_of(id)
+			if p == Vector2.ZERO:
+				continue
+			# 开局本来就停在出发港里 —— 得**先离开**再回来，才算"抵达"，
+			# 不然第一帧就会宣布"全队抵达"（在只有一座港的迷你海域里尤其荒唐）
+			if p.distance_to(goal) > ARRIVE_RADIUS_M:
+				_left_goal[id] = true
+			elif bool(_left_goal.get(id, false)):
+				arrived[id] = true
 
 
 func receive_summary(d: Dictionary) -> void:
@@ -267,12 +309,19 @@ func _apply_sample(s: Dictionary, sample: Dictionary) -> void:
 
 func pose_of(id: String) -> Vector2:
 	var s := slot_of(id)
-	return (s["ship"] as AbstractShip).pos if s["ship"] != null else Vector2.ZERO
+	if s.get("ship") != null:
+		return (s["ship"] as AbstractShip).pos
+	# 本机那条船的运行时在 Voyage 里（`s["ship"]` 是 null），位置从它灌进来的摘要读 ——
+	# 少了这一步，本地船在船队这一层看起来永远停在原点（抵达判定就永远不成立）
+	var p: Array = _local_summary.get("pos", [])
+	return Vector2(float(p[0]), float(p[1])) if p.size() >= 2 else Vector2.ZERO
 
 
 func heading_of(id: String) -> float:
 	var s := slot_of(id)
-	return (s["ship"] as AbstractShip).heading_deg if s["ship"] != null else 0.0
+	if s.get("ship") != null:
+		return (s["ship"] as AbstractShip).heading_deg
+	return float(_local_summary.get("heading", 0.0))
 
 
 func summary_of(id: String) -> Dictionary:
@@ -281,7 +330,7 @@ func summary_of(id: String) -> Dictionary:
 		return {}
 	if s["ship"] != null:
 		return (s["ship"] as AbstractShip).to_summary()
-	return _local_summary.duplicate()
+	return _local_summary.duplicate() if str(s["id"]) == local_id else {}
 
 
 func set_local_summary(d: Dictionary) -> void:
@@ -365,6 +414,7 @@ func capture_state() -> Array:
 			"owner_name": str(s["owner_name"]),
 			"fleet_kind": str(s["kind"]),
 			"summary": a.capture_state() if a != null else {},
+			"arrived": bool(arrived.has(id)),
 		})
 	return out
 
@@ -385,3 +435,5 @@ func apply_state(arr: Array) -> void:
 		s["kind"] = KIND_REMOTE if fk == KIND_REMOTE else KIND_AI
 		s["owner_peer"] = int(d.get("owner_peer", 0))
 		s["owner_name"] = str(d.get("owner_name", ""))
+		if bool(d.get("arrived", false)):
+			arrived[id] = true

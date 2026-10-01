@@ -19,6 +19,8 @@ const FIELDS := [
 	"ports", "shortage_events",
 	# M7：自然环境、事件池、知识、世界记忆（都是"同一片海对所有人一样"的东西）
 	"weather", "events", "knowledge", "memory",
+	# M8：四条船都抵达终点港（结算的第二个出口）
+	"reached_destination",
 	"last_message", "message_timer", "log_lines", "pending_reports",
 	"_shore_cooldown", "story", "journal",
 ]

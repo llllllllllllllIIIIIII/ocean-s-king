@@ -32,6 +32,10 @@ var money := 0
 var target := Vector2.ZERO
 var has_target := false
 var speed_ms := 0.0
+# M8：航线航点。AI 船照着**已经设计好的航段**走（routes.json 那条不穿干地的线），
+# 而不是朝终点一路直线 —— 直线会撞上西非海岸，然后永久"受阻"在岸边。
+var waypoints: Array = []
+var _blocked_t := 0.0
 
 
 func setup(ship_id: String, ship_name: String, at: Vector2, heading := 90.0) -> void:
@@ -43,6 +47,9 @@ func setup(ship_id: String, ship_name: String, at: Vector2, heading := 90.0) -> 
 
 func step(delta: float, sea: Sea) -> void:
 	"""AI 的糙模型：朝目标走，遇到干地就停下。它不认识风，只认识"往哪儿开"。"""
+	if not waypoints.is_empty():
+		target = waypoints[0]
+		has_target = true
 	if anchored or sail_level == 2 or not has_target:
 		speed_ms = move_toward(speed_ms, 0.0, 1.2 * delta)
 		action = "抛锚" if anchored else ("漂着" if not has_target else "收帆")
@@ -51,8 +58,12 @@ func step(delta: float, sea: Sea) -> void:
 	var to_target := target - pos
 	if to_target.length() < ARRIVE_M:
 		speed_ms = move_toward(speed_ms, 0.0, 1.0 * delta)
-		action = "抵达待命"
-		has_target = false
+		if not waypoints.is_empty():
+			waypoints.pop_front()          # 到了这一个航点，接着去下一个
+			action = "转向下一段"
+		else:
+			action = "抵达待命"
+			has_target = false
 		_drift(delta, sea)
 		return
 	var want := rad_to_deg(atan2(to_target.y, to_target.x))
@@ -61,14 +72,29 @@ func step(delta: float, sea: Sea) -> void:
 	var cruise := CRUISE_MS * (1.0 if sail_level == 0 else 0.55)
 	speed_ms = move_toward(speed_ms, cruise, 0.8 * delta)
 	action = "巡航" if absf(diff) < 30.0 else "转舵"
-	var next := pos + Vector2(cos(deg_to_rad(heading_deg)), sin(deg_to_rad(heading_deg))) \
+	var step_vec := Vector2(cos(deg_to_rad(heading_deg)), sin(deg_to_rad(heading_deg))) \
 		* speed_ms * delta
+	var next := pos + step_vec
 	if sea.is_dry_land(next):
-		# 干地：停住并记一笔。"AI 把船开上岸"是这一层最容易出的洋相。
-		speed_ms = 0.0
-		action = "受阻"
+		# 干地：**贴着岸滑**（和玩家那条船的做法一致 —— 见 ShipDynamics 的沿轴滑动）。
+		# 早先的版本是"停住"，结果是 AI 一路贴到岸边就不动了；后来改成"卡 30 秒就跳过
+		# 这个航点"，结果它把航点全跳光、离终点还差 18 公里。滑动才对。
+		var slid := Vector2.ZERO
+		if not sea.is_dry_land(Vector2(next.x, pos.y)):
+			slid = Vector2(step_vec.x, 0.0)
+		elif not sea.is_dry_land(Vector2(pos.x, next.y)):
+			slid = Vector2(0.0, step_vec.y)
+		if slid == Vector2.ZERO:
+			speed_ms = 0.0
+			action = "受阻"
+			_blocked_t += delta
+		else:
+			pos += slid
+			action = "沿岸绕行"
+			_blocked_t = 0.0
 		_drift(delta, sea)
 		return
+	_blocked_t = 0.0
 	pos = next
 	_drift(delta, sea)
 
@@ -134,6 +160,7 @@ func capture_state() -> Dictionary:
 	d["target"] = [target.x, target.y]
 	d["has_target"] = has_target
 	d["speed_ms"] = speed_ms
+	d["waypoints"] = waypoints.duplicate()
 	return d
 
 
@@ -143,3 +170,4 @@ func apply_state(d: Dictionary) -> void:
 	target = Vector2(float(t[0]), float(t[1]))
 	has_target = bool(d.get("has_target", false))
 	speed_ms = float(d.get("speed_ms", 0.0))
+	waypoints = (d.get("waypoints", []) as Array).duplicate()

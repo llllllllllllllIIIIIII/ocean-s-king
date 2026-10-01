@@ -32,6 +32,7 @@ var weather := Weather.new()        # 自然环境（M7）
 var events := EventPool.new()       # 三类事件池（M7）
 var knowledge := Knowledge.new()    # 知识：发现即记录（M7）
 var memory := {}                    # 世界记住你做过什么（M7）：掠夺/救人/毁约/贸易
+var reached_destination := false    # M8：四条船都到了终点港（抵达是个闩）
 var ending_score := {"wealth": 0, "voyage": 0, "knowledge": 0, "crew": 0, "history": 0}
 var link: NetLink = null           # 联机（M3）：单机时是 null，走的是同一套调用
 var region_path := Sea.DATA_PATH   # 这一局用的是哪片海（静态数据，不进存档）
@@ -81,6 +82,7 @@ func setup(region := Sea.DATA_PATH, ship_id := "trinidad", inherited := {}) -> v
 	ports.setup()
 	fleet.setup()
 	fleet.claim_local(ship_id)
+	fleet.goal = default_destination()   # 抵达判定用（M8：全队抵达才结算）
 	var w: Dictionary = sea.wind()
 	wind = WindField.new(float(w.get("base_tws_ms", 8.0)), float(w.get("base_from_deg", 20.0)))
 	ship = ShipDynamics.new(ShipPhysics.load_default())
@@ -169,7 +171,24 @@ func tick(delta: float) -> void:
 		battle.tick(delta, cargo)
 		if battle.over:
 			_resolve_battle()
+	_check_fleet_arrival()
 	_publish_local_summary()
+
+
+func _check_fleet_arrival() -> void:
+	"""M8 的终点：**四条船都到巴西**，这一程才算走完（docs/13 第 2 节第 11 条）。
+
+	到了就宣布"可以结算了" —— 用的是和 v0.1 那一幕一样的旗标（`story.ending_ready`），
+	所以结算页只有一处出口：返航（v0.1 的弧）与抵达终点（v0.5 的弧）都汇到它。
+	"""
+	if reached_destination:
+		return
+	if fleet.arrived.size() < fleet.count():
+		return
+	reached_destination = true
+	story.ending_ready = true
+	_say("【船队】四条船都到了圣阿莱克索。文书把这一路的账摊在桌上。", true)
+	journal.decide("船队抵达圣阿莱克索，远征走完。")
 
 
 # ------------------------------------------------------------ 补给与港口（M4）
@@ -553,6 +572,7 @@ func _setup_fleet_ships(port_pos: Vector2) -> void:
 	**两条路径是同一条代码路径**（docs/13 M3 卡片第 4 条验收）。
 	"""
 	var target := default_destination()
+	var route := _fleet_route(port_pos)
 	for i in fleet.slots.size():
 		var s: Dictionary = fleet.slots[i]
 		var id := str(s["id"])
@@ -564,10 +584,44 @@ func _setup_fleet_ships(port_pos: Vector2) -> void:
 			at = port_pos
 		a.setup(id, str(s["name"]), at, 90.0)
 		if target != Vector2.ZERO:
-			a.target = target
+			# 照着航段走（每条船稍微让开一点，免得三条船叠在一起）
+			var offset := Vector2((float(i) - 2.0) * 420.0, (float(i) - 2.0) * 260.0)
+			a.waypoints = route.duplicate()
+			for k in a.waypoints.size():
+				a.waypoints[k] = (a.waypoints[k] as Vector2) + offset
+			a.target = target + offset
 			a.has_target = true
 		s["ship"] = a
 		s["kind"] = Fleet.KIND_AI
+
+
+func _fleet_route(from: Vector2) -> Array:
+	"""给 AI 船的航点表：把 `routes.json` 的三段接起来，从**最近的港**开始走。
+
+	为什么要这一张表：M8 验收第 1 条要求"四条船都到达"，而照着终点直线开的 AI
+	会一头撞上西非海岸，然后永久卡在岸边（实测：三条船全部"受阻"在离终点 18.5km 处）。
+	航线数据本来就是为"不穿干地"设计的（`test_worldmap` 每 250 米采样验过），直接用它。
+	"""
+	var out := []
+	var best_port := ""
+	var best_d := INF
+	for p in sea.ports():
+		var d := Geom2D.centroid(p["shape"]).distance_to(from)
+		if d < best_d:
+			best_d = d
+			best_port = str(p.get("id", ""))
+	var started := false
+	for r in sea.routes():
+		var pts := sea.route_points(r)
+		var ids := [str(r.get("from", "")), str(r.get("to", ""))]
+		if not started and ids.has(best_port):
+			started = true
+		if not started:
+			continue
+		for p in pts:
+			if out.is_empty() or (out[out.size() - 1] as Vector2).distance_to(p) > 1.0:
+				out.append(p)
+	return out
 
 
 func default_destination() -> Vector2:
@@ -1001,6 +1055,7 @@ func capture_world_state() -> Dictionary:
 		"events": events.capture_state(),
 		"knowledge": knowledge.capture_state(),
 		"memory": memory.duplicate(),
+		"reached_destination": reached_destination,
 		"reef_hit": reef_hit,
 		"shortage_events": shortage_events,
 		"last_message": last_message,
@@ -1030,6 +1085,7 @@ func apply_world_state(d: Dictionary) -> void:
 	events.apply_state(d.get("events", {}))
 	knowledge.apply_state(d.get("knowledge", {}))
 	memory = (d.get("memory", {}) as Dictionary).duplicate()
+	reached_destination = bool(d.get("reached_destination", false))
 	reef_hit = bool(d.get("reef_hit", false))
 	shortage_events = int(d.get("shortage_events", 0))
 	last_message = str(d.get("last_message", ""))

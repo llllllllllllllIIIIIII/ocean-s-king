@@ -182,7 +182,8 @@ static func fleet_report(v: Voyage) -> Array:
 		var pos := Vector2(float(p[0]), float(p[1]))
 		rows.append({
 			"id": id, "name": v.fleet.name_of(id), "kind": v.fleet.kind_of(id),
-			"arrived": pos.distance_to(goal) <= 900.0,
+			# 抵达是个**闩**：到过一次就一直算到过（洋流会把停在港里的船带走）
+			"arrived": v.fleet.arrived.has(id) or pos.distance_to(goal) <= Fleet.ARRIVE_RADIUS_M,
 			"distance_to_goal_m": pos.distance_to(goal),
 			"hull_pct": float(sm.get("hull_pct", 1.0)),
 			"crew_count": int(sm.get("crew_count", 0)),

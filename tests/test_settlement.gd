@@ -21,6 +21,8 @@ func _initialize() -> void:
 	_test_crew_and_death()
 	_test_verdicts()
 	_test_fleet_rows()
+	_test_fleet_sails_to_brazil()
+	_test_fleet_arrival_settles()
 	_test_text_page()
 	_finish()
 
@@ -165,6 +167,70 @@ func _test_fleet_rows() -> void:
 
 
 # ---------------------------------------------------------------- 6 结算页
+
+func _goal() -> Vector2:
+	var v := _v()
+	for p in v.sea.ports():
+		if str(p.get("id", "")) == "sao_aleixo":
+			return Geom2D.centroid(p["shape"])
+	return Vector2.ZERO
+
+
+func _test_fleet_sails_to_brazil() -> void:
+	"""AI 船得**自己开得到巴西** —— 修复之前它们会永久"受阻"在离终点 18.5 公里处。"""
+	var v := _v()
+	var goal := _goal()
+	_check(v.fleet.goal.distance_to(goal) < 1.0, "船队的终点就是巴西港（%s）" % str(v.fleet.goal))
+	var ai := v.fleet.ids_of_kind(Fleet.KIND_AI)
+	_check(ai.size() == 3, "三条 AI 船（%d）" % ai.size())
+	for id in ai:
+		var ship: AbstractShip = v.fleet.slot_of(id)["ship"]
+		_check(ship.waypoints.size() >= 3,
+			"%s 拿到了航线航点（%d 个）—— 照航线走，不照直线撞岸" % [id, ship.waypoints.size()])
+	var start := {}
+	for id in ai:
+		start[id] = v.fleet.pose_of(id).distance_to(goal)
+	var t := 0.0
+	while t < 24000.0 and v.fleet.arrived.size() < 4:
+		v.tick(5.0)
+		t += 5.0
+	var moved := 0
+	for id in ai:
+		if v.fleet.arrived.has(id) or v.fleet.pose_of(id).distance_to(goal) < float(start[id]) * 0.5:
+			moved += 1
+	_check(moved == 3, "三条 AI 船都真的往巴西去了（到位或走了一半以上：%d/3，跑了 %.0f 游戏秒）" % [
+		moved, t])
+
+
+func _test_fleet_arrival_settles() -> void:
+	"""全队抵达 → 宣布可以结算（M8 验收第 1 条的出口）。"""
+	var v := _v()
+	var goal := _goal()
+	for id in v.fleet.ids():
+		if str(id) == v.fleet.local_id:
+			v.ship.set_pose(goal, 180.0)
+			v.fleet.set_local_summary(v.local_summary())
+		else:
+			v.fleet.place_ai(str(id), goal)
+	v.tick(0.5)
+	# 先让四条船"离开过终点圈"，再回来 —— 抵达的语义是"去过了再回来"
+	for id in v.fleet.ids():
+		v.fleet.arrived.erase(id)
+		v.fleet._left_goal[id] = true
+	v.tick(0.5)
+	_check(v.fleet.arrived.size() == 4, "四条船都进了终点圈（%d/4）" % v.fleet.arrived.size())
+	_check(v.reached_destination, "抵达是个闩：全队到了就记下来")
+	_check(v.story.ending_ready, "全队抵达 → 宣布可以结算（和 v0.1 那一幕同一个旗标）")
+	var page := Settlement.text(v, v.journal, v.story)
+	_check(page.find("4/4 条船抵达") >= 0,
+		"结算页写着全队抵达（%s）" % page.substr(page.find("【船队】"), 26))
+	var rows := Settlement.fleet_report(v)
+	var arrived := 0
+	for r in rows:
+		if bool(r["arrived"]):
+			arrived += 1
+	_check(arrived == 4, "船队那张表里四条都是「已抵达」（%d）" % arrived)
+
 
 func _test_text_page() -> void:
 	var v := _v()
