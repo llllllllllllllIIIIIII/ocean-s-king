@@ -269,6 +269,10 @@ func start_route_follow() -> String:
 			best_d = d
 			best = i
 	route_waypoints = route_waypoints.slice(best)
+	# 已经站在第一个航点上（刚出港就是这种情况）就别把"去自己脚下"当下一段 ——
+	# 不然按 N 会被告知"下一段去 圣卢卡尔"，而人就在圣卢卡尔。
+	if best_d < 500.0 and route_waypoints.size() > 1:
+		route_waypoints = route_waypoints.slice(1)
 	following_route = true
 	orders.set_target_point(route_waypoints[0] as Vector2)
 	# 顺手把这一段的"要几天 / 路上有什么"告诉玩家（M8 收尾的航线元数据）

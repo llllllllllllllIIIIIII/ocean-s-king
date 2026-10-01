@@ -319,6 +319,14 @@ func _test_route_metadata() -> void:
 		"下一段的终点港有名字（%s）" % str(here.get("to", "")))
 	_check(str(here.get("note", "")) != "", "每一段都有一句忠告（%s）" % str(here.get("note", "")).substr(0, 12))
 
+	# ⑤ 按 `N` 沿航线走：提示里得是**真的下一段**，不能是脚下这个港
+	var nv := _v()
+	var msg := nv.start_route_follow()
+	_check(msg.find("下一段去 圣卢卡尔") < 0,
+		"出港就按 N 不会被指去自己脚下的港（%s）" % msg.substr(0, 40))
+	_check(nv.route_waypoints.size() > 0 and nv.following_route,
+		"跟着航线走时有航点、开关也打开了（%d 个）" % nv.route_waypoints.size())
+
 
 # ---------------------------------------------------------------- 断言框架
 
