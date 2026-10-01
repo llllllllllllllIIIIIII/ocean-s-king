@@ -175,6 +175,17 @@ func _test_landing_chain() -> void:
 	_run(v, 240.0)
 	_check(v.visited.has("ruins"), "走到遗迹会被记录")
 	_check(v.fired.has("ruins"), "发现遗迹事件触发")
+	# 五个脚本事件里的最后一个：部落接触
+	v.move_party_to(Vector2(6260, 3180))
+	_run(v, 300.0)
+	_check(v.visited.has("village"), "走到部落村落会被记录")
+	_check(v.fired.has("village"), "部落接触事件触发（5 个脚本事件齐了）")
+	var five := ["lookout", "wind_shift", "injury", "ruins", "village"]
+	var missing := PackedStringArray()
+	for e in five:
+		if not v.fired.has(e):
+			missing.append(e)
+	_check(missing.is_empty(), "五个脚本事件全部触发过（缺：%s）" % ("无" if missing.is_empty() else ", ".join(missing)))
 
 	# 返航：走回滩头再上船，一次性收到报告
 	v.move_party_to(beach)
