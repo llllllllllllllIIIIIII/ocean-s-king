@@ -1083,8 +1083,10 @@ func _run_shot_timeline() -> void:
 		19:
 			# 面板要等 _update_hud 把 ship/crew 灌进去、再等一帧才会画出来
 			# （AGENTS.md 的坑：改完状态隔一帧再截）
-			_capture("21a_sail_panel")
+			pass
 		20:
+			_capture("21a_sail_panel")
+		21:
 			_show_panel = false
 			_panel.visible = false
 			# 跨 tile 缝：船从 tile 2,0 一路开进 tile 1,0（缝在 x=32000）

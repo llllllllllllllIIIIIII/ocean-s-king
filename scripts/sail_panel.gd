@@ -193,14 +193,25 @@ func _draw_numbers(box: Rect2) -> void:
 		nav.method_name(), nav.beat_count, nav.tack_count] if nav else "-")
 	lines.append(orders.describe() if orders else "-")
 
-	var y := box.position.y + 6.0
+	# M8：先给一行"陌生人只读这一行也够"的简况，再摊细节。
+	# 面板原本一上来就是 17 行数；陌生人第一眼不知道该看哪一行。
+	var summary := "风 %.0f m/s（%.0f°）· %s · 攻 %.0f° · %.1f 节" % [
+		ship.wind_ship_frame().length(), ship.twa_deg(),
+		orders.sail_level_name() if orders else "-",
+		ship.sail_alpha_main_deg(), float(snap["u_kn"])]
+	draw_string(font, Vector2(box.position.x, box.position.y + 10.0), summary,
+		HORIZONTAL_ALIGNMENT_LEFT, box.size.x, 13, Color(0.98, 0.92, 0.7))
+	draw_string(font, Vector2(box.position.x, box.position.y + 28.0), "细节（想知道为什么再看）：",
+		HORIZONTAL_ALIGNMENT_LEFT, box.size.x, 12, Color(0.6, 0.7, 0.8))
+
+	var y := box.position.y + 46.0
 	for i in lines.size():
 		var text: String = lines[i]
-		var col := Color(0.86, 0.92, 0.98)
+		var col := Color(0.8, 0.87, 0.94)
 		if text.begins_with("──"):
-			col = Color(0.55, 0.75, 0.95)
-		draw_string(font, Vector2(box.position.x, y), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, col)
-		y += 19.0
+			col = Color(0.52, 0.72, 0.92)
+		draw_string(font, Vector2(box.position.x, y), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, col)
+		y += 17.0
 
 	# 诊断行：直接回答"船为什么慢"
 	var diag := _diagnosis()
