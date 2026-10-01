@@ -169,6 +169,11 @@ tests/                   无头测试
 ```powershell
 $g = 'D:\Godot\Godot_v4.7.2-stable_win64_console.exe'
 
+# 刚克隆下来（或者新增了 class_name）先跑一次这个再跑别的：
+# class_name 的注册表在 .godot/ 里、不进仓库，不先扫一遍的话脚本一加载就是
+# 一片 "Failed to load script"（实测 59~76 条脚本错误，看着像代码坏了）
+& $g --headless --path . --import
+
 python tools/gen_ship.py                                     # 重新生成船体数据
 & $g --headless --path . --script res://tests/validate_ship.gd   # 校验数据
 & $g --headless --path . --script res://tests/test_story.gd       # 剧情 / 引导 / 结算
