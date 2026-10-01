@@ -213,12 +213,15 @@ func _stall_hint(delta: float) -> void:
 	if _stall_t < 180.0 or _stall_nagged:      # 三个游戏分钟没挪窝才开口
 		return
 	_stall_nagged = true
-	if following_route:
+	# 判断"有没有风"要看**船实际收到的风**：真风 8 m/s 碰上无风带（×0.22）或岛后
+	# 的背风区，落在帆上的就只剩两成 —— 这时候说"正对着风"是把原因说错了。
+	var felt := (wind.velocity_world()
+		* sea.lee_factor(ship.position_m()) * weather.wind_mult()).length()
+	if felt < 2.5:
+		say("这一带没什么风（或者被岛挡住了），船在漂 —— 等风来，或者换个目标点（左键）。", true)
+	elif following_route:
 		# 跟着航线走还卡住，说明这一段本身就逆风 —— 让他自己接管
-		say("这一段正顶着风，船磨不出前进 —— 点一个偏开一点的目标点（左键），" +
-			"跟航线走就先停一下。", true)
-	elif wind.tws_ms < 2.5:
-		say("这一带没什么风，船在漂 —— 等风来，或者换个目标点（左键）。", true)
+		say("这一段正顶着风，船磨不出前进 —— 左键点一个偏开一点的目标点，按 N 停下跟随。", true)
 	else:
 		say("目标点正对着风，船磨不出前进 —— 点一个偏开一点的目标点，或者按 N 沿航线走。", true)
 
