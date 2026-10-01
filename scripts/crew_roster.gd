@@ -91,7 +91,7 @@ func setup() -> void:
 		members.append(m)
 
 	_place_members()
-	_log("船员上船：12 名关键船员 + %d 名水手。" % count)
+	log_event("船员上船：12 名关键船员 + %d 名水手。" % count)
 	ready = true
 
 
@@ -269,10 +269,11 @@ func _say(m: CrewMember) -> void:
 	if note != "":
 		line = "%s（%s）" % [line, note]
 	m.grumble = line
-	_log("%s：%s" % [m.label(), line])
+	log_event("%s：%s" % [m.label(), line])
 
 
-func _log(text: String) -> void:
+func log_event(text: String) -> void:
+	"""往船上日志里写一条（面板会显示最近三条）。"""
 	log_lines.append(text)
 	if log_lines.size() > LOG_MAX:
 		log_lines.pop_front()

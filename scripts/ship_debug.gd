@@ -345,7 +345,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				if _show_crew_panel:
 					var msg := _crew_panel.cycle_priority()
 					if msg != "":
-						roster._log("船长改了优先级：" + msg)
+						roster.log_event("船长改了优先级：" + msg)
 				else:
 					orders.clear_target_point()
 					crew.set_target_heading(ship.heading_deg())
