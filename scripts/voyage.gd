@@ -34,6 +34,7 @@ var captain_pos := Vector2.ZERO
 var captain_target := Vector2.ZERO
 var party_speed := 14.0            # 岸上走路（米/秒）：别让玩家在等
 var ashore_count := 0              # 跟船长一起上岸的水手数（关键船员另算）
+var landing_point := Vector2.ZERO  # 上岸点：船旁边最近的那段岸（不是固定航标）
 var last_message := ""             # 最新一条重要消息（HUD 上显示十几秒）
 var message_timer := 0.0
 var _shore_cooldown := 0.0         # 蹭滩提示的冷却
@@ -179,6 +180,20 @@ func _beach_pos() -> Vector2:
 	return _island_center()
 
 
+func _shore_near(pos: Vector2) -> Vector2:
+	"""船旁边最近的岸：把人放在**船所在的那段滩**上，而不是固定的登陆航标。
+
+	（第一版把队伍直接放在航标上，于是"人在哪儿上岸"和船的位置没关系，看着很怪。）
+	"""
+	var c := _island_center()
+	var r := float(sea.island().get("radius_m", 0.0)) \
+		- float(sea.island().get("beach_width_m", 0.0)) * 0.5
+	var d := pos - c
+	if d.length() < 1.0:
+		return c + Vector2(-r, 0.0)
+	return c + d.normalized() * r
+
+
 func _island_center() -> Vector2:
 	var c: Array = sea.island().get("center", [0, 0])
 	return Vector2(float(c[0]), float(c[1]))
@@ -215,7 +230,8 @@ func land(ids: Array, hands := 6) -> String:
 		taken += 1
 	ashore_count = taken
 	ashore = true
-	captain_pos = _beach_pos()
+	landing_point = _shore_near(ship.position_m())
+	captain_pos = landing_point
 	captain_target = captain_pos
 	var msg := "带 %s 和 %d 名水手上岸。" % [
 		"、".join(names) if names.size() > 0 else "（不带关键船员）", ashore_count]
@@ -226,8 +242,8 @@ func land(ids: Array, hands := 6) -> String:
 func return_to_ship() -> String:
 	if not ashore:
 		return "你还在船上"
-	if captain_pos.distance_to(_beach_pos()) > 420.0:
-		return "得先走回滩头才能上船"
+	if captain_pos.distance_to(landing_point) > 420.0:
+		return "得先走回下船的地方才能上船"
 	ashore = false
 	for m in roster.key_crew():
 		m.ashore = false

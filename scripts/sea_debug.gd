@@ -90,7 +90,8 @@ func _update_camera() -> void:
 	elif voyage.ashore:
 		# 状态 C：相机跟着船长，船离屏
 		_cam.position = voyage.captain_pos * PPM
-		_cam.zoom = Vector2(_zoom * 3.0, _zoom * 3.0)
+		# 只放近一点点：放太多的话船会跑出画面，"人在哪下船"就看不清了
+		_cam.zoom = Vector2(_zoom * 2.0, _zoom * 2.0)
 	else:
 		_cam.position = voyage.ship.position_m() * PPM
 		_cam.zoom = Vector2(_zoom, _zoom)
@@ -106,7 +107,9 @@ func _sync_ship_view() -> void:
 	_ship_view.anchored = voyage.ship.is_anchored()
 	_ship_view.layer = _layer
 	_ship_view.show_ghost = _zoom > 20.0        # 拉到能看清船了才画上层虚影
-	_ship_view.draw_sea = _zoom > 20.0          # 近距离时由渲染器画海与网格
+	# 注意：这里**不能**打开渲染器自带的海面矩形 —— 它是一块画在世界坐标里的深色底，
+	# 近距离时会把海图（岛、礁、洋流）整块盖住，玩家就看不到附近地形了。
+	_ship_view.draw_sea = false
 	_ship_view.zoom = _zoom
 	_ship_view.crew_dots = _crew_dots()
 	_ship_view.queue_redraw()
@@ -197,7 +200,13 @@ func _draw() -> void:
 		draw_circle(sp, 10.0, Color(1.0, 0.92, 0.55, 0.20))
 		draw_arc(sp, 10.0, 0.0, TAU, 20, Color(1.0, 0.95, 0.7, 0.85), 2.0)
 	if voyage.ashore:
+		# 队伍：船长 + 随行的人，围在下船的地方 —— 让"带人上岸"在画面里看得见
 		var c := voyage.captain_pos * PPM
+		var n := mini(voyage.party_size(), 9)
+		for i in range(1, n):
+			var a := TAU * float(i) / float(maxi(n - 1, 1))
+			var at := c + Vector2(cos(a), sin(a)) * 13.0
+			draw_circle(at, 4.0, Color(0.98, 0.86, 0.45, 0.9))
 		draw_circle(c, 7.0, Color(1.0, 0.85, 0.35))
 		draw_arc(c, 11.0, 0, TAU, 20, Color(1.0, 0.9, 0.5, 0.6), 2.0)
 	# 航线：从船到目标点
@@ -216,7 +225,14 @@ func _arrow(a: Vector2, b: Vector2, col: Color, width: float) -> void:
 
 
 func _label(at: Vector2, text: String, col: Color) -> void:
-	draw_string(_font, at + Vector2(9, 5), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, col)
+	# 地名只在"看地图"的距离上画：字号按相机缩放反向补偿，屏幕上恒定 ~14px。
+	# 拉得很近时干脆不画 —— 那会儿画面上全是沙滩，地名会变成糊在脸上的巨字。
+	var eff := _zoom * (2.0 if voyage.ashore else 1.0)
+	if eff > 3.0:
+		return
+	var size := maxi(8, int(14.0 / eff))
+	draw_string(_font, at + Vector2(9, 5) / eff, text, HORIZONTAL_ALIGNMENT_LEFT, -1,
+		size, col)
 
 
 # ------------------------------------------------------------------ 输入
@@ -468,40 +484,51 @@ func _run_shot_timeline() -> void:
 		50:
 			_capture("27_anchored_off_beach")
 		52:
+			_zoom = 24.0                      # 锚泊时拉近：附近地形必须还在
+			_warp(5.0)
+		54:
+			_capture("28_anchored_close_up")
+		56:
+			_zoom = 1.0
 			# 登陆名单：这一版挂在 CanvasLayer 上（屏幕坐标），不再跟着相机跑
 			_picker.open(voyage.roster)
 			_picker.visible = true
 			_picker.toggle_current()
 			_picker.move(3)
 			_picker.toggle_current()
-		54:
-			_capture("28_landing_picker")
-		56:
+		58:
+			_capture("29_landing_picker")
+		60:
 			_picker.visible = false
 			var ids := ["piloto", "carpintero", "cirujano", "escribano"]
 			print("[shot] 登陆：%s" % voyage.land(ids, 6))
+			_zoom = 1.0                       # 队伍就在船旁边那段岸上，两个都看得见
+			_warp(5.0)
+			_capture("30_ashore_by_the_ship")
+		62:
+			_zoom = 1.0
 			voyage.move_party_to(Vector2(5620, 3320))
 			_warp(240.0)
-		60:
-			_capture("29_ruins")
-		64:
+		66:
+			_capture("31_ruins")
+		70:
 			voyage.move_party_to(Vector2(6080, 3820))
 			_warp(200.0)
-		68:
-			_capture("30_stream")
-		72:
+		74:
+			_capture("32_stream")
+		78:
 			voyage.move_party_to(Vector2(4790, 3600))
 			_warp(260.0)
 			_deliver_reports()
-		76:
-			_capture("31_back_with_reports")
-		78:
+		82:
+			_capture("33_back_with_reports")
+		84:
 			print("[shot] 报告：%s" % str(voyage.pending_reports))
 			_zoom = 0.35
 			_warp(60.0)
-		82:
-			_capture("32_homeward")
 		88:
+			_capture("34_homeward")
+		94:
 			get_tree().quit(0)
 
 
