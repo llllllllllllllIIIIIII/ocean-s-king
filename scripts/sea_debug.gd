@@ -67,6 +67,7 @@ var _room: RoomPanel               # M3：房间界面（开房间 / 加入 / �
 var _port_panel: PortPanel         # M4：港口面板（补给 / 修船 / 买卖）
 var _dilemma_card: DilemmaCard     # M5：抉择卡（缺粮 / 重伤病 / 部落冲突）
 var _knowledge_panel: KnowledgePanel  # M7：知识与日志页（K）
+var _audio: AudioDirector          # M8：声音
 var _panel: SailPanel
 var _show_panel := false
 var _crew_panel: CrewPanel
@@ -111,6 +112,10 @@ func _ready() -> void:
 	_build_hud()
 	_build_overlays()
 	_build_net()
+	# M8：声音（自产素材，许可见 assets/audio/LICENSES.md）
+	_audio = AudioDirector.new()
+	add_child(_audio)
+	_audio.setup(voyage)
 	_zoom = 0.8                         # 开局在港里：看得见自己的船、锚地和这段海岸
 	_update_camera()
 	_update_hud()
@@ -240,6 +245,8 @@ func _process(delta: float) -> void:
 		_tick_sim(delta)
 		voyage.tick_real(delta)        # 网络与远端船插值走**真实时间**（不跟快进）
 		voyage.tick_ui(delta)          # 消息条按真实时间消失，不跟着快进闪过去
+	if _audio != null:
+		_audio.tick(delta)
 	if _act_card_timer > 0.0:
 		_act_card_timer = maxf(0.0, _act_card_timer - delta)
 	_update_camera()
@@ -1206,7 +1213,8 @@ func _run_shot_timeline() -> void:
 				_warp(60.0)
 			print("[shot] 第三幕 = %s　结算就绪 = %s" % [
 				voyage.story.act_name(), str(voyage.story.ending_ready)])
-			_ending.text = voyage.journal.settlement(voyage, voyage.story)
+			# M8：五类成果 + 三档评价 + 船队那张表（账都在系统里，这里只是排版）
+			_ending.text = Settlement.text(voyage, voyage.journal, voyage.story)
 			_show_overlay(_ending, true)
 		100:
 			_capture("37_settlement")

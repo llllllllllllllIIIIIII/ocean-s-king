@@ -571,13 +571,15 @@ func _setup_fleet_ships(port_pos: Vector2) -> void:
 
 
 func default_destination() -> Vector2:
-	"""这一程要往哪儿去：优先第二个港（v0.5 的加那利），没有就奔那座岛。
+	"""这一程要往哪儿去：**终点港**（v0.5 的巴西），没有就依次退到后面的港、那座岛。
 
 	AI 船用它当目标；玩家掉线时房主也用它把那艘船接过去继续开。
+	M8 起改成"最后的那个港"—— 因为全队结算要求四条船都开到巴西，
+	AI 船要是只开到加那利就停，那条验收永远签不了。
 	"""
 	var ports := sea.ports()
-	if ports.size() > 1:
-		return Geom2D.centroid(ports[1]["shape"])
+	if ports.size() > 0:
+		return Geom2D.centroid(ports[ports.size() - 1]["shape"])
 	var isl := sea.island()
 	if not isl.is_empty():
 		var c: Array = isl.get("center", [0, 0])

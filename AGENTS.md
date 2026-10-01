@@ -132,10 +132,12 @@ python tools/gen_ship.py                                               # 重新�
 > 完整说明在 `docs/13-v0.5开发计划.md` 第 8 节。这里只留最短的版本。
 
 **每期开工前**
-1. 跑一遍上一期的全部验证通道，确认没坏（到 M7 为止：176/81/15/17/84/62/90/63/82/20/37/22/41/54/69/48/28/**44** + `check_motion_ownership`。
-   后九条是 M3–M7 的：`test_fleet`、`test_net_loopback`（约 20 秒）、`test_resources`、
-   `test_ports`、`test_society`（约 34 秒）、`test_weapons`、`test_land_battle`、`test_events`。
+1. 跑一遍上一期的全部验证通道，确认没坏（到 M8 为止：176/81/15/17/84/62/90/63/82/20/37/22/41/54/69/48/28/44/**41**/**4** + `check_motion_ownership`。
+   后十一条是 M3–M8 的：`test_fleet`、`test_net_loopback`（约 20 秒）、`test_resources`、
+   `test_ports`、`test_society`（约 35 秒）、`test_weapons`、`test_land_battle`、`test_events`、
+   `test_settlement`、`test_perf`。
    另外 `python tools/weapons_prototype.py --mode metrics` 也是那道闸）
+   **音频素材改了要重跑** `python tools/gen_audio.py`（LCG 合成，结果确定）
 2. 读 `docs/07-交接.md`
 3. 在 `docs/13` 当期卡片下写下"这一期的第一个动作"
 
