@@ -18,6 +18,7 @@ const SIM_DT := 0.05
 const TIME_SCALE := 36.0
 const GAME_SECONDS := 600.0
 const MID_JOIN_AT := 300.0          # 第三个人在这时候进来
+const ENDING_AT := 540.0            # 临写报告之前宣布结局（验它铺得过去）
 const SHIP_LENGTH_M := 20.0         # 一个船身：插值误差的容忍上限
 const PROBE := "res://tests/net_client_probe.gd"
 
@@ -113,6 +114,12 @@ func _process(delta: float) -> bool:
 		_phase = "mid"
 		_spawn_client(_report2_path, 0.0, "水手乙")
 
+	# M8 收尾：在客户端写报告**之前**，房主这边把结局立起来。
+	# 验的是"**拿到船队级结算页**这句话对每个玩家都成立"：`ending_ready` 在 WorldState 的
+	# `story` 块里，房主广播、客户端覆盖 —— 这一条就是盯它真的铺过去了。
+	if _phase == "mid" and voyage.t >= ENDING_AT and not voyage.story.ending_ready:
+		voyage.story.ending_ready = true
+		print("[host] t=%.1f 房主这边宣布结局（等价于全队抵达）" % voyage.t)
 	# 到了 10 分钟：给两边各拍一张快照，然后等客户端的报告
 	if _phase == "mid" and voyage.t >= GAME_SECONDS:
 		_phase = "wait"
@@ -158,6 +165,7 @@ func _snapshot_of(v: Voyage) -> Dictionary:
 		"kinds": kinds,
 		"fired": v.fired.keys(),
 		"story_head": v.story.head,
+		"ending_ready": v.story.ending_ready,
 		"local_id": v.fleet.local_id,
 		"mine": {"pos": [v.ship.position_m().x, v.ship.position_m().y],
 			"hull_pct": 1.0 - v.ship.damage_of("hull")},
@@ -184,6 +192,13 @@ func _compare() -> void:
 	_check(absf(float(c2["t"]) - float(_snapshot["t"])) < 3.0,
 		"房主与客户端乙的时钟一致（%.1f vs %.1f）" % [
 			float(_snapshot["t"]), float(c2["t"])])
+
+	# ①.5 结局旗标：房主宣布之后，**每个玩家**手里都得有（结算页才有得弹）
+	_check(bool(_snapshot.get("ending_ready", false)),
+		"房主这边已经宣布结局（%.0f 游戏秒时）" % float(_snapshot["t"]))
+	for c in [c1, c2]:
+		_check(bool(c.get("ending_ready", false)),
+			"%s 手里也拿到了结局旗标（结算页弹得出来）" % str(c.get("role", "客户端")))
 
 	# ② 四条船：两边各自看到的位姿差 ≤ 一个船身
 	var worst_remote := 0.0

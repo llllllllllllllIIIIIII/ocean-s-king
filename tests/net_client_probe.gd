@@ -142,6 +142,8 @@ func _write_report(status: String) -> void:
 		"fleet": fleet,
 		"fired": voyage.fired.keys() if voyage != null else [],
 		"story_head": voyage.story.head if voyage != null else -1,
+		# M8 收尾：结局旗标也要对账 —— "拿到船队级结算页"这句话对**每个玩家**都该成立
+		"ending_ready": voyage.story.ending_ready if voyage != null else false,
 		"decisions": voyage.journal.decisions.duplicate() if voyage != null else [],
 		"recv": _recv,
 	}
