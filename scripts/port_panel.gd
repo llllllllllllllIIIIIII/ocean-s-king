@@ -7,8 +7,9 @@ extends Control
 # 它**只读 Voyage 的公开入口**（port_buy / port_sell / port_repair / port_supply_bundle），
 # 自己不改任何状态 —— 玩法不藏在界面里（和帆态面板同一条规矩）。
 
-const PANEL := Vector2(980, 660)
+const PANEL := Vector2(980, 760)
 const QTY_STEPS := [1, 5, 25, 100]
+const FOOT := 116.0                  # 面板底部那一条（航段元数据 + 钱与载重）
 
 var font: Font
 var voyage: Voyage
@@ -94,7 +95,6 @@ func _draw() -> void:
 	_text(box.position + Vector2(560, 86), "船上：食物 %d、淡水 %d　损伤 %s" % [
 		voyage.cargo.qty("food"), voyage.cargo.qty("water"), voyage.ship.describe_damage()],
 		14, Color(0.82, 0.88, 0.95))
-
 	var y := box.position.y + 122.0
 	_text(Vector2(box.position.x + 24, y),
 		"↑↓ 选　←→ 数量 %d　B/回车 买或执行　E/R 卖　P/Esc 关" % qty(),
@@ -102,7 +102,8 @@ func _draw() -> void:
 	y += 22.0
 	var rs := rows()
 	for i in rs.size():
-		if y > box.position.y + box.size.y - 66.0:
+		# 底部留出 FOOT 那一条：**航段元数据**（M8 收尾补的"风险 / 价值"）在那儿
+		if y > box.position.y + box.size.y - FOOT:
 			break
 		var r: Dictionary = rs[i]
 		var sel := i == row
@@ -129,6 +130,31 @@ func _draw() -> void:
 				_text(Vector2(box.position.x + 540, y), "卖 %d" % sell_p, 14,
 					Color(0.7, 0.95, 0.75) if sel else col)
 		y += 26.0
+
+	# 底部：**下一段航线的元数据**（M8 收尾补的"风险 / 价值"那一半）
+	# 出发前该知道的三件事：这一段多长要几天、路上会遇上什么、到港什么好卖好买。
+	var leg := voyage.leg_info()
+	if not leg.is_empty():
+		var fy := box.position.y + box.size.y - FOOT + 28.0
+		_text(Vector2(box.position.x + 24, fy),
+			"下一段：%s　%.1f km（≈ %.0f 真实公里）　要 %.1f 个航程日" % [
+				str(leg["name"]), float(leg["map_km"]), float(leg["real_km"]),
+				float(leg["days"])],
+			14, Color(0.95, 0.86, 0.6))
+		var risk := str(leg["risk_text"])
+		var sell: Array = leg["sell"]
+		var buy: Array = leg["buy"]
+		var trade_txt := "到 %s：都是行价（没什么偏门）" % str(leg["to"])
+		if not sell.is_empty() or not buy.is_empty():
+			trade_txt = "到 %s：好卖 %s；好买 %s" % [
+				str(leg["to"]),
+				"、".join(PackedStringArray(sell)) if not sell.is_empty() else "—",
+				"、".join(PackedStringArray(buy)) if not buy.is_empty() else "—"]
+		_text(Vector2(box.position.x + 24, fy + 22.0),
+			"路上穿过：%s　｜　%s" % ["没什么脾气" if risk == "" else risk, trade_txt],
+			13, Color(0.78, 0.86, 0.95))
+		draw_string(font, Vector2(box.position.x + 24, fy + 41.0), str(leg["note"]),
+			HORIZONTAL_ALIGNMENT_LEFT, PANEL.x - 48.0, 12, Color(0.66, 0.76, 0.86))
 	if note != "":
 		_text(box.position + Vector2(24, box.size.y - 32), note, 15, Color(1.0, 0.86, 0.5))
 	else:

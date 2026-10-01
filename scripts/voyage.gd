@@ -271,7 +271,25 @@ func start_route_follow() -> String:
 	route_waypoints = route_waypoints.slice(best)
 	following_route = true
 	orders.set_target_point(route_waypoints[0] as Vector2)
-	return "沿航线走：下一段去 %s" % _route_leg_name()
+	# 顺手把这一段的"要几天 / 路上有什么"告诉玩家（M8 收尾的航线元数据）
+	var info := leg_info(_route_of_next())
+	var extra := ""
+	if not info.is_empty():
+		extra = "（%.1f 个航程日%s）" % [float(info["days"]),
+			"" if str(info["risk_text"]) == "" else "，要穿过 " + str(info["risk_text"])]
+	return "沿航线走：下一段去 %s%s" % [_route_leg_name(), extra]
+
+
+func _route_of_next() -> Dictionary:
+	"""接下来要走的那一段航线数据（给 `N` 的提示用）。"""
+	var want := next_port_id()
+	for r in sea.routes():
+		if str(r.get("to", "")) == want:
+			return r
+	for r in sea.routes():
+		if str(r.get("from", "")) == want:
+			return r
+	return {}
 
 
 func stop_route_follow() -> String:
@@ -358,6 +376,85 @@ func next_port_position() -> Vector2:
 		if str(p.get("id", "")) == next_port_id():
 			return Geom2D.centroid(p["shape"])
 	return sea.port_pos()
+
+
+func next_leg() -> Dictionary:
+	"""下一段要走的航线数据。
+
+	靠港时看"从这儿出去的那一段"（那是真的下一段）；在海上时看"通向最近那个港的那一段"。
+	"""
+	var routes := sea.routes()
+	if docked_port != "":
+		for r in routes:
+			if str(r.get("from", "")) == docked_port:
+				return r
+	var want := next_port_id()
+	for r in routes:
+		if str(r.get("to", "")) == want:
+			return r
+	for r in routes:
+		if str(r.get("from", "")) == want:
+			return r
+	return {}
+
+
+func leg_info(route := {}) -> Dictionary:
+	"""一段航线的"出发前清单"：多远、几天口粮、路上穿过什么天气带、到港什么值得买卖。
+
+	M7 的卡片把"航线元数据（风险/补给/价值）"留给了 M8，这一半在这里补齐：
+	  · **补给** —— 图上距离 / 真实公里 / 航程日 / 口粮 / 淡水（`supply_need_for`，早就有）
+	  · **风险** —— 这一段穿过哪些天气带、哪些带要小心（从 `weather.json` 的 `bands` 现推）
+	  · **价值** —— 终点港什么好卖、什么好买（从 `ports.json` 的 `mul` 现推）
+
+	三样都是**推出来的**，不另写一份表 —— 玩家看到的就是他真会遇上的那份数据。
+	"""
+	if route.is_empty():
+		route = next_leg()
+	if route.is_empty():
+		return {}
+	var pts := sea.route_points(route)
+	var dist := Geom2D.path_length(pts)
+	var need := supply_need_for(dist)
+	var risky := Weather.risky_bands_on(pts)
+	var to_id := str(route.get("to", ""))
+	var trade: Dictionary = ports.best_trades(to_id) if to_id != "" else {"sell": [], "buy": []}
+	return {
+		"id": str(route.get("id", "")),
+		"name": str(route.get("name", "")),
+		"from": _port_display(str(route.get("from", ""))),
+		"to": _port_display(to_id),
+		"map_km": dist / 1000.0,
+		"real_km": dist / 1000.0 * sea.real_time_scale(),
+		"days": float(need["days"]),
+		"food": int(need["food"]),
+		"water": int(need["water"]),
+		"risky": risky,
+		"risk_text": _bands_display(risky),
+		"sell": _item_names(trade["sell"]),
+		"buy": _item_names(trade["buy"]),
+		"note": str(route.get("note", route.get("text", ""))),
+	}
+
+
+func _port_display(id: String) -> String:
+	for p in sea.ports():
+		if str(p.get("id", "")) == id:
+			return str(p.get("name", id))
+	return id
+
+
+func _bands_display(bands: Array) -> String:
+	var parts := PackedStringArray()
+	for b in bands:
+		parts.append(Weather.band_states_text(b))
+	return "、".join(parts)
+
+
+func _item_names(ids: Array) -> Array:
+	var out := []
+	for id in ids:
+		out.append(Ports.item_name(str(id)))
+	return out
 
 
 func _consume_supplies(delta: float) -> void:

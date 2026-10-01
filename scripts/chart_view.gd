@@ -63,6 +63,15 @@ func _draw() -> void:
 		var pts := voyage.sea.route_points(r)
 		for i in range(pts.size() - 1):
 			_dashes(pts[i] * px_per_m, pts[i + 1] * px_per_m, Color(0.35, 0.27, 0.18, 0.6 * a))
+		# 这一段要穿过的"有脾气的"天气带：标在航段中点（M8 收尾的航线元数据"风险"那一半）
+		var risky := Weather.risky_bands_on(pts)
+		# 屏幕上太短的航段不标 —— 不然字会挤在港口名上（拉远了自然就看得见）
+		if not risky.is_empty() and Geom2D.path_length(pts) * px_per_m > 200.0:
+			var tags := PackedStringArray()
+			for b in risky:
+				tags.append(Weather.band_risk(b))
+			_text(Geom2D.midpoint_of_path(pts) * px_per_m + Vector2(10.0, -6.0) * _s,
+				"小心：" + "、".join(tags), Color(0.86, 0.62, 0.34, 0.9 * a), 12)
 	# ⑥ 港口与地名：只有认得名字的陆地才写名字
 	for p in world.ports():
 		var pos := Geom2D.centroid(p["shape"]) * px_per_m

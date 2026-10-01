@@ -73,6 +73,98 @@ func band_at(pos: Vector2) -> Dictionary:
 	return {}
 
 
+# ------------------------------------------------------------ 航线元数据（M8 收尾）
+#
+# M7 的卡片把"航线元数据（风险/补给/价值）"留给了 M8。补给那一半早就有了
+# （`Voyage.supply_need_for`）；这里补的是**风险**那一半：一段航线会穿过哪些天气带。
+# 全部从 `weather.json` 的 `bands` 现推，不另写一份"风险表" ——
+# 数值只有一个真源，而且玩家看到的与真的会遇上的**是同一份数据**。
+
+static func band_at_pos(pos: Vector2) -> Dictionary:
+	"""静态版 `band_at`：给"出发前算这一段路上有什么"用（不需要 Weather 实例）。"""
+	for b in defs_data().get("bands", []):
+		if pos.y <= float(b.get("y_max", 99999.0)):
+			return b
+	return {}
+
+
+static func bands_on(points: PackedVector2Array, step_m := 500.0) -> Array:
+	"""这一段航线穿过哪些天气带（按先后去重）。
+
+	必须**沿线段采样**，不能只看端点：天气带是按 y 分的，而一段航线的两个端点
+	可能一个在信风带、一个在热带海岸，中间整条赤道无风带就藏在中间。
+	（实测踩过：只看端点时"渡海去巴西"这一段报的是"信风带、热带海岸"，
+	把真正把船晒住的那条无风带漏掉了 —— 而它恰恰是最该告诉玩家的。）
+	"""
+	var out := []
+	var seen := {}
+	if points.size() == 1:
+		_push_band(out, seen, points[0])
+	for i in range(points.size() - 1):
+		var a := points[i]
+		var b := points[i + 1]
+		var steps := maxi(1, int(ceil(a.distance_to(b) / maxf(1.0, step_m))))
+		for k in range(steps + 1):
+			_push_band(out, seen, a.lerp(b, float(k) / float(steps)))
+	return out
+
+
+static func _push_band(out: Array, seen: Dictionary, p: Vector2) -> void:
+	var band := band_at_pos(p)
+	var id := str(band.get("id", ""))
+	if id == "" or seen.has(id):
+		return
+	seen[id] = true
+	out.append(band)
+
+
+static func band_states_text(band: Dictionary) -> String:
+	"""一个带里可能出现哪几种天气：`比斯开湾以北（晴、雾、风暴）`。"""
+	var band_name := str(band.get("name", "?"))
+	var names := PackedStringArray()
+	var seen := {}
+	for sid in band.get("states", []):
+		var id := str(sid)
+		if seen.has(id):
+			continue
+		seen[id] = true
+		var nm := state_display(id)
+		# 带名里已经说过的就不重复（"赤道无风带"里不必再写一遍"无风带"）
+		if band_name.find(nm) >= 0:
+			continue
+		names.append(nm)
+	if names.is_empty():
+		return band_name
+	return "%s（%s）" % [band_name, "、".join(names)]
+
+
+static func state_display(id: String) -> String:
+	"""某个天气 id 的中文名（`state_name()` 是**当前天气**的名字，别重名）。"""
+	for s in defs_data().get("states", []):
+		if str(s.get("id", "")) == id:
+			return str(s.get("name", id))
+	return id
+
+
+static func band_risk(band: Dictionary) -> String:
+	"""这一带算不算"要小心"：会刮风暴或会无风停船的都算。"""
+	var states: Array = band.get("states", [])
+	if states.has("storm") or states.has("squall"):
+		return "风暴"
+	if states.has("calm"):
+		return "无风"
+	return ""
+
+
+static func risky_bands_on(points: PackedVector2Array) -> Array:
+	"""这一段路上"要小心"的那些带（海图上就标它们）。"""
+	var out := []
+	for b in bands_on(points):
+		if band_risk(b) != "":
+			out.append(b)
+	return out
+
+
 # ------------------------------------------------------------ 推进
 
 func step(delta: float, pos: Vector2) -> void:

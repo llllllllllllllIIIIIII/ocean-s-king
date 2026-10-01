@@ -82,6 +82,38 @@ func mul_of(port: String, item: String) -> float:
 	return float(m.get(item, 1.0))
 
 
+func best_trades(port: String, n := 2) -> Dictionary:
+	"""这个港**什么好卖、什么好买** —— 直接从 `ports.json` 的 `mul` 推，不另写一份。
+
+	`mul` 是地区系数：2.2 的货在这儿卖得起价（好卖），0.6 的在这儿便宜（好买）。
+	M7 卡片把"航线元数据（风险/补给/价值）"留给 M8；补给在 `Voyage.supply_need_for`，
+	这里是**价值**那一半 —— 出发前就能知道"这一趟带什么去、带什么回来"。
+	"""
+	var goods := []
+	for item in trades(port):
+		goods.append([float(mul_of(port, item)), str(item)])
+	if goods.is_empty():
+		return {"sell": [], "buy": []}
+	goods.sort_custom(func(a, b): return a[0] > b[0])
+	var sell := []
+	for i in mini(n, goods.size()):
+		if goods[i][0] > 1.0:
+			sell.append(str(goods[i][1]))
+	goods.sort_custom(func(a, b): return a[0] < b[0])
+	var buy := []
+	for i in mini(n, goods.size()):
+		if goods[i][0] < 1.0:
+			buy.append(str(goods[i][1]))
+	return {"sell": sell, "buy": buy}
+
+
+static func item_name(id: String) -> String:
+	for it in Cargo.defs_data().get("items", []):
+		if str(it.get("id", "")) == id:
+			return str(it.get("name", id))
+	return id
+
+
 func unit_price(port: String, item: String) -> float:
 	"""一件多少钱：基准价 × 地区系数 × 库存压力。"""
 	var base := 1.0

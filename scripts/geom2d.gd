@@ -78,6 +78,30 @@ static func dist_to_polyline(p: Vector2, pts: PackedVector2Array) -> float:
 	return best
 
 
+static func path_length(pts: PackedVector2Array) -> float:
+	"""折线的总长（米）。M8 收尾：航线元数据要按"这一段多长"算天数与口粮。"""
+	var total := 0.0
+	for i in range(pts.size() - 1):
+		total += pts[i].distance_to(pts[i + 1])
+	return total
+
+
+static func midpoint_of_path(pts: PackedVector2Array) -> Vector2:
+	"""折线的中点（按弧长找）—— 海图上把"这一段的风险"标在这儿。"""
+	if pts.is_empty():
+		return Vector2.ZERO
+	if pts.size() == 1:
+		return pts[0]
+	var half := path_length(pts) * 0.5
+	var walked := 0.0
+	for i in range(pts.size() - 1):
+		var seg := pts[i].distance_to(pts[i + 1])
+		if walked + seg >= half and seg > 0.0:
+			return pts[i].lerp(pts[i + 1], (half - walked) / seg)
+		walked += seg
+	return pts[pts.size() - 1]
+
+
 static func nearest_on_polyline(p: Vector2, pts: PackedVector2Array) -> Vector2:
 	if pts.is_empty():
 		return Vector2.ZERO

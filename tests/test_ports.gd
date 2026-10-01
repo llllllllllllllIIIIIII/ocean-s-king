@@ -22,6 +22,7 @@ func _initialize() -> void:
 	_test_supply_bundle()
 	_test_damage_slows_you_down()
 	_test_save()
+	_test_route_metadata()
 	_finish()
 
 
@@ -245,6 +246,78 @@ func _test_save() -> void:
 		"读档后价格一致（%d）" % b.ports.buy_price("sanlucar", "food"))
 	_check(b.cargo.qty("food") == a.cargo.qty("food") and b.cargo.money == a.cargo.money,
 		"读档后货舱与金币一致（食物 %d，金币 %d）" % [b.cargo.qty("food"), b.cargo.money])
+
+
+# ---------------------------------------------------------------- 断言框架
+
+# ------------------------------------------------- 7 航段元数据（风险 / 补给 / 价值）
+
+func _test_route_metadata() -> void:
+	"""M7 卡片把"航线元数据（风险/补给/价值）"留给了 M8 —— 这一节就是它的验收。
+
+	三样都必须**从真源推出来**：补给来自距离（`supply_need_for`）、风险来自
+	`weather.json` 的天气带、价值来自 `ports.json` 的 `mul`。玩家看到的与真的会
+	遇上的必须是同一份数据 —— 所以这里不比字符串，比**数**。
+	"""
+	var v := _v()
+	_check(v.sea.routes().size() == 3, "三条航段（%d）" % v.sea.routes().size())
+
+	var sanlucar_leg := v.leg_info({"id": "probe", "from": "sanlucar", "to": "santa_cruz"})
+	_check(not sanlucar_leg.is_empty(), "第一条航段的元数据拿得到")
+	if sanlucar_leg.is_empty():
+		return
+	# ① 补给：图上距离 × 压缩系数 = 真实公里；天数与口粮按真实公里算
+	_check(float(sanlucar_leg["map_km"]) > 1.0, "算得出图上距离（%.1f km）" % float(sanlucar_leg["map_km"]))
+	var ratio := float(sanlucar_leg["real_km"]) / float(sanlucar_leg["map_km"])
+	_check(is_equal_approx(ratio, v.sea.real_time_scale()),
+		"真实公里 = 图上公里 × 压缩系数（%.0f 倍）" % ratio)
+	var need := v.supply_need_for(Geom2D.path_length(v.sea.route_points(
+		{"id": "probe", "from": "sanlucar", "to": "santa_cruz"})))
+	_check(is_equal_approx(float(sanlucar_leg["days"]), float(need["days"]))
+		and int(sanlucar_leg["food"]) == int(need["food"]),
+		"航程日与口粮跟 supply_need_for 是同一个数（%.1f 天 / %d 份）" % [
+			float(sanlucar_leg["days"]), int(sanlucar_leg["food"])])
+	_check(float(sanlucar_leg["days"]) > 0.0 and int(sanlucar_leg["water"]) > 0,
+		"口粮与淡水都算得出来（水 %d 桶）" % int(sanlucar_leg["water"]))
+
+	# ② 风险：穿过哪些天气带 —— 直接对着 weather.json 的带子核
+	var brazil_leg := v.leg_info({"id": "probe", "from": "santiago", "to": "sao_aleixo"})
+	var risky: Array = brazil_leg["risky"]
+	var names := PackedStringArray()
+	for b in risky:
+		names.append(str(b.get("name", "")))
+	var joined := "、".join(names)
+	_check(joined.find("无风带") >= 0,
+		"渡海去巴西这一段会穿过赤道无风带（%s）-- 这正是实测里把船晒住的那一带" % joined)
+	_check(str(brazil_leg["risk_text"]).find("无风") >= 0
+		and str(brazil_leg["risk_text"]).find("风暴") >= 0,
+		"风险话术里既说了无风也说了风暴（%s）" % str(brazil_leg["risk_text"]))
+
+	# ③ 价值：好卖/好买是从 ports.json 的 mul 推出来的，得跟 mul 对得上
+	var best: Dictionary = v.ports.best_trades("sao_aleixo", 2)
+	_check((best["sell"] as Array).size() > 0 and (best["buy"] as Array).size() > 0,
+		"巴西港既列得出好卖的也列得出好买的（卖 %s / 买 %s）" % [
+			str(best["sell"]), str(best["buy"])])
+	var sell_ids: Array = best["sell"]
+	if not sell_ids.is_empty():
+		_check(v.ports.mul_of("sao_aleixo", str(sell_ids[0])) > 1.0,
+			"排第一的'好卖'确实有溢价（%s × %.1f）" % [
+				str(sell_ids[0]), v.ports.mul_of("sao_aleixo", str(sell_ids[0]))])
+	# 好卖的都是这个港出价高的（反过来：出价高的不一定全被列出来，但列出来的必须高）
+	var bad := 0
+	for item in sell_ids:
+		if v.ports.mul_of("sao_aleixo", str(item)) <= 1.0:
+			bad += 1
+	_check(bad == 0, "列出来的'好卖'没有一个是溢价的（%d 个不对）" % bad)
+
+	# ④ 靠港时面板拿到的就是"从这儿出去的下一段"
+	_dock(v)
+	var here := v.leg_info()
+	_check(str(here.get("id", "")) == "sanlucar_canarias",
+		"在圣卢卡尔靠港时，下一段是出海口那一段（%s）" % str(here.get("id", "")))
+	_check(str(here.get("to", "")) == "圣克鲁斯" or str(here.get("to", "")) != "",
+		"下一段的终点港有名字（%s）" % str(here.get("to", "")))
+	_check(str(here.get("note", "")) != "", "每一段都有一句忠告（%s）" % str(here.get("note", "")).substr(0, 12))
 
 
 # ---------------------------------------------------------------- 断言框架
