@@ -34,6 +34,9 @@ var _sail_main_deg := -90.0         # 帆弦线（船体系，度）
 var _sail_jib_deg := -90.0
 var _sail_area_scale := 1.0         # 帆档：全帆 1.0 / 缩帆 0.55 / 收帆 0
 var _anchored := false
+var current_world := Vector2.ZERO   # 洋流（世界系 m/s），由海图每帧灌进来
+# 损伤（docs/01：只做三处，每一处都要能在气动上看见效果）
+var damage := { "hull": 0.0, "mast": 0.0, "rudder": 0.0 }
 var _wind_world := Vector2.ZERO
 var _t := 0.0
 var _last := {}                     # 上一帧的受力细节（帆态面板要读）
@@ -176,6 +179,32 @@ func set_anchored(flag: bool) -> void:
 	_anchored = flag
 
 
+func apply_damage(part: String, amount: float) -> void:
+	"""船体 / 桅杆 / 舵。三处损伤各自都能在操船上看出来：
+
+	船体  -> 摩擦与兴波阻力变大（同样的风跑不快）
+	桅杆  -> 能用帆面积变小（推力直接掉）
+	舵    -> 转舵效率下降（换舷更慢）
+	"""
+	if not damage.has(part):
+		push_warning("未知的损伤部位：" + part)
+		return
+	damage[part] = clampf(float(damage[part]) + amount, 0.0, 1.0)
+
+
+func damage_of(part: String) -> float:
+	return float(damage.get(part, 0.0))
+
+
+func describe_damage() -> String:
+	var parts := PackedStringArray()
+	for k in ["hull", "mast", "rudder"]:
+		var v := float(damage[k])
+		if v > 0.01:
+			parts.append("%s %.0f%%" % [{"hull": "船体", "mast": "桅杆", "rudder": "舵"}[k], v * 100.0])
+	return "无损伤" if parts.is_empty() else "　".join(parts)
+
+
 func trim_to_alpha(alpha_main: float, alpha_jib := INF) -> void:
 	"""船员按当前视风把帆收到指定攻角（Day 3 版：瞬间完成；Day 4 才加耗时与技能）。"""
 	var aw := apparent_wind_ship_frame()
@@ -220,10 +249,12 @@ func step(delta: float, wind_world: Vector2) -> void:
 
 	# 帆的力（主帆 + 前帆），横倾后桅杆倾斜 -> 水平分量乘 cos(phi)
 	# 帆档（缩帆/收帆）在这里生效：帆布少了，力和横倾一起小下去
+	# 桅杆损伤 = 还能挂的帆面积变小
+	var mast_ok := 1.0 - 0.5 * damage_of("mast")
 	var fm := physics.sail_force(app_speed, app_dir, _sail_main_deg,
-		physics.area_main * _sail_area_scale)
+		physics.area_main * _sail_area_scale * mast_ok)
 	var fj := physics.sail_force(app_speed, app_dir, _sail_jib_deg,
-		physics.area_jib * _sail_area_scale)
+		physics.area_jib * _sail_area_scale * mast_ok)
 	var fx := fm.x + fj.x
 	var fy := fm.y + fj.y
 	var cp := cos(deg_to_rad(_heel_deg))
@@ -237,8 +268,13 @@ func step(delta: float, wind_world: Vector2) -> void:
 	}
 
 	# 船体：侧滑由龙骨抵挡，前进被船体阻力 + 龙骨诱导阻力拖住
+	# 洋流：船是泡在水里的，水自己在动 —— 受力看的是**相对水的速度**，
+	# 位置积分用的是相对地面的速度。所以不挂帆也会被流带着走。
+	var cur_ship := _to_ship(current_world)
+	var u_rel := _u - cur_ship.x
+	var w_rel := _w - cur_ship.y
 	# 抛锚：锚把船摁住 —— 帆的力照样算（面板能看见），但它推不动船。
-	var w_target := physics.side_slip(fy, _u, _w)
+	var w_target := physics.side_slip(fy, u_rel, w_rel)
 	var phi_target := rad_to_deg(asin(clampf(
 		fy * physics.h_ce / (physics.mass * ShipPhysics.GRAVITY * physics.gm),
 		-1.0, 1.0)))
@@ -251,8 +287,13 @@ func step(delta: float, wind_world: Vector2) -> void:
 		# ⚠️ 前进方向必须**按质量积分**，不能瞬时跳到稳态。
 		# 60 吨的船换速要几十秒 —— 这点惯性是"换舷能不能过顶"的关键：
 		# 抢风时要带着余速穿过死区，瞬时求解的话一顶风速度立刻归零，船就卡死在风里。
-		var drag_now := physics.hull_drag(_u) + physics.induced_drag(fy, _u, _w)
-		_u = maxf(0.0, _u + (fx - drag_now) / (physics.mass * SURGE_MASS_FACTOR) * delta)
+		# 船体损伤 = 阻力变大（船底蹭过礁石之后就跑不动了）
+		var hull_bad := 1.0 + 0.9 * damage_of("hull")
+		# 阻力永远**对抗相对水流**：水比船快（u_rel<0）时它就是**推**船。
+		# 少了这个符号，洋流就带不动船（Day 6 现场抓到的）。
+		var drag_axial := physics.hull_drag(absf(u_rel)) * hull_bad * signf(u_rel) \
+			+ physics.induced_drag(fy, u_rel, w_rel) * signf(u_rel)
+		_u += (fx - drag_axial) / (physics.mass * SURGE_MASS_FACTOR) * delta
 		# 侧滑与横倾的惯性小得多，维持一阶松弛就够了
 		_w += minf(1.0, delta / 2.0) * (w_target - _w)
 	_heel_deg += minf(1.0, delta / 1.5) * (phi_target - _heel_deg)
@@ -263,7 +304,9 @@ func step(delta: float, wind_world: Vector2) -> void:
 	# 船在死区里停住时，全靠它才能把头转出来。
 	var speed_factor := clampf(_u / 2.0, 0.35, 1.2)
 	var weather := WEATHER_HELM * sin(deg_to_rad(app_dir + 180.0))
-	var yaw_target := _rudder_deg * YAW_PER_RUDDER * speed_factor + weather
+	# 舵损伤 = 转舵效率下降
+	var rudder_ok := 1.0 - 0.6 * damage_of("rudder")
+	var yaw_target := _rudder_deg * YAW_PER_RUDDER * speed_factor * rudder_ok + weather
 	_yaw_rate_dps += minf(1.0, delta / 1.5) * (yaw_target - _yaw_rate_dps)
 	_heading_deg = fposmod(_heading_deg + _yaw_rate_dps * delta, 360.0)
 

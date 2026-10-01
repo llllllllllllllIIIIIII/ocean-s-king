@@ -159,8 +159,15 @@ func _assign_jobs(sail_demand: int) -> void:
 		m.planned = false
 		m.next_job = "off_watch"
 		m.next_target = Vector3i(-1, -1, -1)
+	# 0) 上岸的人不参与船上的派活 —— 带走的每一个人都意味着船上少一双手
+	for m in members:
+		if m.ashore:
+			m.next_job = "ashore"
+			m.planned = true
 	# 1) 需求优先：饿/累到阈值就放下手里的活
 	for m in members:
+		if m.ashore:
+			continue
 		if m.hunger >= hunger_to_eat:
 			m.next_job = "eat"
 			m.next_target = _need_slot(m, "eat")
@@ -174,7 +181,7 @@ func _assign_jobs(sail_demand: int) -> void:
 		# 先把"名次"算一次再排序 —— 别在比较函数里反复算技能和哈希
 		var pairs := []
 		for m in members:
-			if not m.planned and m.can_work(j):
+			if not m.planned and not m.ashore and m.can_work(j):
 				pairs.append([_rank(m, j), m])
 		pairs.sort_custom(func(a, b): return a[0] < b[0])
 		var want: int = min(int(demand.get(j, 0)), pairs.size())
@@ -188,7 +195,7 @@ func _assign_jobs(sail_demand: int) -> void:
 			m.planned = true
 	# 3) 剩下的不在班：回水手舱待着（真船就是这么排更的）
 	for m in members:
-		if not m.planned:
+		if not m.planned and not m.ashore:
 			m.next_job = "off_watch"
 			m.next_target = _need_slot(m, "off_watch")
 	# 4) 只应用变化（路线不清零，人才走得到岗位）

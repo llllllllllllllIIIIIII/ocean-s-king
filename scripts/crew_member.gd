@@ -35,6 +35,7 @@ var path_target := Vector3i(-1, -1, -1)
 var move_progress := 0.0
 var grumble := ""               # 最近一句抱怨（只有关键船员会说）
 var grumble_timer := 0.0        # 抱怨冷却（秒），免得一句话刷屏
+var ashore := false             # 跟船长上岸了：船上的活一律不管（人在岸上）
 # --- 派活用的临时字段（每 tick 重算，不落盘）---
 var planned := false            # 这一轮方案里已经安排过他了
 var next_job := ""
@@ -97,4 +98,6 @@ func _job_name(j: String) -> String:
 		"chores": return "杂务"
 		"eat": return "吃饭"
 		"sleep": return "睡觉"
+		"ashore": return "上岸"
+		"off_watch": return "休更"
 		_: return "待命"

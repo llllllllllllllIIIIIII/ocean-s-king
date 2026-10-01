@@ -3,7 +3,7 @@
 16 世纪麦哲伦环球航行背景的远洋航行模拟 / 探索 / 管理游戏。
 **2D 正交表现 + 3D 空间逻辑。**
 
-当前进度：**7 天垂直切片开发中**（Day 1）
+当前进度：**7 天垂直切片开发中**（Day 6 已完成：能出港、航行、登陆、返航）
 
 ---
 
@@ -79,6 +79,11 @@ tests/                   无头测试
 | `docs/04-工具链与GitHub同步.md` | Godot 命令行交互、仓库与推送 |
 | `docs/05-船的数据结构.md` | 三层对象模型、网格约定、格子 vs 物件、校验器 |
 | `docs/06-测试与验收.md` | 三层验证体系、命令速查、关于 Godot MCP 的取舍 |
+| `docs/07-交接.md` | **当前进度快照**（新窗口接手先读这一页） |
+| `docs/08-风力与帆的气动模型.md` | 气动公式、标定流程、踩过的坑 |
+| `docs/09-指挥链路.md` | 玩家 → 航海官 → 船员 → 帆 → 船 这条链子 |
+| `docs/10-船员系统.md` | 40 个人的需求、派活、跨层寻路 |
+| `docs/11-海域与登陆.md` | 8km 海域、洋流与背风区、登陆流程、事件因果链 |
 
 ---
 
@@ -90,6 +95,10 @@ $g = 'D:\Godot\Godot_v4.7.2-stable_win64_console.exe'
 python tools/gen_ship.py                                     # 重新生成船体数据
 & $g --headless --path . --script res://tests/validate_ship.gd   # 校验数据
 & $g --path . res://scenes/ship_debug.tscn -- shots          # 截图看画面
+
+# 现在真正"能玩"的是这一条：出港 → 航行 → 发现岛 → 登陆 → 返航
+& $g --path . res://scenes/sea_debug.tscn                    # 手动玩（左键设目标点，L 登陆）
+& $g --path . res://scenes/sea_debug.tscn -- shots           # 自动跑一趟并截图
 ```
 
 ---
