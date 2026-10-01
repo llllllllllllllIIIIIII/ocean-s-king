@@ -8,6 +8,7 @@ extends SceneTree
 
 const DT := 0.5
 const FAST := 12.0               # sea_debug.gd 里最大的一档快进
+const GEO := "res://data/world/atlantic/geography.json"
 
 var _checks := 0
 var _fails: PackedStringArray = []
@@ -23,6 +24,7 @@ func _initialize() -> void:
 	_test_decision_journal()
 	_test_settlement()
 	_test_pacing()
+	_test_stall_hint()
 	_finish()
 
 
@@ -300,6 +302,69 @@ func _test_pacing() -> void:
 		"航程累计正确（%.1f 公里）" % v.journal.distance_km())
 	_check(v.nav.beat_count > 0,
 		"这一趟真的抢过风（%d 段）—— 面板与结算页上的数字不再是死的" % v.nav.beat_count)
+
+
+# ---------------------------------------------------------------- 6 卡住了要说人话
+
+func _test_stall_hint() -> void:
+	"""船朝目标点磨不出前进的时候，界面必须说一句人话。
+
+	背景：v0.5 验收第 4 条是"陌生人 15 分钟能上手"，而实测过一种卡法 —— 目标点正好在
+	正逆风上时，航海官在离港 2–3 公里处磨不出净前进（`docs/21` 第 4.6 节）。
+	**要不要改操法是用户的决定**（`docs/07` 待决问题），这里守的是另一半：
+	玩家不该卡住了还不知道自己卡住了。
+	"""
+	# ① 无风带：船根本走不动 → 说"没什么风"
+	var a := Voyage.new()
+	a.setup(GEO)
+	a.wind.time_scale = 0.0
+	a.wind.gust_gain = 0.0
+	a.wind.base_tws = 1.0
+	a.wind.tws_ms = 1.0
+	# 目标点摆在**洋流的上游**：不然船会被水流带着慢慢"前进"，就不算卡住了
+	var cur := a.sea.current_at(a.ship.position_m())
+	var away := Vector2(3000.0, 0.0) if cur.length() < 1e-6 else -cur.normalized() * 3000.0
+	a.orders.set_target_point(a.ship.position_m() + away)
+	var t0 := a.ship.position_m().distance_to(a.orders.target_point)
+	_run(a, 600.0)
+	var t1 := a.ship.position_m().distance_to(a.orders.target_point)
+	_check(_count_text(a.log_lines, "没什么风") == 1,
+		"没风的时候说一次\"没什么风\"（净前进 %.0f m，日志 %d 行）" % [t0 - t1, a.log_lines.size()])
+
+	# ② 正逆风：目标点就在风来的方向上 → 说"点偏一点，或者按 N 沿航线走"
+	var b := Voyage.new()
+	b.setup(GEO)
+	b.wind.time_scale = 0.0
+	b.wind.gust_gain = 0.0
+	b.wind.base_tws = 8.0
+	b.wind.tws_ms = 8.0
+	var goal := b.default_destination()
+	var bearing := rad_to_deg((goal - b.ship.position_m()).angle())
+	b.wind.base_from_dir = bearing
+	b.wind.from_dir_deg = bearing
+	b.orders.set_target_point(goal)
+	var d0 := b.ship.position_m().distance_to(goal)
+	var t := 0.0
+	while t < 2400.0 and _count_text(b.log_lines, "正对着风") == 0:
+		b.tick(DT)
+		t += DT
+	var d1 := b.ship.position_m().distance_to(goal)
+	print("  正逆风：%.0f 秒里离目标 %.0f m → %.0f m（净前进 %.0f m）" % [
+		t, d0, d1, d0 - d1])
+	_check(_count_text(b.log_lines, "正对着风") == 1,
+		"正逆风磨不出前进时给出提示（%.0f 秒，净前进 %.0f m）" % [t, d0 - d1])
+	# 提示只出一次：再跑一段，不该刷屏
+	_run(b, 600.0)
+	_check(_count_text(b.log_lines, "正对着风") == 1,
+		"卡住期间只提示一次，不刷屏（%d 行）" % _count_text(b.log_lines, "正对着风"))
+
+
+func _count_text(lines: Array, needle: String) -> int:
+	var n := 0
+	for line in lines:
+		if str(line).find(needle) >= 0:
+			n += 1
+	return n
 
 
 # ---------------------------------------------------------------- 断言框架

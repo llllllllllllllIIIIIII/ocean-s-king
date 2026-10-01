@@ -35,6 +35,12 @@ var memory := {}                    # 世界记住你做过什么（M7）：掠�
 var reached_destination := false    # M8：四条船都到了终点港（抵达是个闩）
 var following_route := false        # M8：玩家选了"沿航线走"（一键沿着航段开）
 var route_waypoints: Array = []     # 跟着走的那串点（从当前位置最近的那个港起算）
+# M8 收尾：给"朝着目标点却磨不出净前进"配一句话。**只说话，不动任何数** ——
+# 操法本身要不要改是用户的决定（docs/07 的待决问题）。它是纯界面状态，不进存档
+# （读档后重新数一遍就行，和 `_prev_pos` 同类）。
+var _stall_t := 0.0
+var _stall_best := INF
+var _stall_nagged := false
 var ending_score := {"wealth": 0, "voyage": 0, "knowledge": 0, "crew": 0, "history": 0}
 var link: NetLink = null           # 联机（M3）：单机时是 null，走的是同一套调用
 var region_path := Sea.DATA_PATH   # 这一局用的是哪片海（静态数据，不进存档）
@@ -175,7 +181,52 @@ func tick(delta: float) -> void:
 			_resolve_battle()
 	_check_fleet_arrival()
 	_route_tick()
+	_stall_hint(delta)
 	_publish_local_summary()
+
+
+func _stall_hint(delta: float) -> void:
+	"""船朝目标点走了好几分钟却没有净前进 —— 跟玩家说一句人话。
+
+	为什么要有它：v0.5 的验收第 4 条是"陌生人 15 分钟能上手"。实测过一种卡法 ——
+	**目标点正好在正逆风上**时，航海官（v0.1 就有的抢风逻辑）在离港 2–3 公里处
+	磨不出净前进，船以 0.2–0.3 节原地打转。这是"船怎么开"的机制问题，
+	要不要改操法由用户拍板（`docs/07` 待决问题 / `docs/21` 第 4.6 节）；
+	在那之前，至少不能让玩家**不知道自己卡住了**。
+
+	只出一条消息、每次卡住只出一次；一旦真的在前进就重新武装。
+	"""
+	if not orders.has_target_point or ashore or orders.anchored \
+			or orders.sail_level == ShipOrders.SailLevel.FURLED:
+		_reset_stall()
+		return
+	var d := ship.position_m().distance_to(orders.target_point)
+	if _stall_best == INF:
+		_stall_best = d
+		return
+	if d < _stall_best - 40.0:          # 40 米算"真的近了"（比抖一格大得多）
+		_reset_stall()
+		_stall_best = d
+		return
+	_stall_best = minf(_stall_best, d)
+	_stall_t += delta
+	if _stall_t < 180.0 or _stall_nagged:      # 三个游戏分钟没挪窝才开口
+		return
+	_stall_nagged = true
+	if following_route:
+		# 跟着航线走还卡住，说明这一段本身就逆风 —— 让他自己接管
+		say("这一段正顶着风，船磨不出前进 —— 点一个偏开一点的目标点（左键），" +
+			"跟航线走就先停一下。", true)
+	elif wind.tws_ms < 2.5:
+		say("这一带没什么风，船在漂 —— 等风来，或者换个目标点（左键）。", true)
+	else:
+		say("目标点正对着风，船磨不出前进 —— 点一个偏开一点的目标点，或者按 N 沿航线走。", true)
+
+
+func _reset_stall() -> void:
+	_stall_t = 0.0
+	_stall_best = INF
+	_stall_nagged = false
 
 
 func _check_fleet_arrival() -> void:
