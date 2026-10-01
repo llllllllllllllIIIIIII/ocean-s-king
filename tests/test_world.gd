@@ -167,7 +167,20 @@ func _test_landing_chain() -> void:
 	var rate_before := v.crew.trim_rate_dps
 	var msg := v.land(ids, 6)
 	_check(v.ashore, "带人上岸之后船长在岸上（%s）" % msg)
-	_run(v, 30.0)
+	# 一个一个下船：刚上岸时队伍还在船上（画在船边），过一会儿才陆续到位
+	_check(v.party.count_ashore() == 0,
+		"刚下命令时船员还在船上（岸上 %d 人）" % v.party.count_ashore())
+	_run(v, 12.0)
+	_check(v.party.count_ashore() < v.party.entries.size(),
+		"下了命令之后不是一下子全上岸（12 秒时岸上 %d / %d 人）" % [
+			v.party.count_ashore(), v.party.entries.size()])
+	_run(v, 120.0)
+	_check(v.party.all_ashore(), "过一会儿大家都上岸了（%d 人）" % v.party.count_ashore())
+	# 一个一个下船：每个人的到达时刻应该明显错开
+	var spread := 0.0
+	if v.party.ashore_times.size() >= 2:
+		spread = float(v.party.ashore_times[-1]) - float(v.party.ashore_times[0])
+	_check(spread > 5.0, "船员是一个一个下船的（第一个和最后一个相差 %.1f 秒）" % spread)
 	# 上岸的人真的不在船上干活了（岗位变成"上岸"）
 	var still_working := 0
 	for m in v.roster.key_crew():
@@ -194,6 +207,16 @@ func _test_landing_chain() -> void:
 	# 岸上：走到遗迹
 	v.move_party_to(Vector2(5620, 3320))
 	_run(v, 240.0)
+	# 队形：每个人跟到自己的位置上，而且是各自独立的点（没有挤成一坨）
+	var worst := 0.0
+	var closest := 1e9
+	for i in v.party.entries.size():
+		var a: Vector2 = v.party.entries[i]["pos"]
+		worst = maxf(worst, a.distance_to(v.party.formation_slot(i)))
+		for j in range(i + 1, v.party.entries.size()):
+			closest = minf(closest, a.distance_to(v.party.entries[j]["pos"] as Vector2))
+	_check(worst < 3.0, "队伍跟上了队形（最远的一人离位 %.1f 米）" % worst)
+	_check(closest > 1.0, "每个人都是独立的点，没有挤在一起（最近两人 %.1f 米）" % closest)
 	_check(v.visited.has("ruins"), "走到遗迹会被记录")
 	_check(v.fired.has("ruins"), "发现遗迹事件触发")
 	# 五个脚本事件里的最后一个：部落接触
@@ -212,8 +235,11 @@ func _test_landing_chain() -> void:
 	v.move_party_to(beach)
 	_run(v, 300.0)
 	var back := v.return_to_ship()
-	_check(not v.ashore, "回到船上")
-	_check(back.find("船上发生了") >= 0, "回船时收到延迟报告")
+	_check(back.find("上船") >= 0, "招呼大家上船（%s）" % back)
+	_run(v, 60.0)                                   # 也是一个一个上船
+	_check(not v.ashore, "所有人都回到船上")
+	_check(v.log_lines[-1].find("船上发生了") >= 0
+		or v.log_lines[-1].find("回到船上") >= 0, "回船时收到延迟报告")
 	_check(v.pending_reports.is_empty(), "报告交付后清空")
 
 	# 报告过的船员都回到船上干活

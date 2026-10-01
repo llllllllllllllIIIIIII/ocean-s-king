@@ -35,6 +35,7 @@ var captain_target := Vector2.ZERO
 var party_speed := 14.0            # 岸上走路（米/秒）：别让玩家在等
 var ashore_count := 0              # 跟船长一起上岸的水手数（关键船员另算）
 var landing_point := Vector2.ZERO  # 上岸点：船旁边最近的那段岸（不是固定航标）
+var party := LandingParty.new()    # 登陆队：一个一个下船 + 岸上排成队形
 var last_message := ""             # 最新一条重要消息（HUD 上显示十几秒）
 var message_timer := 0.0
 var _shore_cooldown := 0.0         # 蹭滩提示的冷却
@@ -90,7 +91,11 @@ func tick(delta: float) -> void:
 		_say("船底蹭上滩头，木匠皱着眉头看了一眼。", true)
 	_events(delta)
 	if ashore:
+		party.tick(delta)
+		captain_pos = party.captain
 		_walk_ashore(delta)
+		if party.boarding and party.boarded_all():
+			_finish_boarding()
 
 
 # ------------------------------------------------------------ 剧情事件
@@ -233,6 +238,12 @@ func land(ids: Array, hands := 6) -> String:
 	landing_point = _shore_near(ship.position_m())
 	captain_pos = landing_point
 	captain_target = captain_pos
+	# 队伍：船长先上岸，船员按名单一个一个跟下来（小船一趟一个人）
+	var party_crew := []
+	for m in roster.key_crew():
+		if m.ashore:
+			party_crew.append(m)
+	party.start(party_crew, landing_point, ship.position_m(), taken)
 	var msg := "带 %s 和 %d 名水手上岸。" % [
 		"、".join(names) if names.size() > 0 else "（不带关键船员）", ashore_count]
 	_say(msg, true)
@@ -242,8 +253,16 @@ func land(ids: Array, hands := 6) -> String:
 func return_to_ship() -> String:
 	if not ashore:
 		return "你还在船上"
+	if party.boarding:
+		return "正在上船，等大家到齐…"
 	if captain_pos.distance_to(landing_point) > 420.0:
 		return "得先走回下船的地方才能上船"
+	party.begin_boarding()
+	return "招呼人上船：一个一个来。"
+
+
+func _finish_boarding() -> void:
+	"""所有人都回到船上：清掉上岸标记，把攒下的报告一次性交给船长。"""
 	ashore = false
 	for m in roster.key_crew():
 		m.ashore = false
@@ -252,7 +271,6 @@ func return_to_ship() -> String:
 		msg += "你不在的时候，船上发生了：\n" + "\n".join(pending_reports)
 		pending_reports.clear()
 	_say(msg, true)
-	return msg
 
 
 func move_party_to(pos: Vector2) -> void:
@@ -263,14 +281,11 @@ func move_party_to(pos: Vector2) -> void:
 	if d.length() > r:
 		pos = c + d.normalized() * r
 	captain_target = pos
+	party.move_to(pos)
 
 
 func party_size() -> int:
-	var n := 1
-	for m in roster.members:
-		if m.ashore:
-			n += 1
-	return n
+	return party.size()
 
 
 # ------------------------------------------------------------ 日志与报告

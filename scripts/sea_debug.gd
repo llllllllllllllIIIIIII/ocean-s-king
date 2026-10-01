@@ -189,7 +189,7 @@ func _draw() -> void:
 		var v := Vector2(float(p[0]), float(p[1])) * PPM
 		var seen := voyage.visited.has(str(poi["id"]))
 		var col := Color(0.6, 1.0, 0.7) if seen else Color(0.95, 0.9, 0.5)
-		draw_circle(v, 5.0, col)
+		draw_circle(v, 5.0 * _marker_scale(), col)
 		draw_arc(v, float(poi.get("radius_m", 0.0)) * PPM, 0, TAU, 24, Color(col, 0.45), 1.5)
 		_label(v, str(poi["name"]), col)
 	# 船：交给真正的 ShipRenderer 画（海图和船内视图是同一个渲染器）
@@ -200,15 +200,24 @@ func _draw() -> void:
 		draw_circle(sp, 10.0, Color(1.0, 0.92, 0.55, 0.20))
 		draw_arc(sp, 10.0, 0.0, TAU, 20, Color(1.0, 0.95, 0.7, 0.85), 2.0)
 	if voyage.ashore:
-		# 队伍：船长 + 随行的人，围在下船的地方 —— 让"带人上岸"在画面里看得见
-		var c := voyage.captain_pos * PPM
-		var n := mini(voyage.party_size(), 9)
-		for i in range(1, n):
-			var a := TAU * float(i) / float(maxi(n - 1, 1))
-			var at := c + Vector2(cos(a), sin(a)) * 13.0
-			draw_circle(at, 4.0, Color(0.98, 0.86, 0.45, 0.9))
-		draw_circle(c, 7.0, Color(1.0, 0.85, 0.35))
-		draw_arc(c, 11.0, 0, TAU, 20, Color(1.0, 0.9, 0.5, 0.6), 2.0)
+		# 登陆队：每人一个点（船上还没下来的画在船边，下来的在岸上排成队形）
+		var k := _marker_scale()
+		for e in voyage.party.entries:
+			var st: String = e["state"]
+			if st == "onboard":
+				continue
+			var at: Vector2 = (e["pos"] as Vector2) * PPM
+			var is_key: bool = e["key"]
+			var col := Color(0.98, 0.86, 0.45, 0.95) if is_key else Color(0.85, 0.88, 0.92, 0.95)
+			if is_key:
+				draw_circle(at, 7.0 * k, Color(0.08, 0.09, 0.12, 0.9))
+				draw_circle(at, 5.0 * k, col)
+			else:
+				draw_circle(at, 4.0 * k, col)
+		# 队长（船长本人）
+		var c := voyage.party.captain * PPM
+		draw_circle(c, 8.0 * k, Color(1.0, 0.85, 0.35))
+		draw_arc(c, 13.0 * k, 0, TAU, 20, Color(1.0, 0.9, 0.5, 0.6), 2.0 * k * 2.0)
 	# 航线：从船到目标点
 	if voyage.orders.has_target_point:
 		draw_dashed_line(voyage.ship.position_m() * PPM, voyage.orders.target_point * PPM,
@@ -233,6 +242,15 @@ func _label(at: Vector2, text: String, col: Color) -> void:
 	var size := maxi(8, int(14.0 / eff))
 	draw_string(_font, at + Vector2(9, 5) / eff, text, HORIZONTAL_ALIGNMENT_LEFT, -1,
 		size, col)
+
+
+func _marker_scale() -> float:
+	"""标记点（人、地标圆点）按屏幕尺寸画：不管拉多远拉多近，看上去都一样大。
+
+	世界单位画点的话，一拉近就变成糊在屏幕上的大色块（队形会糊成一坨）。
+	"""
+	var eff := _zoom * (2.0 if voyage.ashore else 1.0)
+	return 1.0 / maxf(eff, 0.05)
 
 
 # ------------------------------------------------------------------ 输入
@@ -502,33 +520,39 @@ func _run_shot_timeline() -> void:
 			_picker.visible = false
 			var ids := ["piloto", "carpintero", "cirujano", "escribano"]
 			print("[shot] 登陆：%s" % voyage.land(ids, 6))
-			_zoom = 1.0                       # 队伍就在船旁边那段岸上，两个都看得见
-			_warp(5.0)
-			_capture("30_ashore_by_the_ship")
+			_zoom = 1.0
+			_warp(14.0)                       # 一个一个下船，这会儿有人还在船上
 		62:
+			_capture("30_disembarking_one_by_one")
+		64:
+			_zoom = 5.0                       # 拉近看队形
+			_warp(60.0)                       # 都上岸了，站成队形
+		66:
+			_capture("31_ashore_in_formation")
+		68:
 			_zoom = 1.0
 			voyage.move_party_to(Vector2(5620, 3320))
 			_warp(240.0)
-		66:
-			_capture("31_ruins")
-		70:
+		72:
+			_capture("32_ruins")
+		76:
 			voyage.move_party_to(Vector2(6080, 3820))
 			_warp(200.0)
-		74:
-			_capture("32_stream")
-		78:
+		80:
+			_capture("33_stream")
+		84:
 			voyage.move_party_to(Vector2(4790, 3600))
 			_warp(260.0)
 			_deliver_reports()
-		82:
-			_capture("33_back_with_reports")
-		84:
+		88:
+			_capture("34_back_with_reports")
+		90:
 			print("[shot] 报告：%s" % str(voyage.pending_reports))
 			_zoom = 0.35
 			_warp(60.0)
-		88:
-			_capture("34_homeward")
 		94:
+			_capture("35_homeward")
+		100:
 			get_tree().quit(0)
 
 
