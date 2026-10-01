@@ -1,0 +1,129 @@
+{
+  "_comment": "三个高压抉择（M5）。每个抉择 ≥4 条后果**不同**的选项，每一条后果都是数：船员状态、关系、纪律、结局分数。tests/test_society.gd 会把「选 A 和选 B 之后状态真的不同」逐条断言 —— 不做只在文案上不同的选项。",
+  "version": 1,
+  "_trigger": "kind = starving（缺粮）/ wounded（重伤病）/ tribal（部落接触）。触发条件只写在这里，代码里不重复。",
+  "_effects": "mood_all / mood_key / health_all / fatigue_all 是船员状态；affinity_pair 是把关系推给「最不对付的那一对」；tension / discipline 是社会量；deserters / hurt 是具体的人命；score 是结算里的五类成果。",
+  "dilemmas": [
+    {
+      "id": "food_crisis",
+      "name": "缺粮",
+      "trigger": { "kind": "starving" },
+      "text": "存粮见底了。桶匠说按现在的量，最多还能撑三天。\n四十个人都在看着你 —— 也看着彼此的碗。",
+      "options": [
+        {
+          "id": "share_all",
+          "name": "官兵同份，一起饿",
+          "text": "船长也端同样的碗。",
+          "effects": { "mood_all": 0.06, "mood_key": -0.04, "tension": -0.06, "discipline": -0.02,
+            "affinity_pair": 0.10, "score": { "crew": 3, "history": 1 } },
+          "journal": "缺粮：下令官兵同份。"
+        },
+        {
+          "id": "key_first",
+          "name": "先保关键岗位",
+          "text": "舵手、帆手、外科医生先吃 —— 船得有人开。",
+          "effects": { "mood_all": -0.12, "mood_key": 0.05, "tension": 0.08, "discipline": -0.05,
+            "affinity_pair": -0.18, "score": { "voyage": 2, "crew": -1 } },
+          "journal": "缺粮：下令优先保关键岗位。"
+        },
+        {
+          "id": "punish_hoarders",
+          "name": "抄底舱，查私藏",
+          "text": "有人一定藏着东西。翻出来，当众分掉。",
+          "effects": { "mood_all": -0.07, "tension": 0.10, "discipline": 0.12,
+            "affinity_pair": -0.22, "score": { "crew": -2, "history": -1 } },
+          "journal": "缺粮：抄了底舱，查出私藏的干粮。"
+        },
+        {
+          "id": "land_for_food",
+          "name": "靠岸找吃的",
+          "text": "偏离航线，去岸上碰碰运气。",
+          "effects": { "mood_all": 0.03, "fatigue_all": 0.08, "tension": -0.02,
+            "score": { "knowledge": 1, "voyage": -1 }, "flag": "seeking_food" },
+          "journal": "缺粮：决定偏离航线，靠岸找吃的。"
+        }
+      ]
+    },
+    {
+      "id": "grave_wound",
+      "name": "重伤病",
+      "trigger": { "kind": "wounded", "min_injured": 2 },
+      "text": "外科医生说有两个人撑不过这一程：一个是被帆具砸断的腿，\n一个是烧了三天不退的热。药箱里只剩最后一瓶。",
+      "options": [
+        {
+          "id": "all_in",
+          "name": "把药都给他们",
+          "text": "救得回来是命，救不回来也不留遗憾。",
+          "effects": { "health_all": 0.25, "mood_all": 0.04, "score": { "crew": 3 },
+            "use_item": { "medicine": 1 } },
+          "journal": "重伤病：把最后的药都给了两个重伤员。"
+        },
+        {
+          "id": "triage",
+          "name": "按外科医生的判断来",
+          "text": "救能救的。另一个给足酒，让他少疼一点。",
+          "effects": { "health_all": 0.10, "mood_all": -0.05, "discipline": 0.05,
+            "score": { "crew": 1, "voyage": 1 } },
+          "journal": "重伤病：把决定权交给外科医生。"
+        },
+        {
+          "id": "leave_on_shore",
+          "name": "靠岸把他们留下",
+          "text": "留够水和食物，托给岸上的人。",
+          "effects": { "mood_all": -0.08, "tension": 0.06, "deserters": 2,
+            "score": { "crew": -2, "history": -1 } },
+          "journal": "重伤病：把两个伤员留在岸上。"
+        },
+        {
+          "id": "turn_back",
+          "name": "掉头，送他们回去",
+          "text": "这一程到此为止。",
+          "effects": { "mood_all": 0.02, "score": { "crew": 2, "voyage": -3, "history": -2 },
+            "flag": "turned_back" },
+          "journal": "重伤病：决定掉头返航。"
+        }
+      ]
+    },
+    {
+      "id": "tribal_clash",
+      "name": "部落冲突",
+      "trigger": { "kind": "tribal" },
+      "text": "草屋前围了三十几个人。他们的矛尖朝下，但站得很开 ——\n像是随时能合上来。你们手里的火绳枪只有两支装了弹药。",
+      "options": [
+        {
+          "id": "trade",
+          "name": "交换",
+          "text": "把铁器、玻璃珠摊在沙地上，先伸出手。",
+          "effects": { "mood_all": 0.05, "tension": -0.08, "discipline": 0.03,
+            "score": { "knowledge": 2, "history": 2, "wealth": 1 },
+            "flag": "traded_with_locals" },
+          "journal": "部落接触：选择交换。"
+        },
+        {
+          "id": "withdraw",
+          "name": "慢慢退回海滩",
+          "text": "不碰他们的东西，也不让他们靠近船。",
+          "effects": { "mood_all": -0.02, "fatigue_all": 0.05, "score": { "crew": 1, "knowledge": 1 } },
+          "journal": "部落接触：保持距离，退回海滩。"
+        },
+        {
+          "id": "fire",
+          "name": "开火吓退他们",
+          "text": "两支枪、一轮齐射。十六世纪最响的声音。",
+          "effects": { "mood_all": -0.10, "tension": 0.12, "discipline": 0.06,
+            "score": { "history": -2, "crew": -1 }, "flag": "shot_at_locals",
+            "use_item": { "powder": 1, "lead": 10 } },
+          "journal": "部落接触：下令开火。"
+        },
+        {
+          "id": "kidnap_guide",
+          "name": "抓一个人当向导",
+          "text": "他知道这一带的水和路。绑走他。",
+          "effects": { "mood_all": -0.14, "tension": 0.16, "discipline": 0.10,
+            "score": { "voyage": 2, "knowledge": 1, "history": -3 }, "flag": "kidnapped_guide" },
+          "journal": "部落接触：抓了一个当地人当向导。"
+        }
+      ]
+    }
+  ]
+}

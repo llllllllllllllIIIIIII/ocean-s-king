@@ -23,6 +23,10 @@ var wind := WindField.new()
 var fleet := Fleet.new()           # 世界里的 4 艘远征船（M3）
 var cargo := Cargo.new()           # 本船的货舱（M4，拥有者权威）
 var ports := Ports.new()           # 四个港口的库存与价格（M4，房主权威）
+var rules := Rules.new()           # 玩家定的规矩（M5，本船）
+var society := Society.new()       # 船上社会（M5，本船）
+var dilemmas := Dilemma.new()      # 三个高压抉择（M5，本船）
+var ending_score := {"wealth": 0, "voyage": 0, "knowledge": 0, "crew": 0, "history": 0}
 var link: NetLink = null           # 联机（M3）：单机时是 null，走的是同一套调用
 var region_path := Sea.DATA_PATH   # 这一局用的是哪片海（静态数据，不进存档）
 var ship: ShipDynamics
@@ -83,6 +87,9 @@ func setup(region := Sea.DATA_PATH, ship_id := "trinidad", inherited := {}) -> v
 	roster = CrewRoster.new()
 	roster.setup()
 	crew.roster = roster
+	rules.setup()
+	society.setup(roster)
+	dilemmas.setup()
 	story.load_data()
 	# 陆地：船开不上干地（沙滩那一圈是浅水，可以靠上去登陆）。
 	# M2 起陆地是一张形状表（海岸 + 多个岛），不再是"一个圆心加一个半径"。
@@ -120,6 +127,7 @@ func tick(delta: float) -> void:
 	roster.tick(delta, orders.hands_on_sails)
 	crew.step(delta)
 	ship.step(delta, wind_vec)
+	_society_tick(delta)
 	_survey()
 	# 蹭上滩头：给一点损伤与提示（不该天天撞，所以有冷却）
 	_shore_cooldown = maxf(0.0, _shore_cooldown - delta)
@@ -211,7 +219,8 @@ func _consume_supplies(delta: float) -> void:
 	var days := 60.0 * VoyageJournal.voyage_time_scale / 86400.0
 	_supply_acc = 0.0
 	var was_starving := cargo.starving
-	var r := cargo.consume(days, crew_on_board())
+	# **规矩在这里生效**：口粮制度与饮水制度直接改消耗量（验收第 1 条）
+	var r := cargo.consume(days, crew_on_board(), rules.food_mult(), rules.water_mult())
 	if int(r["short"]) > 0 and not was_starving:
 		shortage_events += 1
 		_say("桶匠把最后几桶淡水锁了起来：船上开始缺粮缺水。", true)
@@ -219,6 +228,38 @@ func _consume_supplies(delta: float) -> void:
 	elif int(r["short"]) == 0 and was_starving:
 		cargo.starving = false
 		_say("在港口补上了水和食物，船上又有了底气。", true)
+
+
+func _society_tick(delta: float) -> void:
+	"""船上社会：规则给的乘数灌进名册，关系与紧张度往前走，事件冒出来。"""
+	roster.fatigue_mult = rules.fatigue_mult()
+	roster.mood_bias = rules.mood_bias()
+	var near_land: bool = (not sea.land_containing(ship.position_m()).is_empty()) \
+		or float(sea.nearest_shore(ship.position_m())["distance_m"]) < 2500.0
+	society.tick(delta, roster, rules, cargo, near_land)
+	for ev in society.take_events():
+		_say("【%s】%s" % [str(ev["name"]), str(ev["text"])], true)
+		journal.record(t, "society", "%s：%s" % [str(ev["name"]), str(ev["text"])])
+	for m in roster.members:
+		if m.job == "deserted" and not fired.has("deserted_" + m.id):
+			fired["deserted_" + m.id] = true
+	dilemmas.check(self)
+
+
+func set_rule(rule_id: String, option_id: String) -> bool:
+	var ok := rules.set_rule(rule_id, option_id)
+	if ok:
+		_say("规矩改了：%s → %s。" % [
+			str(rules.rule_def(rule_id).get("name", rule_id)), rules.option_name(rule_id)], true)
+		journal.decide("改了规矩：%s。" % rules.option_name(rule_id))
+	return ok
+
+
+func answer_dilemma(option_id: String) -> Dictionary:
+	var id := dilemmas.current()
+	if id == "":
+		return {"ok": false, "reason": "现在没有要你拿主意的事"}
+	return dilemmas.resolve(self, id, option_id)
 
 
 func can_dock() -> bool:
@@ -843,6 +884,11 @@ func capture_ship_state() -> Dictionary:
 		# 货舱与金币是本船状态（拥有者权威，docs/14 第 3 节）
 		"cargo": cargo.capture_state(),
 		"docked_port": docked_port,
+		# 规矩与社会（M5）：每条船有自己的四十个人，所以都算本船状态
+		"rules": rules.capture_state(),
+		"society": society.capture_state(),
+		"dilemmas": dilemmas.capture_state(),
+		"ending_score": ending_score.duplicate(),
 	}
 
 
@@ -870,6 +916,10 @@ func apply_ship_state(d: Dictionary) -> void:
 	party.apply_state(d.get("party", {}), roster)
 	cargo.apply_state(d.get("cargo", {}))
 	docked_port = str(d.get("docked_port", ""))
+	rules.apply_state(d.get("rules", {}))
+	society.apply_state(d.get("society", {}))
+	dilemmas.apply_state(d.get("dilemmas", {}))
+	ending_score = (d.get("ending_score", {}) as Dictionary).duplicate()
 	# 航程累计用的"上一帧船位"是派生值：读档后必须对齐到读回来的位置，
 	# 否则这一刻会被当成一次瞬移（或者被算成几百米的航程）。
 	_prev_pos = ship.position_m()

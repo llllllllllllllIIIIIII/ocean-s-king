@@ -25,6 +25,11 @@ var path := ShipPath.new()
 var log_lines: Array = []        # 最近几条"船上发生了什么"
 var t := 0.0
 var ready := false
+# M5：规则给出的两个乘数/偏移（每帧由 Voyage 从 Rules 灌进来）。
+# 它们是**派生量**，不进存档 —— 读档时 Rules 重新算一遍。
+var fatigue_mult := 1.0
+var mood_bias := 0.0
+var grumble_count := 0             # 抱怨过几次（验收第 1 条要数它）
 
 var _grumble_pool := [
 	"这帆脚索又缠住了。",
@@ -133,7 +138,8 @@ func _update_needs(delta: float) -> void:
 	var eat_recover := float(needs.get("eat_recover", 0.00220))
 	for m in members:
 		m.hunger = clampf(m.hunger + hunger_rate * delta, 0.0, 1.0)
-		m.fatigue = clampf(m.fatigue + fatigue_rate * delta, 0.0, 1.0)
+		# 值班制度 / 口粮 / 饮水一起决定疲劳攒得多快（M5 的规则给这个乘数）
+		m.fatigue = clampf(m.fatigue + fatigue_rate * fatigue_mult * delta, 0.0, 1.0)
 		if m.job == "sleep" and m.working:
 			m.fatigue = clampf(m.fatigue - sleep_recover * delta, 0.0, 1.0)
 		elif m.job == "off_watch" and m.working:
@@ -258,7 +264,7 @@ func _move(delta: float) -> void:
 func _update_mood(delta: float) -> void:
 	for m in members:
 		var target := clampf(0.85 - 0.45 * m.fatigue - 0.45 * m.hunger
-			- (1.0 - m.health) * 0.5, 0.0, 1.0)
+			- (1.0 - m.health) * 0.5 + mood_bias, 0.0, 1.0)
 		m.mood += clampf(target - m.mood, -0.25 * delta, 0.25 * delta)
 		m.grumble_timer -= delta
 		# 只有关键船员会抱怨 —— 这是 12 人 vs 28 人最直接的表现差异。
@@ -266,6 +272,7 @@ func _update_mood(delta: float) -> void:
 		if not m.is_key or m.mood > 0.5 or m.grumble_timer > 0.0:
 			continue
 		m.grumble_timer = 45.0 + float(m.id_hash % 40)
+		grumble_count += 1
 		_say(m)
 
 
@@ -362,6 +369,7 @@ func capture_state() -> Dictionary:
 		"_grumble_cursor": _grumble_cursor,
 		"log_lines": log_lines.duplicate(),
 		"members": people,
+		"grumble_count": grumble_count,
 	}
 
 
@@ -371,6 +379,7 @@ func apply_state(d: Dictionary) -> void:
 	t = float(d.get("t", 0.0))
 	_assign_timer = float(d.get("_assign_timer", 1e9))
 	_grumble_cursor = int(d.get("_grumble_cursor", 0))
+	grumble_count = int(d.get("grumble_count", 0))
 	log_lines = (d.get("log_lines", []) as Array).duplicate()
 	var by_id := {}
 	for m in members:

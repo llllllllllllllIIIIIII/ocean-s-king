@@ -65,6 +65,7 @@ var _session: NetSession           # M3：联机会话（单机时也在，只�
 var _net: NetLink                  # M3：把船队与世界接上网络的胶水
 var _room: RoomPanel               # M3：房间界面（开房间 / 加入 / 单机）
 var _port_panel: PortPanel         # M4：港口面板（补给 / 修船 / 买卖）
+var _dilemma_card: DilemmaCard     # M5：抉择卡（缺粮 / 重伤病 / 部落冲突）
 var _panel: SailPanel
 var _show_panel := false
 var _crew_panel: CrewPanel
@@ -150,6 +151,18 @@ func _build_net() -> void:
 	_room.visible = false
 	_room.choose.connect(_on_room_choose)
 	cl.add_child(_room)
+
+	# M5：抉择卡比标题卡低一层、比航行界面高一层（它不遮住整屏，只是把桌上摊开）
+	var cl_d := CanvasLayer.new()
+	cl_d.layer = 7
+	add_child(cl_d)
+	_dilemma_card = DilemmaCard.new()
+	_dilemma_card.font = _font
+	_dilemma_card.voyage = voyage
+	_dilemma_card.size = get_viewport_rect().size
+	_dilemma_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_dilemma_card.visible = false
+	cl_d.add_child(_dilemma_card)
 
 
 func _on_room_choose(mode: String, ip: String) -> void:
@@ -588,6 +601,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			and (event as InputEventKey).pressed and not (event as InputEventKey).echo:
 		if _port_panel.handle_key(event as InputEventKey):
 			return
+	# 抉择卡优先：桌上摊着一件要拿主意的事，别的键先让它
+	if _dilemma_card != null and _dilemma_card.visible and event is InputEventKey \
+			and (event as InputEventKey).pressed and not (event as InputEventKey).echo:
+		if _dilemma_card.handle_key(event as InputEventKey):
+			return
 	# 标题卡还摊在桌上：任何键、任何一次点击 = 开始（这是"陌生人 15 分钟"的第一道门）
 	if _title.visible:
 		var pressed := (event is InputEventKey and (event as InputEventKey).pressed) \
@@ -684,19 +702,35 @@ func _key(k: InputEventKey) -> void:
 		KEY_SPACE:
 			if _picker.visible:
 				_picker.toggle_current()
+			elif _show_crew_panel:
+				voyage.say("（船员）" + _crew_panel.cycle_priority(), false)
 			else:
 				voyage.orders.clear_target_point()
 		KEY_UP, KEY_W:
 			if _picker.visible:
 				_picker.move(-1)
+			elif _show_crew_panel:
+				_crew_panel.move_selection(-1, 0)
 		KEY_DOWN, KEY_S:
 			if _picker.visible:
 				_picker.move(1)
+			elif _show_crew_panel:
+				_crew_panel.move_selection(1, 0)
+		KEY_LEFT, KEY_A:
+			if _show_crew_panel:
+				_crew_panel.move_selection(0, -1)
+		KEY_RIGHT, KEY_D:
+			if _show_crew_panel:
+				_crew_panel.move_selection(0, 1)
 		KEY_ENTER, KEY_KP_ENTER:
 			if _picker.visible:
 				_picker.visible = false
 				voyage.land(_picker.selected_ids(), _picker.hands)
 		KEY_TAB:
+			if _show_crew_panel:
+				# M5：船员面板里，Tab 在"名单"和"规矩"之间切换焦点
+				voyage.say("（船员）" + _crew_panel.toggle_focus(), false)
+				return
 			_show_panel = not _show_panel
 			_panel.visible = _show_panel
 			if _show_panel:
@@ -776,6 +810,7 @@ func _build_hud() -> void:
 	cl2.add_child(_picker)
 	_crew_panel = CrewPanel.new()
 	_crew_panel.font = _font
+	_crew_panel.voyage = voyage
 	_crew_panel.size = CrewPanel.PANEL
 	_crew_panel.position = (get_viewport_rect().size - CrewPanel.PANEL) * 0.5
 	_crew_panel.visible = false
@@ -845,6 +880,8 @@ func _update_hud() -> void:
 		_crew_panel.update_from(voyage.roster)
 	if _port_panel.visible:
 		_port_panel.queue_redraw()
+	# M5：有抉择等着，就把卡摊开（卡片自己从 Voyage 读，不替玩家决定）
+	_dilemma_card.refresh()
 	_hud.time_scale = _time_scales[_time_scale_idx]
 	_hud.act_card_timer = _act_card_timer
 	_hud.mode_line = ("船舱 L%d %s　高程 %+.0f 米（向上滚回甲板）" % [
@@ -1075,6 +1112,31 @@ func _run_shot_timeline() -> void:
 			_warp(2.0)
 		104:
 			_capture("41_chart_explored")
+		106:
+			# M5：船员面板的右半边 —— 规矩、三伙人、以及"他为什么心情差"
+			# （先把桌上已经摊着的抉择答掉，不然它会盖在面板上）
+			while voyage.dilemmas.current() != "":
+				var opts: Array = voyage.dilemmas.take_current().get("options", [])
+				if opts.is_empty():
+					break
+				voyage.answer_dilemma(str((opts[0] as Dictionary).get("id", "")))
+			_show_crew_panel = true
+			_crew_panel.visible = true
+			_crew_panel.focus = "rules"
+			_crew_panel.selected_row = 3
+			_warp(0.5)
+		107:
+			_capture("44_crew_and_rules")
+		108:
+			# M5：抉择卡（把"缺粮"这件事摆到桌上）
+			_crew_panel.visible = false
+			_show_crew_panel = false
+			voyage.cargo.starving = true
+			voyage.fired["village"] = true       # 走到过村落（截图脚本替玩家走了这一趟）
+			voyage.dilemmas.check(voyage)
+			_dilemma_card.refresh()
+		109:
+			_capture("45_dilemma")
 		110:
 			get_tree().quit(0)
 

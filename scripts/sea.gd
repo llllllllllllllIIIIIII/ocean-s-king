@@ -105,6 +105,11 @@ func is_dry_land(pos: Vector2) -> bool:
 	return world.is_dry_land(pos)
 
 
+func land_containing(pos: Vector2) -> Dictionary:
+	"""这点踩在哪块陆地上？没踩上就返回空字典（M5 用它判断"看得见陆地"）。"""
+	return world.land_containing(pos)
+
+
 func is_reef(pos: Vector2) -> bool:
 	return world.is_reef(pos)
 

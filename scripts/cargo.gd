@@ -168,7 +168,7 @@ func total_goods_kg() -> float:
 
 # ------------------------------------------------------------ 消耗
 
-func consume(days: float, crew: int) -> Dictionary:
+func consume(days: float, crew: int, food_mult := 1.0, water_mult := 1.0) -> Dictionary:
 	"""按人数扣口粮与淡水。返回这一轮缺了多少（不缺就是 0）。
 
 	口径：一天一个水手一份食物、三升水（`resources.json` 的 consumption 段）。
@@ -181,9 +181,9 @@ func consume(days: float, crew: int) -> Dictionary:
 	var cons: Dictionary = defs.get("consumption", {})
 	var food_per := float(cons.get("ration_per_person_day", 1.0))
 	var water_l := float(cons.get("water_l_per_person_day", 3.0))
-	var want_food := float(crew) * food_per * days
+	var want_food := float(crew) * food_per * days * food_mult
 	var liters_per_barrel := maxf(1.0, float(item_def("water").get("liters", 60)))
-	var want_water := float(crew) * water_l * days / liters_per_barrel
+	var want_water := float(crew) * water_l * days * water_mult / liters_per_barrel
 	var short_food := _take("food", want_food)
 	var short_water := _take("water", want_water)
 	var short := short_food + short_water

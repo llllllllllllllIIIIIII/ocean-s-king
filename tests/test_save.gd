@@ -79,7 +79,8 @@ func _test_field_coverage() -> void:
 		["Crew", v.crew, v.crew.capture_state(),
 			["ship", "roster", "_tw", "_ta", "_alpha_grid"]],
 		["CrewRoster", v.roster, v.roster.capture_state(),
-			["jobs", "needs", "path", "ready", "_grumble_pool"]],
+			# fatigue_mult / mood_bias 是 M5 的规则每帧灌进来的派生量，不进存档
+			["jobs", "needs", "path", "ready", "_grumble_pool", "fatigue_mult", "mood_bias"]],
 		["CrewMember", v.roster.members[0], v.roster.members[0].capture_state(),
 			["id_hash", "is_key", "display_name", "post", "post_es",
 			 "traits", "relations", "skills"]],
@@ -90,6 +91,11 @@ func _test_field_coverage() -> void:
 		["Ports", v.ports, v.ports.capture_state(),
 			# 港口表与基准库存是静态的，只有"现在还剩多少"会变
 			["defs", "base_stock"]],
+		["Rules", v.rules, v.rules.capture_state(), ["defs"]],
+		["Society", v.society, v.society.capture_state(),
+			# pending 是"这一帧要弹的事件"，每帧被取走，属于瞬时量
+			["pending"]],
+		["Dilemma", v.dilemmas, v.dilemmas.capture_state(), ["defs"]],
 	]
 	for p in pairs:
 		var label := str(p[0])

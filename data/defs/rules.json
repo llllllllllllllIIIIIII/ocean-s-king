@@ -1,0 +1,86 @@
+{
+  "_comment": "规则制度（M5）：玩家定的规矩。每一档都必须在**数值上看得见** —— 改了规则，消耗、疲劳、心情、纪律真的变（tests/test_society.gd 把它们逐个断言）。数值只有这一份真源，GDScript 里不写死。",
+  "version": 1,
+  "_fields": "food_mult / water_mult 是消耗乘数；fatigue_mult 是疲劳累积乘数；mood_bias 是每天的心情偏移；tension_mult 是紧张度累积乘数；discipline_bonus 是纪律加成；efficiency 是干活效率乘数。",
+  "rules": [
+    {
+      "id": "ration",
+      "name": "口粮制度",
+      "default": "full",
+      "options": [
+        { "id": "full", "name": "足量", "food_mult": 1.0, "mood_bias": 0.02, "fatigue_mult": 1.0,
+          "text": "一天一份，谁也不少。" },
+        { "id": "half", "name": "减半", "food_mult": 0.5, "mood_bias": -0.04, "fatigue_mult": 1.15,
+          "text": "半份。省下来的仓容能装货，人也会记得这件事。" },
+        { "id": "strict", "name": "严格配给", "food_mult": 0.35, "mood_bias": -0.09, "fatigue_mult": 1.3,
+          "text": "按人头称重，一分不多。饿不死，但撑不住。" },
+        { "id": "key_first", "name": "优先关键岗位", "food_mult": 0.7, "mood_bias": -0.05,
+          "fatigue_mult": 1.12, "key_bonus": true,
+          "text": "舵手、帆手、外科医生先吃，剩下的按人头分。" }
+      ]
+    },
+    {
+      "id": "water",
+      "name": "饮水制度",
+      "default": "full",
+      "options": [
+        { "id": "full", "name": "足量", "water_mult": 1.0, "mood_bias": 0.0, "fatigue_mult": 1.0,
+          "text": "渴了自己去打。" },
+        { "id": "strict", "name": "严格配给", "water_mult": 0.6, "mood_bias": -0.06, "fatigue_mult": 1.12,
+          "text": "每天两勺。正午最难熬。" },
+        { "id": "cook_only", "name": "只够做饭", "water_mult": 0.35, "mood_bias": -0.12, "fatigue_mult": 1.2,
+          "text": "水只下锅，不进嘴。" }
+      ]
+    },
+    {
+      "id": "watch",
+      "name": "值班制度",
+      "default": "three",
+      "options": [
+        { "id": "three", "name": "三班倒", "fatigue_mult": 1.0, "mood_bias": 0.0, "efficiency": 1.0,
+          "text": "八小时一班。最稳，也最慢。" },
+        { "id": "two", "name": "两班倒", "fatigue_mult": 1.22, "mood_bias": -0.05, "efficiency": 1.08,
+          "text": "十二小时一班。多一双手，也多一层累。" },
+        { "id": "all", "name": "全员当值", "fatigue_mult": 1.5, "mood_bias": -0.12, "efficiency": 1.18,
+          "text": "战时规矩：除了病人，全在甲板上。" }
+      ]
+    },
+    {
+      "id": "liquor",
+      "name": "酒类规定",
+      "default": "rationed",
+      "options": [
+        { "id": "rationed", "name": "按量配给", "mood_bias": 0.03, "tension_mult": 0.95,
+          "text": "每天一小杯。这是十六世纪的规矩，也是最管用的规矩。" },
+        { "id": "allowed", "name": "不禁止", "mood_bias": 0.06, "tension_mult": 1.15,
+          "text": "谁有酒谁喝。开心快，出事也快。" },
+        { "id": "forbidden", "name": "禁酒", "mood_bias": -0.08, "tension_mult": 1.25,
+          "text": "一滴不许。有人会想办法。" }
+      ]
+    },
+    {
+      "id": "curfew",
+      "name": "宵禁",
+      "default": "off",
+      "options": [
+        { "id": "off", "name": "不设", "mood_bias": 0.0, "tension_mult": 1.0, "discipline_bonus": 0.0,
+          "text": "海上夜长，甲板上有人说话是好事。" },
+        { "id": "on", "name": "入夜后不许上甲板", "mood_bias": -0.03, "tension_mult": 0.85,
+          "discipline_bonus": 0.08, "text": "清静，也冷清。" }
+      ]
+    },
+    {
+      "id": "punish",
+      "name": "处罚制度",
+      "default": "firm",
+      "options": [
+        { "id": "lenient", "name": "宽纵", "mood_bias": 0.04, "tension_mult": 1.1, "discipline_bonus": -0.1,
+          "text": "初犯口头警告。人心松，规矩也松。" },
+        { "id": "firm", "name": "从例", "mood_bias": 0.0, "tension_mult": 1.0, "discipline_bonus": 0.0,
+          "text": "按船上的老例办。" },
+        { "id": "brutal", "name": "严刑", "mood_bias": -0.1, "tension_mult": 1.3, "discipline_bonus": 0.18,
+          "text": "鞭子挂在上舱口。秩序好，怨气也重。" }
+      ]
+    }
+  ]
+}

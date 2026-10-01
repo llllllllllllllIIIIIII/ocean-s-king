@@ -7,7 +7,7 @@ extends Control
 # 下半是优先级表：行 = 12 名关键船员，列 = 6 种工作，格子里的数字就是优先级。
 # 改优先级 → 下一轮派活（2 秒内）行为就变 —— 这是 Day 5 的第 3 条验收。
 
-const PANEL := Vector2(900.0, 470.0)
+const PANEL := Vector2(1240.0, 560.0)
 const ROW_H := 21.0
 const JOB_ORDER := ["sail", "helm", "lookout", "cook", "repair", "chores"]
 const JOB_SHORT := ["操帆", "掌舵", "瞭望", "伙房", "修补", "杂务"]
@@ -15,8 +15,11 @@ const PRIO_HINT := ["不干", "优先", "一般", "有空"]
 
 var font: Font
 var roster: CrewRoster
+var voyage: Voyage                    # M5：面板要读规则与社会（"他为什么心情差"）
 var selected_row := 0
 var selected_col := 0
+var selected_rule := 0
+var focus := "crew"                   # "crew" 或 "rules"（Tab 切换）
 
 
 func update_from(p_roster: CrewRoster) -> void:
@@ -26,12 +29,59 @@ func update_from(p_roster: CrewRoster) -> void:
 	queue_redraw()
 
 
+func rule_ids() -> Array:
+	return voyage.rules.rule_ids() if voyage != null else []
+
+
+func cycle_rule(dir: int) -> String:
+	"""改规矩：面板只调 Voyage 的公开入口，自己不动任何数。"""
+	if voyage == null:
+		return ""
+	var ids := rule_ids()
+	if ids.is_empty():
+		return ""
+	var id := str(ids[selected_rule % ids.size()])
+	voyage.rules.cycle(id, dir)
+	_sync_rules()
+	queue_redraw()
+	return "%s → %s" % [str(voyage.rules.rule_def(id).get("name", id)),
+		voyage.rules.option_name(id)]
+
+
+func move_rule(dir: int) -> void:
+	var ids := rule_ids()
+	if ids.is_empty():
+		return
+	selected_rule = posmod(selected_rule + dir, ids.size())
+	queue_redraw()
+
+
+func _sync_rules() -> void:
+	"""改了规矩要立刻反映到人身上（不等下一帧的 tick）。"""
+	if voyage == null:
+		return
+	roster.fatigue_mult = voyage.rules.fatigue_mult()
+	roster.mood_bias = voyage.rules.mood_bias()
+
+
 func move_selection(drow: int, dcol: int) -> void:
 	if roster == null:
+		return
+	if focus == "rules":
+		if drow != 0:
+			move_rule(drow)
+		if dcol != 0:
+			cycle_rule(dcol)
 		return
 	selected_row = clampi(selected_row + drow, 0, roster.key_crew().size() - 1)
 	selected_col = clampi(selected_col + dcol, 0, JOB_ORDER.size() - 1)
 	queue_redraw()
+
+
+func toggle_focus() -> String:
+	focus = "rules" if focus == "crew" else "crew"
+	queue_redraw()
+	return "现在改的是" + ("规矩" if focus == "rules" else "工作优先级")
 
 
 func cycle_priority() -> String:
@@ -52,8 +102,13 @@ func _draw() -> void:
 		return
 	draw_rect(Rect2(Vector2.ZERO, PANEL), Color(0.03, 0.06, 0.09, 0.94), true)
 	draw_rect(Rect2(Vector2.ZERO, PANEL), Color(0.45, 0.7, 0.9, 0.5), false, 2.0)
-	draw_string(font, Vector2(14, 24), "船员（C 关闭　↑↓ 选人　←→ 选工作　空格 改优先级）",
+	draw_string(font, Vector2(14, 24), "船员（C 关闭　Tab 切换 名单/规矩　↑↓ 选　←→ 改　空格 改优先级）",
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.85, 0.93, 1.0))
+	if voyage != null:
+		draw_string(font, Vector2(700, 24),
+			"紧张 %.0f%%　纪律 %.0f%%　事件 %d" % [voyage.society.tension * 100.0,
+				voyage.society.discipline * 100.0, voyage.society.event_count],
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1.0, 0.85, 0.55))
 
 	var crew := roster.key_crew()
 	var y := 44.0
@@ -106,6 +161,46 @@ func _draw() -> void:
 		draw_string(font, Vector2(28, fy), str(line),
 			HORIZONTAL_ALIGNMENT_LEFT, PANEL.x - 46.0, 13, Color(0.88, 0.9, 0.86))
 		fy += 17.0
+
+	# ---- 右半边（M5）：规矩，以及"他为什么心情差" ----
+	var rx := 900.0
+	draw_string(font, Vector2(rx, 52), "规矩（Tab 切换到这里，←→ 改档位）",
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.85, 0.93, 1.0))
+	if voyage != null:
+		var ry := 74.0
+		var ids := rule_ids()
+		for i in ids.size():
+			var id := str(ids[i])
+			var sel := i == selected_rule
+			if sel:
+				draw_rect(Rect2(rx - 6.0, ry - 14.0, PANEL.x - rx - 10.0, 20.0),
+					Color(0.25, 0.45, 0.65, 0.35), true)
+			draw_string(font, Vector2(rx, ry), "%-8s %s" % [
+				str(voyage.rules.rule_def(id).get("name", id)), voyage.rules.option_name(id)],
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 14,
+				Color(1.0, 0.92, 0.66) if sel else Color(0.86, 0.92, 0.98))
+			ry += 22.0
+		ry += 6.0
+		# 三个小群体
+		draw_string(font, Vector2(rx, ry), "船上三伙人：",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.6, 0.8, 0.95))
+		ry += 19.0
+		for line in voyage.society.faction_report(roster):
+			draw_string(font, Vector2(rx + 8.0, ry), str(line),
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.85, 0.9, 0.95))
+			ry += 17.0
+		# 选中这个人为什么心情差（验收要求：面板要把原因说清楚）
+		var crew_sel := roster.key_crew()
+		if selected_row < crew_sel.size():
+			var who: CrewMember = crew_sel[selected_row]
+			ry += 10.0
+			draw_string(font, Vector2(rx, ry), "%s 为什么心情差：" % who.display_name,
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(1.0, 0.88, 0.6))
+			ry += 19.0
+			draw_multiline_string(font, Vector2(rx + 8.0, ry),
+				voyage.society.why_unhappy(who, roster, voyage.rules),
+				HORIZONTAL_ALIGNMENT_LEFT, PANEL.x - rx - 20.0, 13, 3,
+				Color(0.9, 0.94, 0.99), VoyageHud.WRAP)
 
 
 func _draw_bar(at: Vector2, value: float, color: Color, tag: String) -> void:

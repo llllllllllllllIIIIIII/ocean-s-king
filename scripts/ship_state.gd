@@ -14,6 +14,7 @@ const FIELDS := [
 	"id", "kind", "ship_name", "ship", "orders", "nav", "crew", "roster",
 	"ashore", "captain_pos", "captain_target", "ashore_count", "landing_point",
 	"landing_land_id", "party", "cargo", "docked_port",
+	"rules", "society", "dilemmas", "ending_score",
 ]
 
 var data := {}
