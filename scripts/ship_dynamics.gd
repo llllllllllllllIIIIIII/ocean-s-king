@@ -98,6 +98,17 @@ func twa_deg() -> float:
 	return absf(ShipPhysics.normalize180(rad_to_deg(atan2(v.y, v.x)) + 180.0))
 
 
+func twa_signed_deg() -> float:
+	"""带符号的真风角：+ = 风从右舷来，− = 从左舷来。
+
+	船员要靠这个决定帆收在哪一舷（配平表只存右舷来风的那一半，另一半取反）。
+	"""
+	var v := wind_ship_frame()
+	if v.length() < 1e-6:
+		return 0.0
+	return ShipPhysics.normalize180(rad_to_deg(atan2(v.y, v.x)) + 180.0)
+
+
 func awa_deg() -> float:
 	var v := apparent_wind_ship_frame()
 	if v.length() < 1e-6:

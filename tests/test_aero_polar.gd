@@ -144,6 +144,43 @@ func _dynamics_smoke(phys: ShipPhysics) -> void:
 		"风大跑得快（4 m/s 风 %.2f 节 -> 10 m/s 风 %.2f 节）" % [
 			light.speed_kn(), fresh.speed_kn()])
 
+	# 从静止起步：不只是横风，**所有能走的真风角**都必须能自己起来。
+	# 现场 bug 就出在这里：按"攻角"配平，船停住时视风退化成真风，
+	# 同一个攻角会把帆收到背风侧（侧滑 84.7°、船速永远 0）。
+	var stuck: PackedStringArray = []
+	for twa in [45, 60, 90, 120, 148, 160, 180]:
+		var s2 := ShipDynamics.new(phys)
+		var c2 := Crew.new(s2)
+		s2.set_pose(Vector2.ZERO, 0.0)
+		var blow := deg_to_rad(float(twa) + 180.0)          # 风从船首起 twa 度来
+		var w2 := Vector2(cos(blow), sin(blow)) * 8.0
+		c2.set_target_heading(0.0)
+		s2.step(0.0, w2)
+		c2.retrim()
+		_run(s2, c2, w2, 120.0, 0.1)
+		if s2.speed_kn() < 3.0:
+			stuck.append("%d°(%.2f 节)" % [twa, s2.speed_kn()])
+	_check(stuck.is_empty(), "从静止起步：各真风角都能跑起来（卡住的：%s）"
+		% ("无" if stuck.is_empty() else ", ".join(stuck)))
+
+	# 失速之后能不能自己恢复：先把船顶进死区停住，再转出来必须重新跑起来。
+	# 用户报的"我不管如何操纵船速一直显示为 0"就是这个场景。
+	var rec := ShipDynamics.new(phys)
+	var rec_crew := Crew.new(rec)
+	rec.set_pose(Vector2.ZERO, 0.0)
+	var w_fixed := Vector2(0.0, -8.0)          # 风从 +y（右舷）来
+	rec_crew.set_target_heading(0.0)
+	_run(rec, rec_crew, w_fixed, 60.0, 0.1)
+	var running := rec.speed_kn()
+	rec_crew.set_target_heading(90.0)          # 船首转向风来的方向 -> 顶进死区
+	_run(rec, rec_crew, w_fixed, 150.0, 0.1)
+	var luffed := rec.speed_kn()
+	rec_crew.set_target_heading(0.0)           # 再转出来
+	_run(rec, rec_crew, w_fixed, 150.0, 0.1)
+	_check(running > 4.0 and luffed < 1.0 and rec.speed_kn() > 4.0,
+		"失速后能自己恢复（跑 %.1f → 顶风停 %.1f → 转回来 %.2f 节）" % [
+			running, luffed, rec.speed_kn()])
+
 
 func _run(ship: ShipDynamics, crew: Crew, wind: Vector2, seconds: float, dt: float) -> void:
 	"""驱动一艘船跑一段时间：船员下指令（调帆、打舵），船在风力下自己动。"""

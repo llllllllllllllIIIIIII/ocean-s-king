@@ -37,6 +37,7 @@ var _show_ghost := true
 var _paused := false
 
 var _hud: Label
+var _wind_gizmo: WindGizmo
 var _font: Font
 var _layer_order: Array[int] = []
 var _frame := 0
@@ -64,6 +65,7 @@ func _ready() -> void:
 	_sync_view()
 
 	_build_hud()
+	_build_wind_gizmo()
 	_apply()
 	_shot_mode = OS.get_cmdline_user_args().has("shots")
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(SHOT_DIR))
@@ -272,6 +274,8 @@ func _build_hud() -> void:
 func _update_hud() -> void:
 	if _hud == null:
 		return
+	if _wind_gizmo:
+		_wind_gizmo.set_wind(wind.from_dir_deg, wind.tws_ms)
 	var mode := "缩放" if _mode == Mode.ZOOM else "分层"
 	var hint := "拉远/拉近（拉到最近继续向下可沉入船舱）" if _mode == Mode.ZOOM \
 		else "向上逐层上浮，到最上层回到缩放"
@@ -281,15 +285,32 @@ func _update_hud() -> void:
 		+ "滚轮：%s\n"
 		+ "←/→ 或 A/D 改目标航向　空格 稳住当前航向　左键点方向就走　P 暂停　G 网格　H 虚影\n"
 		+ "%s\n"
+		+ "真风 %.1f m/s（%.1f 节）来自 %.0f°，吹向 %.0f°　%s\n"
 		+ "航向 %.0f°  船速 %.2f 节（%.1f m/s）  横倾 %+.1f°  侧滑 %+.1f°\n"
 		+ "真风角 %.0f°  视风角 %.0f°  舵 %+.0f°  主帆攻角 %.0f°  位置 (%.0f, %.0f) m") % [
 		_layer, view.layer_name(_layer), view.layer_elevation(_layer), mode, _zoom, flag,
 		hint,
 		crew.describe(),
+		wind.tws_ms, wind.tws_ms / 0.514444, fposmod(wind.from_dir_deg, 360.0),
+		fposmod(wind.from_dir_deg + 180.0, 360.0),
+		"（右上角风玫瑰：箭头 = 风吹去的方向）",
 		float(snap["heading_deg"]), float(snap["u_kn"]), float(snap["u_ms"]),
 		float(snap["heel_deg"]), ship.leeway_deg(),
 		ship.twa_deg(), ship.awa_deg(), float(snap["rudder_deg"]),
 		ship.sail_alpha_main_deg(), ship.position_m().x, ship.position_m().y]
+
+
+func _build_wind_gizmo() -> void:
+	"""右上角的风玫瑰：让"风往哪儿吹"在画面上一直看得见（与摄像机缩放无关）。"""
+	var cl := CanvasLayer.new()
+	add_child(cl)
+	_wind_gizmo = WindGizmo.new()
+	_wind_gizmo.font = _font
+	var side := 200.0
+	_wind_gizmo.size = Vector2(side, side)
+	_wind_gizmo.position = get_viewport_rect().size - Vector2(side + 18.0, side + 18.0)
+	cl.add_child(_wind_gizmo)
+	_wind_gizmo.set_wind(wind.from_dir_deg, wind.tws_ms)
 
 
 func _pick_font() -> Font:

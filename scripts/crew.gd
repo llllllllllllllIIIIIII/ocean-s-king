@@ -21,11 +21,11 @@ var has_target_point := false
 var trim_period := 0.5          # 秒  多久重新配平一次
 var steer_gain := 1.2           # 度舵角 / 度航向误差
 
-var alpha_main := 20.0          # 当前选定的主帆攻角
+var alpha_main := 20.0          # 当前主帆攻角（度）
 var _trim_timer := 1e9          # 第一帧就配平一次
 var _tw: PackedFloat64Array = PackedFloat64Array()      # 查表：真风速轴
-var _ta: PackedFloat64Array = PackedFloat64Array()      # 查表：真风角轴
-var _alpha_grid: Array = []                             # [风速][风角] -> 攻角
+var _ta: PackedFloat64Array = PackedFloat64Array()      # 查表：视风角轴
+var _alpha_grid: Array = []                             # [风速][视风角] -> 主帆攻角
 
 
 func _init(ship_ref: ShipDynamics) -> void:
@@ -47,7 +47,7 @@ func _load_trim_table() -> void:
 		return
 	for v in d.get("tws_ms", []):
 		_tw.append(float(v))
-	for v in d.get("twa_deg", []):
+	for v in d.get("awa_deg", []):
 		_ta.append(float(v))
 	_alpha_grid = d.get("alpha_deg", [])
 
@@ -81,25 +81,33 @@ func _update_target_heading() -> void:
 
 
 func retrim() -> void:
-	"""查表决定主帆攻角 —— 这就是"水手照着经验调帆"。"""
+	"""按**视风角**查表决定攻角 —— 水手看的就是帆上吃到的风。
+
+	⚠️ 这里必须用视风角，不能用真风角（Day 3 现场踩到的坑）：
+	按真风角查表意味着"配平"建立在"船正以某个速度航行"这个前提上。
+	船一旦停住，视风退化成真风，同一个攻角会把帆收到背风侧 ——
+	船侧滑 84.7°、船速永远是 0，而且再也起不来。
+	按视风角查表，停着的时候查到的是"让帆吃上力"的收放，跑起来视风前移，
+	自动收敛到最佳配平。配平表由 tools/aero_prototype.py --mode trim-table 生成。
+	"""
 	var tws := ship.wind_ship_frame().length()
 	if tws < 0.3:
 		return
-	alpha_main = lookup_alpha(tws, ship.twa_deg())
+	alpha_main = lookup_alpha(tws, ship.awa_deg())
 	ship.trim_to_alpha(alpha_main)
 
 
-func lookup_alpha(tws: float, twa: float) -> float:
-	"""双线性插值查配平表。"""
+func lookup_alpha(tws: float, awa: float) -> float:
+	"""双线性插值查配平表：真风速 × 视风角 -> 主帆攻角。"""
 	if _tw.is_empty() or _ta.is_empty() or _alpha_grid.is_empty():
 		return alpha_main
-	var j := _axis_index(_ta, clampf(twa, _ta[0], _ta[_ta.size() - 1]))
+	var j := _axis_index(_ta, clampf(awa, _ta[0], _ta[_ta.size() - 1]))
 	var i := _axis_index(_tw, clampf(tws, _tw[0], _tw[_tw.size() - 1]))
 	var a00 := float(_alpha_grid[i][j])
 	var a01 := float(_alpha_grid[i][j + 1])
 	var a10 := float(_alpha_grid[i + 1][j])
 	var a11 := float(_alpha_grid[i + 1][j + 1])
-	var fx := _axis_frac(_ta, j, clampf(twa, _ta[0], _ta[_ta.size() - 1]))
+	var fx := _axis_frac(_ta, j, clampf(awa, _ta[0], _ta[_ta.size() - 1]))
 	var fy := _axis_frac(_tw, i, clampf(tws, _tw[0], _tw[_tw.size() - 1]))
 	return lerpf(lerpf(a00, a01, fx), lerpf(a10, a11, fx), fy)
 

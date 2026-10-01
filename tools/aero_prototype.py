@@ -359,37 +359,53 @@ def print_table(boat, tws_list=(6.0, 8.0, 10.0)):
 
 
 def emit_trim_table(boat, path, tws_list=(3.0, 5.0, 8.0, 11.0, 14.0),
-                    twa_list=tuple(range(0, 181, 5))):
-    """生成船员的配平查表：给定真风速与真风角，该用多大攻角、能跑多快。
+                    awa_list=tuple(range(0, 181, 5))):
+    """生成船员的配平查表：给定真风速与**视风角**，该用多大攻角。
+
+    为什么键是视风角而不是真风角（Day 3 现场踩坑后的结论）：
+      水手看的是帆上吃到的风（视风），不是真风。按真风角查表，意味着
+      "配平"建立在"船正以某个速度航行"这个前提上；船一旦停住，视风退化成真风，
+      同一个攻角会把帆收到背风侧（船侧滑 84.7°、永远起不来）。
+      改成按视风角查表后：停着的时候查到的是"让帆吃上力"的收放，
+      跑起来视风前移，自动收敛到最佳配平 —— 这也是真实水手做的事。
 
     运行时（scripts/crew.gd）插值查这张表，比在游戏里现场搜索便宜三个数量级。
     Day 4 的指挥链路会在这上面加技能、疲劳与执行耗时。
     """
     out = {
         "_comment": "由 tools/aero_prototype.py --emit-trim-table 生成，不要手改。"
-                    "alpha_deg[i][j] = 真风速 tws_ms[i]、真风角 twa_deg[j] 时的最佳主帆攻角（度）。",
+                    "下表 [i][j] 对应真风速 tws_ms[i]、**视风角** awa_deg[j]（0 = 风从船首来）。"
+                    "alpha_deg = 该状态下主帆的最佳攻角（度）——船员按它收放帆："
+                    "帆弦线 = 视风方向 − 攻角。speed_kn 只是同一状态下的稳态船速，供参考。",
         "version": 1,
         "ship_id": PHYS.get("ship_id", "caravel_60"),
         "tws_ms": list(tws_list),
-        "twa_deg": list(twa_list),
+        "awa_deg": list(awa_list),
         "alpha_deg": [],
         "speed_kn": [],
     }
     for tws in tws_list:
-        alphas, speeds = [], []
-        for twa in twa_list:
+        # 1) 把"每个真风角下的稳态"算出来，记下它的视风角、最佳攻角、船速
+        states = []
+        for twa in range(0, 181):
             u, cm, cj, w, phi = best_trim(boat, tws, float(twa))
             app_dir = math.degrees(math.atan2(
                 tws * math.sin(math.radians(twa + 180.0)) - w,
                 tws * math.cos(math.radians(twa + 180.0)) - u))
+            awa = abs(normalize180(app_dir + 180.0))
             a_deg = _alpha_of(app_dir, cm)
-            alphas.append(round(min(max(a_deg, 5.0), 90.0), 1))
-            speeds.append(round(u / KNOT, 2))
+            states.append((awa, min(max(a_deg, 5.0), 90.0), u / KNOT))
+        # 2) 重采样到规则的视风角网格：取视风角最接近的那个稳态
+        alphas, speeds = [], []
+        for awa in awa_list:
+            best = min(states, key=lambda s: abs(s[0] - float(awa)))
+            alphas.append(round(best[1], 1))
+            speeds.append(round(best[2], 2))
         out["alpha_deg"].append(alphas)
         out["speed_kn"].append(speeds)
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(out, fh, ensure_ascii=False, indent=1)
-    print("wrote %s（%d x %d）" % (path, len(tws_list), len(twa_list)))
+    print("wrote %s（%d x %d）" % (path, len(tws_list), len(awa_list)))
 
 
 def _alpha_of(app_dir_deg, chord_deg):
