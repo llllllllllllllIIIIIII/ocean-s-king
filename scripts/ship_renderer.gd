@@ -27,6 +27,7 @@ var sail_jib_rad := -0.75          # 前帆弦线方向（画布系弧度）
 # 不是把同一张图缩一缩 —— 缩帆要看得见少了多少帆布，收帆要看得见卷在桁上。
 var sail_state := 0
 var anchored := false              # 抛锚中：船首前面会画锚链与锚
+var crew_dots: Array = []          # 当前层的船员 [{x, y, color, key}]
 var show_grid := false
 var show_ghost := true
 
@@ -114,8 +115,25 @@ func _draw() -> void:
 			# 高度差越大，虚影偏移越多 —— 这是"层叠"的视觉暗示
 			_draw_layer(above, GHOST_ALPHA, Vector2(-2.0, -3.0) * (dz / 2.0), true)
 	_draw_anchor_rig()
+	_draw_crew()
 	if show_grid:
 		_draw_grid()
+
+
+func _draw_crew() -> void:
+	"""把当前层的船员画成小圆点：关键船员大一圈、带深色描边。
+
+	这是"12 名关键船员 vs 28 名普通船员"在画面上最直观的差别 ——
+	一眼就能认出那个是水手长、那个是刚上船的侍童。
+	"""
+	for dot in crew_dots:
+		var at := _cell_center(Vector2i(int(dot["x"]), int(dot["y"])))
+		var col: Color = dot["color"]
+		if bool(dot.get("key", false)):
+			draw_circle(at, CELL * 0.21, Color(0.05, 0.07, 0.09, 0.85))
+			draw_circle(at, CELL * 0.17, col)
+		else:
+			draw_circle(at, CELL * 0.13, col)
 
 
 func _draw_anchor_rig() -> void:

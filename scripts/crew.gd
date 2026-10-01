@@ -15,6 +15,9 @@ const RUDDER_MAX := 35.0
 const TRIM_TABLE_PATH := "res://data/defs/trim_table.json"
 
 var ship: ShipDynamics
+# 有人格化的船员名单时，人数/手艺/疲劳由他们算出来（Day 5 起）。
+# 不给就是 Day 4 的用法：测试直接设这三个数。
+var roster: CrewRoster = null
 
 # --- 船员的状态（Day 5 会被真实船员表替换）---
 var hands_on_sails := 6          # 派去操帆的人手
@@ -118,6 +121,12 @@ func _axis_frac(axis: PackedFloat64Array, i: int, v: float) -> float:
 
 func step(delta: float) -> void:
 	_t += delta
+	if roster and roster.ready:
+		# 关键的一行：船上真正有几个人在操帆、他们手艺如何、累不累 ——
+		# 直接决定帆收得多快、收得多准。船员系统与操船系统就是在这里焊上的。
+		hands_on_sails = roster.sail_hands()
+		skill = maxf(roster.sail_skill(), 0.03)
+		fatigue = roster.sail_fatigue()
 	_trim_timer += delta
 	if _force_retrim or _trim_timer >= trim_period:
 		_trim_timer = 0.0

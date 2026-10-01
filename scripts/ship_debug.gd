@@ -31,6 +31,7 @@ var crew: Crew
 # --- 指挥链路（Day 4 起）：玩家 → 航海官 → 船员 → 帆 → 船 ---
 var orders: ShipOrders
 var nav: Navigator
+var roster: CrewRoster                 # 12 关键 + 28 普通（Day 5）
 
 var _mode: Mode = Mode.ZOOM
 var _layer := 2                  # 2 = 主甲板
@@ -43,6 +44,8 @@ var _hud: Label
 var _wind_gizmo: WindGizmo
 var _panel: SailPanel
 var _show_panel := false
+var _crew_panel: CrewPanel
+var _show_crew_panel := false
 var _font: Font
 var _layer_order: Array[int] = []
 var _frame := 0
@@ -67,6 +70,9 @@ func _ready() -> void:
 	nav = Navigator.new(orders)
 	crew = Crew.new(ship)
 	crew.set_target_heading(180.0)
+	roster = CrewRoster.new()
+	roster.setup()
+	crew.roster = roster                  # 船员好不好 = 船灵不灵（在这里焊上）
 	ship.step(0.0, wind.velocity_world())        # 只把风灌进去（dt=0，不推进状态）
 	crew.retrim()
 	_sync_view()
@@ -74,6 +80,7 @@ func _ready() -> void:
 	_build_hud()
 	_build_wind_gizmo()
 	_build_panel()
+	_build_crew_panel()
 	_apply()
 	_shot_mode = OS.get_cmdline_user_args().has("shots")
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(SHOT_DIR))
@@ -95,6 +102,7 @@ func _process(delta: float) -> void:
 	crew.hands_on_sails = orders.hands_on_sails
 	ship.set_sail_area_scale(orders.sail_area_scale())
 	ship.set_anchored(orders.anchored)
+	roster.tick(dt, orders.hands_on_sails)
 	crew.step(dt)                                 # 船员调帆、打舵（慢，而且不完美）
 	ship.step(dt, wind.velocity_world())          # 船在风力下自己动
 	_sync_view()
@@ -111,7 +119,33 @@ func _sync_view() -> void:
 	# 帆的形态与锚的状态：这两条是"看不见的物理状态"在画面上的出口
 	view.sail_state = int(orders.sail_level)
 	view.anchored = ship.is_anchored()
+	view.crew_dots = _crew_dots()
 	view.queue_redraw()
+
+
+func _crew_dots() -> Array:
+	"""当前这一层上的人。分层视图里换层就能看到不同的人 —— 这是"四层"的意义。"""
+	var out := []
+	if roster == null:
+		return out
+	for m in roster.members:
+		if m.at.z != _layer:
+			continue
+		out.append({"x": m.at.x, "y": m.at.y, "color": _job_color(m.job), "key": m.is_key})
+	return out
+
+
+func _job_color(job: String) -> Color:
+	match job:
+		"sail": return Color(0.45, 0.75, 1.0)
+		"helm": return Color(1.0, 0.85, 0.4)
+		"lookout": return Color(0.6, 1.0, 0.6)
+		"cook": return Color(1.0, 0.6, 0.35)
+		"repair": return Color(0.85, 0.85, 0.9)
+		"chores": return Color(0.9, 0.9, 0.6)
+		"eat": return Color(1.0, 0.95, 0.5)
+		"sleep": return Color(0.7, 0.6, 1.0)
+		_: return Color(0.72, 0.74, 0.78)
 
 
 # ------------------------------------------------------- 自动截图（我的"眼睛"）
@@ -187,7 +221,21 @@ func _run_shot_timeline() -> void:
 			_sail_shot(335.0, 60.0, 1.55)
 		96:
 			_capture("13_anchored")
+		98:
+			orders.anchored = false
+			orders.set_sail_level(ShipOrders.SailLevel.FULL)
+			_sail_shot(335.0, 180.0, 1.55)     # 让船员各就各位：甲板上就有人了
 		102:
+			_show_crew_panel = true
+			_crew_panel.visible = true
+			_apply()
+		106:
+			_capture("14_crew_panel")
+			var dist := {}
+			for m in roster.members:
+				dist[m.at.z] = int(dist.get(m.at.z, 0)) + 1
+			print("[crew] 各层人数 %s　%s" % [str(dist), roster.describe()])
+		112:
 			print("[shots] " + view.bank.stats())
 			get_tree().quit(0)
 
@@ -198,6 +246,7 @@ func _set_state(layer: int, mode: Mode, zoom: float) -> void:
 	_layer = layer
 	_mode = mode
 	_zoom = zoom
+	_sync_view()          # 换层了要把那一层的人重新算出来（不然画的是上一层的船员）
 	_apply()
 
 
@@ -216,6 +265,7 @@ func _sail_shot(heading: float, seconds: float, zoom: float) -> void:
 	var dt := 0.05
 	for _i in int(seconds / dt):
 		crew.hands_on_sails = orders.hands_on_sails
+		roster.tick(dt, orders.hands_on_sails)     # 船员也在走动（截图上看得见）
 		crew.step(dt)
 		ship.step(dt, wind.velocity_world())
 	_sync_view()
@@ -278,12 +328,31 @@ func _unhandled_input(event: InputEvent) -> void:
 		var k := event as InputEventKey
 		match k.keycode:
 			KEY_LEFT, KEY_A:
-				_nudge_target(-40.0)
+				if _show_crew_panel:
+					_crew_panel.move_selection(0, -1)
+				else:
+					_nudge_target(-40.0)
 			KEY_RIGHT, KEY_D:
-				_nudge_target(40.0)
+				if _show_crew_panel:
+					_crew_panel.move_selection(0, 1)
+				else:
+					_nudge_target(40.0)
+			KEY_UP, KEY_W:
+				_crew_panel.move_selection(-1, 0)
+			KEY_DOWN, KEY_S:
+				_crew_panel.move_selection(1, 0)
 			KEY_SPACE:
-				orders.clear_target_point()
-				crew.set_target_heading(ship.heading_deg())
+				if _show_crew_panel:
+					var msg := _crew_panel.cycle_priority()
+					if msg != "":
+						roster._log("船长改了优先级：" + msg)
+				else:
+					orders.clear_target_point()
+					crew.set_target_heading(ship.heading_deg())
+			KEY_C:
+				_show_crew_panel = not _show_crew_panel
+				_crew_panel.visible = _show_crew_panel
+				_apply()
 			KEY_TAB:
 				_show_panel = not _show_panel
 				_panel.visible = _show_panel
@@ -375,6 +444,8 @@ func _update_hud() -> void:
 		_wind_gizmo.set_wind(wind.from_dir_deg, wind.tws_ms)
 	if _panel and _show_panel:
 		_panel.update_from(ship, crew, nav, orders)
+	if _crew_panel and _show_crew_panel:
+		_crew_panel.update_from(roster)
 	var mode := "缩放" if _mode == Mode.ZOOM else "分层"
 	var hint := "拉远/拉近（拉到最近继续向下可沉入船舱）" if _mode == Mode.ZOOM \
 		else "向上逐层上浮，到最上层回到缩放"
@@ -383,10 +454,11 @@ func _update_hud() -> void:
 	_hud.text = ("L%d  %s   高程 %+.0f m   [%s]   x%.2f%s\n"
 		+ "滚轮：%s\n"
 		+ "左键 设目标点　←/→ 微调目标　空格 保持航向　1/2/3 全帆·缩帆·收帆　X 抛锚\n"
-		+ "+/− 操帆人数　Tab 帆态面板　P 暂停　G 网格　H 虚影\n"
+		+ "+/− 操帆人数　Tab 帆态面板　C 船员面板　P 暂停　G 网格　H 虚影\n"
 		+ "玩家命令：%s\n"
 		+ "航海官：%s\n"
 		+ "%s\n"
+		+ "船员：%s\n"
 		+ "真风 %.1f m/s（%.1f 节）来自 %.0f°，吹向 %.0f°　%s\n"
 		+ "航向 %.0f°  船速 %.2f 节（%.1f m/s）  横倾 %+.1f°  侧滑 %+.1f°\n"
 		+ "真风角 %.0f°  视风角 %.0f°  舵 %+.0f°  主帆攻角 %.0f°  位置 (%.0f, %.0f) m") % [
@@ -395,6 +467,7 @@ func _update_hud() -> void:
 		orders.describe(),
 		nav.describe(),
 		crew.describe(),
+		roster.describe() if roster else "",
 		wind.tws_ms, wind.tws_ms / 0.514444, fposmod(wind.from_dir_deg, 360.0),
 		fposmod(wind.from_dir_deg + 180.0, 360.0),
 		"（右上角风玫瑰：箭头 = 风吹去的方向）",
@@ -428,6 +501,19 @@ func _build_panel() -> void:
 	_panel.position = (get_viewport_rect().size - SailPanel.PANEL) * 0.5
 	_panel.visible = false
 	cl.add_child(_panel)
+
+
+func _build_crew_panel() -> void:
+	"""船员面板：默认隐藏，C 呼出（Day 5）。"""
+	var cl := CanvasLayer.new()
+	cl.layer = 3
+	add_child(cl)
+	_crew_panel = CrewPanel.new()
+	_crew_panel.font = _font
+	_crew_panel.size = CrewPanel.PANEL
+	_crew_panel.position = (get_viewport_rect().size - CrewPanel.PANEL) * 0.5
+	_crew_panel.visible = false
+	cl.add_child(_crew_panel)
 
 
 func _pick_font() -> Font:
