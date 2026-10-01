@@ -1,19 +1,22 @@
-class_name Voyage
+﻿class_name Voyage
 extends RefCounted
 
-# 一次航行（Day 6）：海域 + 风 + 洋流 + 船 + 船员 + 剧情事件 + 登陆。
+# 一次航行（Day 6 起）：海图 + 风 + 洋流 + 船 + 船员 + 剧情事件 + 登陆。
 #
 # 它把前五天做的东西串成一条体验链：
 #   出港（Day 1-2 的船）→ 靠风航行（Day 3）→ 指挥链路（Day 4）
 #   → 船员在船上过日子（Day 5）→ 发现岛、挑人上岸、船上交给大副（Day 6）
+#   → 世界分块与海图（M2：同一套查询换成了 WorldMap，多岛、有海岸）
 #
 # 唯一一条"单向"规矩不变：**只有 ShipDynamics 能写船的位置与速度**。
 # Voyage 只是每帧把风、洋流、指令喂给它，再读它的状态去推进剧情。
 
 const KNOT := 0.514444
+const LOOKOUT_M := 8000.0          # 瞭望视野（= tile 的一半）：看见即"发现"
 
 var sea := Sea.new()
 var wind := WindField.new()
+var region_path := Sea.DATA_PATH   # 这一局用的是哪片海（静态数据，不进存档）
 var ship: ShipDynamics
 var orders: ShipOrders
 var nav: Navigator
@@ -23,12 +26,14 @@ var journal := VoyageJournal.new()   # 文书的航海日志（Day 7）：结算
 var story := Story.new()             # 三幕剧情（Day 7）：触发条件 + 文本 + 后果
 
 var t := 0.0
-var day := 0                       # 1519-09-20 起的天数（M2 加真实日期时会驱动它，见 docs/14）
+var day := 0                       # 1519-09-20 起的天数（M2 起由日历算出来，见 docs/14）
 var log_lines: Array = []          # 航海日志（文书记的）
 var fired := {}                    # 已触发的事件 id
 var pending_reports: Array = []    # 船长不在船时攒下的报告，回船一次性给他
 var island_known := false
 var visited := {}                  # 到过的地标
+var discovered := {}               # 已发现的地图分块（tile 键 -> true）—— 房主权威
+var known_places := {}             # 已经认得名字的地方：陆地与港口（特征 id -> true）
 var reef_hit := false
 
 # --- 登陆 ---
@@ -38,6 +43,7 @@ var captain_target := Vector2.ZERO
 var party_speed := 14.0            # 岸上走路（米/秒）：别让玩家在等
 var ashore_count := 0              # 跟船长一起上岸的水手数（关键船员另算）
 var landing_point := Vector2.ZERO  # 上岸点：船旁边最近的那段岸（不是固定航标）
+var landing_land := {}             # 上岸点踩在哪块陆地上（队伍活动的范围由它决定）
 var party := LandingParty.new()    # 登陆队：一个一个下船 + 岸上排成队形
 var last_message := ""             # 最新一条重要消息（HUD 上显示十几秒）
 var message_timer := 0.0
@@ -45,13 +51,14 @@ var _shore_cooldown := 0.0         # 蹭滩提示的冷却
 var _prev_pos := Vector2.ZERO      # 上一帧的船位：只用来算航程
 
 
-func setup() -> void:
-	sea.setup()
-	var w: Dictionary = sea.data.get("wind", {})
+func setup(region := Sea.DATA_PATH) -> void:
+	region_path = region
+	sea.setup(region)
+	var w: Dictionary = sea.wind()
 	wind = WindField.new(float(w.get("base_tws_ms", 8.0)), float(w.get("base_from_deg", 20.0)))
 	ship = ShipDynamics.new(ShipPhysics.load_default())
-	var p: Dictionary = sea.port()
-	var pos: Array = p.get("pos", [700, 4000])
+	var port_d: Dictionary = sea.port()
+	var pos: Array = port_d.get("pos", [700, 4000])
 	ship.set_pose(Vector2(float(pos[0]), float(pos[1])), 0.0)
 	orders = ShipOrders.new()
 	nav = Navigator.new(orders)
@@ -60,20 +67,20 @@ func setup() -> void:
 	roster.setup()
 	crew.roster = roster
 	story.load_data()
-	# 陆地：船开不上干地（沙滩那一圈是浅水，可以靠上去登陆）
-	var isl := sea.island()
-	var c: Array = isl.get("center", [0, 0])
-	ship.land_center = Vector2(float(c[0]), float(c[1]))
-	ship.land_radius = float(isl.get("radius_m", 0.0)) - float(isl.get("beach_width_m", 0.0))
+	# 陆地：船开不上干地（沙滩那一圈是浅水，可以靠上去登陆）。
+	# M2 起陆地是一张形状表（海岸 + 多个岛），不再是"一个圆心加一个半径"。
+	ship.land_shapes = sea.land_shapes(true)
 	ship.step(0.0, wind.velocity_world())
 	crew.retrim()
 	_prev_pos = ship.position_m()
-	journal.record(0.0, "story", "1519 年 9 月 20 日，圣卢卡尔港。五艘船出海，你带的是那艘六十吨的拉丁帆船。")
-	log_event("出发：%s。" % str(p.get("name", "出发港")))
+	journal.record(0.0, "story", "%s，圣卢卡尔港。五艘船出海，你带的是那艘六十吨的拉丁帆船。" % VoyageJournal.date_cn(0.0))
+	log_event("出发：%s。" % str(port_d.get("name", "出发港")))
+	_survey()
 
 
 func tick(delta: float) -> void:
 	t += delta
+	day = VoyageJournal.day_index(t)
 	wind.step(delta)
 	var pos := ship.position_m()
 	journal.advance(_prev_pos, pos)
@@ -90,6 +97,7 @@ func tick(delta: float) -> void:
 	roster.tick(delta, orders.hands_on_sails)
 	crew.step(delta)
 	ship.step(delta, wind_vec)
+	_survey()
 	# 蹭上滩头：给一点损伤与提示（不该天天撞，所以有冷却）
 	_shore_cooldown = maxf(0.0, _shore_cooldown - delta)
 	if ship.last_blocked and _shore_cooldown <= 0.0:
@@ -111,6 +119,68 @@ func tick(delta: float) -> void:
 
 
 # ------------------------------------------------------------ 剧情事件
+
+func _survey() -> void:
+	"""把"看见"变成"记录"：走过的分块、认出来的陆地名字。
+
+	它不是玩法，是**地图** —— 海图上的雾就是靠这里一条条散开的（docs/15 第 4 节）。
+	判据只有一条：船离这个 tile 的方块在瞭望视野（8km）以内，就算瞭望员看见了。
+	因为 tile 是 16km、视野是 8km，所以跨块**之前**邻块就已经亮了 ——
+	不会出现"开过界了地形才突然冒出来"。
+	"""
+	var pos := ship.position_m()
+	for ty in sea.tiles().y:
+		for tx in sea.tiles().x:
+			var t := Vector2i(tx, ty)
+			if discovered.has(sea.tile_key(t)):
+				continue
+			if _rect_dist(pos, sea.world.tile_rect(t)) <= LOOKOUT_M:
+				discovered[sea.tile_key(t)] = true
+	for f in sea.lands():
+		var id := str(f["id"])
+		if known_places.has(id):
+			continue
+		if Geom2D.center_dist(f["shape"], pos) <= Geom2D.extent(f["shape"]) + LOOKOUT_M:
+			known_places[id] = true
+	# 港口和陆地一样：走到了才在地图上写得出名字（出发港开局就在脚下）
+	for p in sea.world.ports():
+		var pid := str(p["id"])
+		if known_places.has(pid):
+			continue
+		if Geom2D.center_dist(p["shape"], pos) <= Geom2D.extent(p["shape"]) + LOOKOUT_M:
+			known_places[pid] = true
+
+
+static func _rect_dist(p: Vector2, r: Rect2) -> float:
+	var far := r.position + r.size
+	var dx := maxf(maxf(r.position.x - p.x, p.x - far.x), 0.0)
+	var dy := maxf(maxf(r.position.y - p.y, p.y - far.y), 0.0)
+	return sqrt(dx * dx + dy * dy)
+
+
+func discovered_tiles() -> int:
+	return discovered.size()
+
+
+func total_tiles() -> int:
+	return sea.tiles().x * sea.tiles().y
+
+
+func is_tile_discovered(t: Vector2i) -> bool:
+	return discovered.has(sea.tile_key(t))
+
+
+func date_string() -> String:
+	return VoyageJournal.date_of(t)
+
+
+func date_cn() -> String:
+	return VoyageJournal.date_cn(t)
+
+
+func clock_string() -> String:
+	return VoyageJournal.clock_of_day(t)
+
 
 func _events(_delta: float) -> void:
 	var pos := ship.position_m()
@@ -197,37 +267,17 @@ func _walk_ashore(delta: float) -> void:
 # ------------------------------------------------------------ 登陆
 
 func can_land() -> bool:
+	"""船就在岸边上吗？"最近的岸"由海图算（WorldMap.nearest_shore）——
+
+	v0.1 只能从固定的那个登陆航标上岸；多岛之后这句话必须变成"你旁边这段岸"。
+	"""
 	if ashore:
 		return false
-	var beach := _beach_pos()
-	return ship.position_m().distance_to(beach) < 420.0
-
-
-func _beach_pos() -> Vector2:
-	for poi in sea.pois():
-		if str(poi["id"]) == "beach":
-			var p: Array = poi["pos"]
-			return Vector2(float(p[0]), float(p[1]))
-	return _island_center()
-
-
-func _shore_near(pos: Vector2) -> Vector2:
-	"""船旁边最近的岸：把人放在**船所在的那段滩**上，而不是固定的登陆航标。
-
-	（第一版把队伍直接放在航标上，于是"人在哪儿上岸"和船的位置没关系，看着很怪。）
-	"""
-	var c := _island_center()
-	var r := float(sea.island().get("radius_m", 0.0)) \
-		- float(sea.island().get("beach_width_m", 0.0)) * 0.5
-	var d := pos - c
-	if d.length() < 1.0:
-		return c + Vector2(-r, 0.0)
-	return c + d.normalized() * r
+	return float(sea.nearest_shore(ship.position_m())["distance_m"]) < 420.0
 
 
 func _island_center() -> Vector2:
-	var c: Array = sea.island().get("center", [0, 0])
-	return Vector2(float(c[0]), float(c[1]))
+	return sea.primary_center()
 
 
 func landing_candidates() -> Array:
@@ -262,7 +312,9 @@ func land(ids: Array, hands := 6) -> String:
 	ashore_count = taken
 	ashore = true
 	fired["landed"] = true
-	landing_point = _shore_near(ship.position_m())
+	var shore := sea.nearest_shore(ship.position_m())
+	landing_point = shore["pos"]
+	landing_land = shore["land"]
 	captain_pos = landing_point
 	captain_target = captain_pos
 	# 队伍：船长先上岸，船员按名单一个一个跟下来（小船一趟一个人）
@@ -309,12 +361,13 @@ func _finish_boarding() -> void:
 
 
 func move_party_to(pos: Vector2) -> void:
-	# 队伍只能在岛上走：点远了就收到岛边
-	var c := _island_center()
-	var r := float(sea.island().get("radius_m", 0.0)) - 40.0
-	var d := pos - c
-	if d.length() > r:
-		pos = c + d.normalized() * r
+	# 队伍只能在陆地上走：点远了就收到岸线以内（走的哪块陆地由上岸点决定）
+	if landing_land.is_empty():
+		landing_land = sea.world.land_containing(landing_point)
+	if landing_land.is_empty():
+		landing_land = sea.primary_land()
+	if not landing_land.is_empty():
+		pos = Geom2D.clamp_inside(landing_land["shape"], pos, 40.0)
 	captain_target = pos
 	party.move_to(pos)
 
@@ -366,8 +419,8 @@ func report(text: String) -> void:
 
 func describe() -> String:
 	var dmg := ship.describe_damage()
-	return "第 %.0f 分钟　船速 %.1f 节　%s　损伤：%s　%s" % [
-		t / 60.0, ship.speed_kn(), nav.method_name(), dmg,
+	return "%s %s　船速 %.1f 节　%s　损伤：%s　%s" % [
+		date_string(), clock_string(), ship.speed_kn(), nav.method_name(), dmg,
 		"船长在岸上" if ashore else "船长在船上"]
 
 
@@ -386,6 +439,8 @@ func capture_world_state() -> Dictionary:
 		"fired": fired.duplicate(),
 		"island_known": island_known,
 		"visited": visited.duplicate(),
+		"discovered": discovered.duplicate(),
+		"known_places": known_places.duplicate(),
 		"reef_hit": reef_hit,
 		"last_message": last_message,
 		"message_timer": message_timer,
@@ -406,6 +461,8 @@ func apply_world_state(d: Dictionary) -> void:
 	fired = (d.get("fired", {}) as Dictionary).duplicate()
 	island_known = bool(d.get("island_known", false))
 	visited = (d.get("visited", {}) as Dictionary).duplicate()
+	discovered = (d.get("discovered", {}) as Dictionary).duplicate()
+	known_places = (d.get("known_places", {}) as Dictionary).duplicate()
 	reef_hit = bool(d.get("reef_hit", false))
 	last_message = str(d.get("last_message", ""))
 	message_timer = float(d.get("message_timer", 0.0))
@@ -430,6 +487,7 @@ func capture_ship_state() -> Dictionary:
 		"captain_target": StateIO.v2(captain_target),
 		"ashore_count": ashore_count,
 		"landing_point": StateIO.v2(landing_point),
+		"landing_land_id": str(landing_land.get("id", "")),
 		"party": party.capture_state(),
 	}
 
@@ -447,6 +505,14 @@ func apply_ship_state(d: Dictionary) -> void:
 	captain_target = StateIO.to_v2(d.get("captain_target", [0.0, 0.0]))
 	ashore_count = int(d.get("ashore_count", 0))
 	landing_point = StateIO.to_v2(d.get("landing_point", [0.0, 0.0]))
+	# landing_land 是"上岸点踩在哪块陆地上"。形状本身是静态世界数据，所以只存 id、
+	# 读档时按 id 找回来（理由同 docs/14 第 4.2 节的第 2 条：只存会变的值）。
+	landing_land = {}
+	var land_id := str(d.get("landing_land_id", ""))
+	for f in sea.lands():
+		if str(f["id"]) == land_id:
+			landing_land = f
+			break
 	party.apply_state(d.get("party", {}), roster)
 	# 航程累计用的"上一帧船位"是派生值：读档后必须对齐到读回来的位置，
 	# 否则这一刻会被当成一次瞬移（或者被算成几百米的航程）。

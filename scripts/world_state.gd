@@ -10,7 +10,9 @@ extends RefCounted
 # M3 会在这个类上加逐字段 diff（房主只广播变了的字段），所以先把边界立在这里。
 
 const FIELDS := [
-	"t", "day", "wind", "fired", "island_known", "visited", "reef_hit",
+	"t", "day", "wind", "fired", "island_known", "visited",
+	# M2：地图的发现记录（哪些 16km 分块已经"看见过"、哪块陆地已经认得名字）
+	"discovered", "known_places", "reef_hit",
 	"last_message", "message_timer", "log_lines", "pending_reports",
 	"_shore_cooldown", "story", "journal",
 ]

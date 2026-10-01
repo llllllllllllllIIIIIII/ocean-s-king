@@ -10,6 +10,12 @@ extends RefCounted
 # 所以这里可以放心地自由写：日志错了只是文字不对，不会污染气动模型。
 
 const MAX_ENTRIES := 120
+# 日历（M2）：1519 年的欧洲用的是**儒略历**（格里高利改历是 1582 年），
+# 所以闰年规则是"能被 4 整除"，没有 100/400 那两条例外。
+const EPOCH_YEAR := 1519
+const EPOCH_MONTH := 9
+const EPOCH_DAY := 20
+const DAY_SECONDS := 86400.0
 
 var entries: Array = []          # [{ t, kind, text }]，按时间顺序
 var decisions: Array = []        # 玩家做过的决定（一句话一条，去重）
@@ -25,7 +31,7 @@ const TELEPORT_M := 5.0
 func record(t: float, kind: String, text: String, tracks_last_line := true) -> void:
 	if text.strip_edges() == "":
 		return
-	entries.append({ "t": t, "kind": kind, "text": text })
+	entries.append({ "t": t, "date": date_of(t), "kind": kind, "text": text })
 	if entries.size() > MAX_ENTRIES:
 		entries.pop_front()
 	# 单行的话顺手记成"文书最后写下的一条"；多行（报告、剧情正文）不算。
@@ -69,6 +75,68 @@ static func clock(t: float) -> String:
 	return "%d 小时 %02d 分" % [minutes / 60, minutes % 60]
 
 
+# ------------------------------------------------------------------ 日历（M2）
+
+static func is_leap(y: int) -> bool:
+	return y % 4 == 0          # 儒略历
+
+
+static func days_in_month(y: int, m: int) -> int:
+	match m:
+		1, 3, 5, 7, 8, 10, 12: return 31
+		4, 6, 9, 11: return 30
+		2: return 29 if is_leap(y) else 28
+	return 30
+
+
+static func date_parts(elapsed: float) -> Dictionary:
+	"""从 1519-09-20 00:00 起算的日期。游戏时间 1 秒 = 世界 1 秒。"""
+	var sec := maxf(0.0, elapsed)
+	var days := int(floor(sec / DAY_SECONDS))
+	var y := EPOCH_YEAR
+	var m := EPOCH_MONTH
+	var d := EPOCH_DAY
+	var remaining := days
+	while remaining > 0:
+		var left := days_in_month(y, m) - d
+		if remaining <= left:
+			d += remaining
+			remaining = 0
+		else:
+			remaining -= left + 1
+			d = 1
+			m += 1
+			if m > 12:
+				m = 1
+				y += 1
+	return {
+		"y": y, "m": m, "d": d,
+		"day_index": days,
+		"sec_of_day": sec - float(days) * DAY_SECONDS,
+	}
+
+
+static func date_of(elapsed: float) -> String:
+	var p := date_parts(elapsed)
+	return "%04d-%02d-%02d" % [int(p["y"]), int(p["m"]), int(p["d"])]
+
+
+static func date_cn(elapsed: float) -> String:
+	var p := date_parts(elapsed)
+	return "%d 年 %d 月 %d 日" % [int(p["y"]), int(p["m"]), int(p["d"])]
+
+
+static func clock_of_day(elapsed: float) -> String:
+	"""当天几点几分 —— 海图与航海日志都按它记。"""
+	var p := date_parts(elapsed)
+	var s := int(p["sec_of_day"])
+	return "%02d:%02d" % [s / 3600, (s / 60) % 60]
+
+
+static func day_index(elapsed: float) -> int:
+	return int(date_parts(elapsed)["day_index"])
+
+
 func distance_km() -> float:
 	return distance_m / 1000.0
 
@@ -80,7 +148,8 @@ func settlement(v: Voyage, story: Story) -> String:
 	var out := PackedStringArray()
 	out.append("环球航行 · 航行结算")
 	out.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	out.append("1519 年 9 月 20 日　航行 %s" % clock(v.t))
+	out.append("%s（第 %d 天）　航行 %s" % [
+		date_cn(v.t), day_index(v.t) + 1, clock(v.t)])
 	# 抢风记"段"而不是"换舷次数"：目标点固定的情况下，航海官几乎总能挑到最有利的
 	# 那一舷一路顶上去，真的翻舷很少发生 —— 写"换舷 0 次"会让玩家以为系统坏了。
 	# 换舷次数仍然单独列出来（发生过就显示）。

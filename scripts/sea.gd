@@ -1,139 +1,212 @@
 class_name Sea
 extends RefCounted
 
-# 测试海域：地形查询 + 风与洋流的区域修正。
+# 海域（M2 起）：一层**保持签名不变**的壳，里面换成了 `WorldMap`。
 #
-# 它只回答"这个位置是什么情况"：
-#   是不是陆地 / 是不是沙滩 / 是不是暗礁 / 这里有没有洋流 / 这里的风被岛挡住了多少
-# 怎么用这些答案（撞礁受伤、被流带走、背风区帆软）是 Voyage 的事。
+# docs/13 第 5.2 节把这条写成了硬要求：
+#   `is_land / is_beach / is_reef / is_port / current_at / lee_factor / poi_at`
+#   七个查询**原名、原签名、原语义**，实现改成走 WorldMap。
+#   这样 `Voyage`、`sea_debug.gd` 和 `test_world` 里那一批调用点都不用重写 ——
+#   风险从"重写世界"降到"替换一层实现"。
+#
+# 两种数据都读得进来：
+#   `data/world/test_sea.json`    —— v0.1 的 8km 迷你海域（回归用）
+#   `data/world/atlantic/*.json`  —— M2 的大西洋（主图，3×3 个 16km tile）
 
 const DATA_PATH := "res://data/world/test_sea.json"
+const ATLANTIC_PATH := "res://data/world/atlantic/geography.json"
 
 var data := {}
+var world := WorldMap.new()
+var route_list: Array = []        # 建议航段（可选：同目录下的 routes.json）
+var path := ""
 var ready := false
 
 
-func setup(path := DATA_PATH) -> void:
-	var d = JSON.parse_string(FileAccess.get_file_as_string(path))
+func setup(p := DATA_PATH) -> void:
+	path = p
+	var d = JSON.parse_string(FileAccess.get_file_as_string(p))
 	if typeof(d) != TYPE_DICTIONARY:
-		push_error("海域数据读不出来：" + path)
+		push_error("海域数据读不出来：" + p)
 		return
 	data = d
+	world.setup(d)
+	route_list = _load_routes(p)
 	ready = true
 
 
+func setup_data(d: Dictionary) -> void:
+	"""直接喂一份已经解析好的数据（测试造小世界时用）。"""
+	data = d
+	world.setup(d)
+	route_list = d.get("routes", [])
+	ready = true
+
+
+func _load_routes(p: String) -> Array:
+	"""航段表放在海域文件旁边的 `routes.json`（没有就是空 —— 迷你海域没有航段）。"""
+	var rp := p.get_base_dir().path_join("routes.json")
+	if not FileAccess.file_exists(rp):
+		return []
+	var d = JSON.parse_string(FileAccess.get_file_as_string(rp))
+	if typeof(d) != TYPE_DICTIONARY:
+		push_warning("航段表读不出来：" + rp)
+		return []
+	return d.get("routes", [])
+
+
+func wind() -> Dictionary:
+	return world.wind
+
+
 func size_m() -> Vector2:
-	var s: Array = data.get("size_m", [8000, 8000])
-	return Vector2(float(s[0]), float(s[1]))
+	return world.size_m()
+
+
+func tile_m() -> float:
+	return world.tile_m
+
+
+func tiles() -> Vector2i:
+	return world.tiles
+
+
+func tile_of(pos: Vector2) -> Vector2i:
+	return world.tile_of(pos)
+
+
+func tile_key(t: Vector2i) -> String:
+	return world.tile_key(t)
 
 
 func in_bounds(pos: Vector2) -> bool:
-	return pos.x >= 0.0 and pos.y >= 0.0 and pos.x <= size_m().x and pos.y <= size_m().y
-
-
-func port() -> Dictionary:
-	return data.get("port", {})
-
-
-func _pos_of(d: Dictionary) -> Vector2:
-	# 岛用 "center"，港/礁/地标用 "pos" —— 两种都要认
-	var p: Array = d.get("pos", d.get("center", [0, 0]))
-	return Vector2(float(p[0]), float(p[1]))
-
-
-func island() -> Dictionary:
-	return data.get("island", {})
-
-
-func dist_to_island_center(pos: Vector2) -> float:
-	return pos.distance_to(_pos_of(island()))
+	return world.in_bounds(pos)
 
 
 func is_land(pos: Vector2) -> bool:
-	"""岛心半径以内都算陆地（沙滩也算陆地）。"""
-	return dist_to_island_center(pos) <= float(island().get("radius_m", 0.0))
+	return world.is_land(pos)
 
 
 func is_beach(pos: Vector2) -> bool:
-	var r := float(island().get("radius_m", 0.0))
-	return is_land(pos) and dist_to_island_center(pos) >= r - float(island().get("beach_width_m", 0.0))
+	return world.is_beach(pos)
 
 
 func is_dry_land(pos: Vector2) -> bool:
-	"""船开不上去的干地：岛的沙滩环以内。沙滩那一圈是浅水，船可以靠。"""
-	var r := float(island().get("radius_m", 0.0)) - float(island().get("beach_width_m", 0.0))
-	return dist_to_island_center(pos) <= r
+	return world.is_dry_land(pos)
 
 
 func is_reef(pos: Vector2) -> bool:
-	var reef: Dictionary = data.get("reef", {})
-	if reef.is_empty():
-		return false
-	return pos.distance_to(_pos_of(reef)) <= float(reef.get("radius_m", 0.0))
+	return world.is_reef(pos)
 
 
 func is_port(pos: Vector2) -> bool:
-	return pos.distance_to(_pos_of(port())) <= float(port().get("radius_m", 0.0))
+	return world.is_port(pos)
+
+
+func port_at(pos: Vector2) -> Dictionary:
+	return world.port_at(pos)
 
 
 func current_at(pos: Vector2) -> Vector2:
-	"""洋流：一条从 from 到 to 的带子，带宽内才有。返回速度矢量（世界系，m/s）。"""
-	var c: Dictionary = data.get("current", {})
-	if c.is_empty():
-		return Vector2.ZERO
-	var a: Array = c["from"]
-	var b: Array = c["to"]
-	var p0 := Vector2(float(a[0]), float(a[1]))
-	var p1 := Vector2(float(b[0]), float(b[1]))
-	var d := p1 - p0
-	var len2 := d.length_squared()
-	if len2 <= 0.0:
-		return Vector2.ZERO
-	var t := clampf((pos - p0).dot(d) / len2, 0.0, 1.0)
-	var closest := p0 + d * t
-	if pos.distance_to(closest) > float(c.get("width_m", 0.0)) * 0.5:
-		return Vector2.ZERO
-	return d.normalized() * float(c.get("speed_ms", 0.0))
+	return world.current_at(pos)
 
 
 func lee_factor(pos: Vector2) -> float:
-	"""岛的背风区：站在岛的下风侧，风速打折。
-
-	"下风侧" = 从岛心往**风吹去的方向** —— 岛把风挡住了，那一片就软。
-	"""
-	var isl: Dictionary = island()
-	if isl.is_empty():
-		return 1.0
-	var c := _pos_of(isl)
-	var r := float(isl.get("radius_m", 0.0))
-	var d := pos - c
-	var dist := d.length()
-	if dist > r * 3.0 or dist < 1.0:
-		return 1.0
-	var w: Dictionary = data.get("wind", {})
-	var blow_to := deg_to_rad(float(w.get("base_from_deg", 0.0)) + 180.0)
-	var downwind := Vector2(cos(blow_to), sin(blow_to))
-	# 只有在下风侧（夹角小）才打折，越靠近岛心越明显
-	var align := d.normalized().dot(downwind)
-	if align <= 0.0:
-		return 1.0
-	var fade := clampf(1.0 - dist / (r * 2.5), 0.0, 1.0)
-	var base := float(w.get("lee_factor", 0.45))
-	return lerpf(1.0, base, align * fade)
+	return world.lee_factor(pos)
 
 
 func poi_at(pos: Vector2) -> Dictionary:
-	"""走到哪个地标上了？没走到就返回空字典。"""
-	for poi in island().get("pois", []):
-		if pos.distance_to(_pos_of(poi)) <= float(poi.get("radius_m", 0.0)):
-			return poi
-	return {}
+	return world.poi_at(pos)
+
+
+# ------------------------------------------------------------ 老接口（视图与剧情还在用）
+
+func port() -> Dictionary:
+	var p := world.port()
+	if p.is_empty():
+		return {}
+	var c := Geom2D.centroid(p["shape"])
+	return {
+		"name": str(p.get("name", "")),
+		"pos": [c.x, c.y],
+		"radius_m": Geom2D.extent(p["shape"]),
+		"faction": str(p.get("faction", "")),
+		"text": str(p.get("text", "")),
+	}
+
+
+func ports() -> Array:
+	return world.ports()
+
+
+func port_pos() -> Vector2:
+	var p := world.port()
+	return Geom2D.centroid(p["shape"]) if not p.is_empty() else Vector2.ZERO
+
+
+func island() -> Dictionary:
+	return world.island()
+
+
+func primary_land() -> Dictionary:
+	return world.primary_land()
+
+
+func primary_center() -> Vector2:
+	var f := world.primary_land()
+	return Geom2D.centroid(f["shape"]) if not f.is_empty() else Vector2.ZERO
+
+
+func primary_radius() -> float:
+	var f := world.primary_land()
+	return Geom2D.extent(f["shape"]) if not f.is_empty() else 0.0
+
+
+func dist_to_island_center(pos: Vector2) -> float:
+	return pos.distance_to(primary_center())
 
 
 func pois() -> Array:
-	return island().get("pois", [])
+	return world.pois()
+
+
+func poi_pos(id: String) -> Vector2:
+	return world.poi_pos(id)
+
+
+func lands() -> Array:
+	return world.lands()
+
+
+func routes() -> Array:
+	return route_list
+
+
+func route_points(r: Dictionary) -> PackedVector2Array:
+	"""一段航线的折线：起点港 → （可选 via 绕行点）→ 终点港。"""
+	var out := PackedVector2Array()
+	out.append(_port_pos(str(r.get("from", ""))))
+	for v in r.get("via", []):
+		if typeof(v) == TYPE_ARRAY and (v as Array).size() >= 2:
+			out.append(Vector2(float(v[0]), float(v[1])))
+	out.append(_port_pos(str(r.get("to", ""))))
+	return out
+
+
+func _port_pos(id: String) -> Vector2:
+	for p in world.ports():
+		if str(p.get("id", "")) == id:
+			return Geom2D.centroid(p["shape"])
+	return Vector2.ZERO
+
+
+func land_shapes(dry := true) -> Array:
+	return world.land_shapes(dry)
+
+
+func nearest_shore(pos: Vector2) -> Dictionary:
+	return world.nearest_shore(pos)
 
 
 func describe() -> String:
-	return "%s：%d×%d 米，一座岛（%d 个地标）、一处暗礁、一条洋流带" % [
-		str(data.get("name", "?")), int(size_m().x), int(size_m().y), pois().size()]
+	return world.describe()

@@ -1,0 +1,31 @@
+{
+  "_comment": "四港之间的航段（M2 起）。海图把已经发现的航段画成虚线；test_worldmap 拿它做一条硬断言：航段上不能有干地 —— 港口之间必须真的开得过去。",
+  "version": 1,
+  "routes": [
+    {
+      "id": "sanlucar_canarias",
+      "name": "出海口 · 顺加那利寒流南下",
+      "from": "sanlucar",
+      "to": "santa_cruz",
+      "text": "风从东北来，斜着切下去，一天走不到一半。"
+    },
+    {
+      "id": "canarias_verde",
+      "name": "南下佛得角",
+      "from": "santa_cruz",
+      "to": "santiago",
+      "_via": "先往西绕过加那利那座岛，再掉头向南 —— 直线会从岛身上碾过去。",
+      "via": [[30500, 12000]],
+      "text": "越往南风越软，正午的甲板烫得站不住人。"
+    },
+    {
+      "id": "verde_brazil",
+      "name": "渡海去巴西",
+      "from": "santiago",
+      "to": "sao_aleixo",
+      "_via": "先往北绕开绿岬岛，再顺几内亚洋流往西 —— 直线会穿过岛本身。",
+      "via": [[23500, 24000]],
+      "text": "顺几内亚洋流往西 —— 这一段是谁也没写过的空白。"
+    }
+  ]
+}

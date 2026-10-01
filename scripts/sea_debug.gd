@@ -1,4 +1,4 @@
-# 测试海域视图（Day 6）：把 8km×8km 的海、岛、礁、洋流画出来，让船开出去。
+# 海域视图（Day 6 起，M2 扩成大西洋）：把海、岛、礁、洋流画出来，让船开出去。
 #
 # 相机状态（docs/01 支柱 5）：
 #   A 甲板/海面 —— 跟着船
@@ -6,16 +6,24 @@
 #
 # 操作（Day 7 定稿）：
 #   开场先是一页标题与背景（陌生人必须知道自己在哪儿、要干什么），按任意键开始
-#   左键 = 设目标点（船长在岸上时 = 带队伍走过去）
+#   左键 = 设目标点（船长在岸上时 = 带队伍走过去）—— 拉到海图尺度也是同一个操作
 #   X 抛锚 / 起锚　1/2/3 帆档　+/− 操帆人数
 #   L 登陆 / 返船　空格 登陆名单里勾人　Tab 帆态面板　C 船员面板
-#   . 快进 ×1/×4/×12（8 公里的海不开快进，一局就不是 15 分钟了）　滚轮 缩放
+#   . 快进 ×1/×4/×12/×36（48km 的海不开快进就走不完）　滚轮 缩放
 #   走完第三幕 → 一页文本结算（R 重开）
+#
+# M2 的两件事：
+#   ① 地形不再是"一座岛"，而是 `Sea`（= WorldMap）里的全部特征：海岸、群岛、暗礁、洋流；
+#   ② 滚轮一路拉远，地形会**淡出**、海图符号**淡入**（同一台相机、同一套世界坐标，
+#      所以海图和地形永远对得上）——实现见 `scripts/chart_view.gd`。
 
 extends Node2D
 
 const PPM := 0.5                  # 每米多少像素（zoom=0.25 时整片海 2000px 宽）
 const SIM_DT := 0.05
+# 海图淡入的窗口：zoom 0.45 还是纯地形，0.16 以下全是海图符号（中间是交叉淡入）
+const CHART_FADE_HI := 0.45
+const CHART_FADE_LO := 0.16
 # 一路滚到底的"船内视图"倍率：0.5 × 80 = 40 像素/米，正好等于船内调试视图的比例。
 # 也就是说这个场景的相机是**连续的**：整片海 → 海图 → 船 → 船舱，同一套东西。
 const SHIP_ZOOM := 80.0
@@ -36,7 +44,9 @@ var _mode: Mode = Mode.SEA
 var _layer := 2
 var _layer_order: Array[int] = []
 var _started := false              # 标题卡关掉之前，一帧模拟都不跑
-var _time_scales: Array[float] = [1.0, 4.0, 12.0]
+# ×36 是 M2 加的：海从 8km 变成 48km，只有 ×12 的话横渡一次要二十多分钟真实时间。
+# 物理步长不变（快进永远是多跑几步，不是把 dt 乘大），所以气动不会被快进弄飘。
+var _time_scales: Array[float] = [1.0, 4.0, 12.0, 36.0]
 var _time_scale_idx := 0
 var _last_head := -1               # 上一次看到的"演到第几幕"，用来放剧情卡
 var _act_card_timer := 0.0         # 剧情卡的剩余播放时间（真实秒）
@@ -47,6 +57,7 @@ var _frame := 0
 var _shot_dir := "res://.shots"
 var _wind_gizmo: WindGizmo
 var _ship_view: ShipRenderer       # 海图上用**真正的 SVG 船**，不是占位三角块
+var _chart: ChartView              # M2：拉远之后淡入的海图层
 var _panel: SailPanel
 var _show_panel := false
 var _crew_panel: CrewPanel
@@ -56,7 +67,14 @@ var _show_crew_panel := false
 func _ready() -> void:
 	_shot_mode = OS.get_cmdline_user_args().has("shots")
 	voyage = Voyage.new()
-	voyage.setup()
+	voyage.setup(Sea.ATLANTIC_PATH)
+	# 海图层要先于船加进来：Node2D 的子节点按加入顺序画，
+	# 所以顺序是"地形（本节点的 _draw）→ 海图 → 船"。
+	_chart = ChartView.new()
+	_chart.world = voyage.sea.world
+	_chart.voyage = voyage
+	_chart.px_per_m = PPM
+	add_child(_chart)
 	_ship_view = ShipRenderer.new()
 	_ship_view.px_per_m = PPM
 	_ship_view.draw_sea = false        # 海面由这个场景自己画
@@ -70,8 +88,10 @@ func _ready() -> void:
 	_cam = Camera2D.new()
 	add_child(_cam)
 	_font = _pick_font()
+	_chart.font = _font
 	_build_hud()
 	_build_overlays()
+	_zoom = 0.8                         # 开局在港里：看得见自己的船、锚地和这段海岸
 	_update_camera()
 	_update_hud()
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(_shot_dir))
@@ -112,18 +132,66 @@ func _tick_sim(delta: float) -> void:
 
 
 func _update_camera() -> void:
+	_zoom = clampf(_zoom, _min_zoom(), SHIP_ZOOM)
 	if _mode == Mode.LAYER:
 		# 沉进船舱了：相机锁在船体中心（和船内调试视图一样）
 		_cam.position = _ship_view.hull_center_world_px()
 		_cam.zoom = Vector2(_zoom, _zoom)
 	elif voyage.ashore:
 		# 状态 C：相机跟着船长，船离屏
-		_cam.position = voyage.captain_pos * PPM
+		_cam.position = _clamp_camera(voyage.captain_pos * PPM)
 		# 只放近一点点：放太多的话船会跑出画面，"人在哪下船"就看不清了
 		_cam.zoom = Vector2(_zoom * 2.0, _zoom * 2.0)
 	else:
-		_cam.position = voyage.ship.position_m() * PPM
+		_cam.position = _clamp_camera(voyage.ship.position_m() * PPM)
 		_cam.zoom = Vector2(_zoom, _zoom)
+	_sync_chart()
+
+
+func _clamp_camera(pos: Vector2) -> Vector2:
+	"""相机不许把世界推出画面：看得见整片海时居中，看得见局部时贴着边。
+
+	没有这一步，拉到最远时画面是"船在世界的一角、其余全是空" ——
+	M2 的验收（拉到最远能看到整张海图）就废了。
+	"""
+	var view := get_viewport_rect().size / _zoom     # 屏幕换来世界像素
+	var wpx := voyage.sea.size_m() * PPM
+	if view.x >= wpx.x:
+		pos.x = wpx.x * 0.5
+	else:
+		pos.x = clampf(pos.x, view.x * 0.5, wpx.x - view.x * 0.5)
+	if view.y >= wpx.y:
+		pos.y = wpx.y * 0.5
+	else:
+		pos.y = clampf(pos.y, view.y * 0.5, wpx.y - view.y * 0.5)
+	return pos
+
+
+func _min_zoom() -> float:
+	"""最小缩放 = 整片海刚好铺满屏幕。
+
+	v0.1 的海是 8km，随便一个倍率都装得下；M2 的海是 48km，
+	所以"拉到最远"这件事必须由海的大小算出来，不能写死。
+	**两轴都要看**：只看宽度的话，竖着的 48km 会被上下切掉两截。
+	"""
+	var vp := get_viewport_rect().size
+	var world_px := voyage.sea.size_m() * PPM
+	var fit := minf(vp.x / maxf(world_px.x, 1.0), vp.y / maxf(world_px.y, 1.0))
+	return clampf(fit * 0.94, 0.01, 0.5)
+
+
+func _chart_fade() -> float:
+	"""海图符号的透明度：拉到最远是 1（纯海图），贴近了是 0（纯地形）。"""
+	return clampf((CHART_FADE_HI - _zoom) / (CHART_FADE_HI - CHART_FADE_LO), 0.0, 1.0)
+
+
+func _sync_chart() -> void:
+	if _chart == null:
+		return
+	_chart.fade = _chart_fade()
+	_chart.zoom = _zoom
+	_chart.visible = _chart.fade > 0.01
+	_chart.queue_redraw()
 
 
 func _sync_ship_view() -> void:
@@ -175,52 +243,15 @@ func _draw() -> void:
 	if voyage == null:
 		return
 	var sea := voyage.sea
-	var size := sea.size_m() * PPM
-	draw_rect(Rect2(Vector2.ZERO, size), Color("#0b1a26"), true)
-	# 洋流带
-	var cur: Dictionary = sea.data.get("current", {})
-	if not cur.is_empty():
-		var a: Array = cur["from"]
-		var b: Array = cur["to"]
-		var pa := Vector2(float(a[0]), float(a[1])) * PPM
-		var pb := Vector2(float(b[0]), float(b[1])) * PPM
-		draw_line(pa, pb, Color(0.35, 0.75, 0.9, 0.18), float(cur.get("width_m", 0.0)) * PPM)
-		_arrow(pa, pb, Color(0.45, 0.85, 1.0, 0.5), 2.0)
-	# 出发港
-	var port_d: Dictionary = sea.port()
-	var pp: Array = port_d["pos"]
-	var pc := Vector2(float(pp[0]), float(pp[1])) * PPM
-	draw_circle(pc, float(port_d.get("radius_m", 0.0)) * PPM, Color(0.35, 0.5, 0.65, 0.35))
-	draw_arc(pc, float(port_d.get("radius_m", 0.0)) * PPM, 0, TAU, 40, Color(0.6, 0.8, 1.0, 0.7), 2.0)
-	_label(pc, str(port_d.get("name", "")), Color(0.7, 0.85, 1.0))
-	# 暗礁
-	if not sea.data.get("reef", {}).is_empty():
-		var rd: Dictionary = sea.data["reef"]
-		var rp: Array = rd["pos"]
-		var rpc := Vector2(float(rp[0]), float(rp[1])) * PPM
-		var rr := float(rd.get("radius_m", 0.0)) * PPM
-		draw_circle(rpc, rr, Color(0.6, 0.35, 0.3, 0.35))
-		draw_arc(rpc, rr, 0, TAU, 32, Color(0.9, 0.55, 0.45, 0.8), 2.0)
-		_label(rpc, str(rd.get("name", "")), Color(1.0, 0.7, 0.6))
-	# 岛
-	var isl: Dictionary = sea.island()
-	var ic: Array = isl["center"]
-	var icp := Vector2(float(ic[0]), float(ic[1])) * PPM
-	var ir := float(isl.get("radius_m", 0.0)) * PPM
-	var bw := float(isl.get("beach_width_m", 0.0)) * PPM
-	draw_circle(icp, ir, Color(0.78, 0.72, 0.5, 0.9))            # 沙
-	draw_circle(icp, ir - bw, Color(0.32, 0.5, 0.28, 0.95))      # 草木
-	draw_arc(icp, ir, 0, TAU, 64, Color(0.9, 0.85, 0.65, 0.8), 2.0)
-	_label(icp, str(isl.get("name", "")), Color(0.95, 0.95, 0.8))
-	# 地标
-	for poi in sea.pois():
-		var p: Array = poi["pos"]
-		var v := Vector2(float(p[0]), float(p[1])) * PPM
-		var seen := voyage.visited.has(str(poi["id"]))
-		var col := Color(0.6, 1.0, 0.7) if seen else Color(0.95, 0.9, 0.5)
-		draw_circle(v, 5.0 * _marker_scale(), col)
-		draw_arc(v, float(poi.get("radius_m", 0.0)) * PPM, 0, TAU, 24, Color(col, 0.45), 1.5)
-		_label(v, str(poi["name"]), col)
+	var a := 1.0 - _chart_fade()        # 拉远时地形淡出，让位给海图
+	# 世界之外也是海：不铺这一层的话，拉到最远时世界外面是引擎的默认灰底，
+	# 看着像"地图被人剪下来了"。
+	var pad := maxf(6000.0, sea.size_m().x * 0.3) * PPM
+	draw_rect(Rect2(Vector2(-pad, -pad), sea.size_m() * PPM + Vector2(2.0 * pad, 2.0 * pad)),
+		Color("#08141d"), true)
+	if a > 0.01:
+		_draw_terrain(a)
+	_draw_tile_seams(a)
 	# 船：交给真正的 ShipRenderer 画（海图和船内视图是同一个渲染器）
 	_sync_ship_view()
 	# 拉远到看不清船的时候，给一个明显的光点，免得找不到自己的船
@@ -255,11 +286,98 @@ func _draw() -> void:
 	# 没有它，第三幕的"返航"就只是一句话，玩家不知道往哪儿开。
 	if voyage.story.fired("act2") and not voyage.story.fired("act3") \
 			and not voyage.ashore and voyage.story.objective.begins_with("返航"):
-		var home := voyage.ship.position_m().lerp(Vector2(float(pp[0]), float(pp[1])), 0.5)
+		var port_pos := sea.port_pos()
+		var home := voyage.ship.position_m().lerp(port_pos, 0.5)
 		draw_dashed_line(voyage.ship.position_m() * PPM,
-			Vector2(float(pp[0]), float(pp[1])) * PPM, Color(1.0, 0.85, 0.45, 0.32), 2.0, 14.0)
-		draw_arc(pc, 22.0 * _marker_scale(), 0.0, TAU, 32, Color(1.0, 0.86, 0.45, 0.8), 2.0)
+			port_pos * PPM, Color(1.0, 0.85, 0.45, 0.32), 2.0, 14.0)
+		draw_arc(port_pos * PPM, 22.0 * _marker_scale(), 0.0, TAU, 32,
+			Color(1.0, 0.86, 0.45, 0.8), 2.0)
 		_label(home, "返航点：出发港", Color(1.0, 0.88, 0.5))
+
+
+func _draw_terrain(a: float) -> void:
+	"""地形：全部来自 `Sea` 里的特征，视图不再认识"岛/礁/流"这些具体名字。"""
+	var sea := voyage.sea
+	var w := sea.world
+	# 洋流带（画在陆地下面：它本来就是水）
+	for f in w.of_kind("current"):
+		var shape: Dictionary = f["shape"]
+		Geom2D.draw_shape(self, shape, Color(0.35, 0.75, 0.9, 0.16 * a), PPM)
+		var pts: PackedVector2Array = shape["points"]
+		for i in range(pts.size() - 1):
+			_arrow(pts[i] * PPM, pts[i + 1] * PPM, Color(0.45, 0.85, 1.0, 0.5 * a), 2.0)
+	# 陆地：先画沙滩（整个外形），再用干地形状盖出内陆
+	var dry := sea.land_shapes(true)
+	var lands := sea.lands()
+	for i in lands.size():
+		var f: Dictionary = lands[i]
+		Geom2D.draw_shape(self, f["shape"], Color(0.78, 0.72, 0.5, 0.9 * a), PPM)
+		if i < dry.size():
+			Geom2D.draw_shape(self, dry[i], Color(0.32, 0.5, 0.28, 0.95 * a), PPM)
+		Geom2D.draw_shape_outline(self, f["shape"], Color(0.9, 0.85, 0.65, 0.8 * a), 2.0, PPM)
+		if voyage.known_places.has(str(f["id"])):
+			_label(Geom2D.centroid(f["shape"]) * PPM, str(f.get("name", "")),
+				Color(0.95, 0.95, 0.8, a))
+	# 暗礁
+	for f in w.of_kind("reef"):
+		var c := Geom2D.centroid(f["shape"]) * PPM
+		var r := Geom2D.extent(f["shape"]) * PPM
+		draw_circle(c, r, Color(0.6, 0.35, 0.3, 0.35 * a))
+		draw_arc(c, r, 0, TAU, 32, Color(0.9, 0.55, 0.45, 0.8 * a), 2.0)
+		_label(c, str(f.get("name", "")), Color(1.0, 0.7, 0.6, a))
+	# 港口
+	for p in sea.ports():
+		var pc := Geom2D.centroid(p["shape"]) * PPM
+		var pr := Geom2D.extent(p["shape"]) * PPM
+		draw_circle(pc, pr, Color(0.35, 0.5, 0.65, 0.20 * a))
+		# 锚地用虚线圈：海图上"能下锚的地方"就是这么画的，实心圆盘太像 UI 了
+		var seg := 48
+		for i in seg:
+			if i % 2 == 1:
+				continue
+			var a0 := TAU * float(i) / float(seg)
+			var a1 := TAU * float(i + 1) / float(seg)
+			draw_arc(pc, pr, a0, a1, 4, Color(0.6, 0.8, 1.0, 0.75 * a), 2.0)
+		_label(pc, str(p.get("name", "")), Color(0.7, 0.85, 1.0, a))
+	# 地标：只有认得名字的陆地才画（别提前把没去过的地方剧透了）
+	for f in lands:
+		if not voyage.known_places.has(str(f["id"])):
+			continue
+		for poi in f.get("pois", []):
+			var pp: Array = poi["pos"]
+			var v := Vector2(float(pp[0]), float(pp[1])) * PPM
+			var seen := voyage.visited.has(str(poi["id"]))
+			var col := Color(0.6, 1.0, 0.7, a) if seen else Color(0.95, 0.9, 0.5, a)
+			draw_circle(v, 5.0 * _marker_scale(), col)
+			draw_arc(v, float(poi.get("radius_m", 0.0)) * PPM, 0, TAU, 24,
+				Color(col, 0.45 * a), 1.5)
+			_label(v, str(poi["name"]), col)
+
+
+func _draw_tile_seams(a: float) -> void:
+	"""分块的缝：世界是 16km 一块拼起来的，拉远到能看见一整块以上时淡淡地标出来。
+
+	它同时也是"跨块不跳变"的画面证据 —— 截图里能看到船压着缝走，而地形是连续的。
+	"""
+	var w := voyage.sea.world
+	if w.tiles.x * w.tiles.y <= 1 or _zoom > 1.6:
+		return
+	var col := Color(0.55, 0.72, 0.85, 0.24 * a)
+	var size := w.world_m
+	for tx in range(1, w.tiles.x):
+		var x := float(tx) * w.tile_m * PPM
+		draw_dashed_line(Vector2(x, 0.0), Vector2(x, size.y * PPM), col, 1.5, 26.0)
+	for ty in range(1, w.tiles.y):
+		var y := float(ty) * w.tile_m * PPM
+		draw_dashed_line(Vector2(0.0, y), Vector2(size.x * PPM, y), col, 1.5, 26.0)
+	# 每条缝旁边标一下"块号"，截图里一眼能看出船是从哪一块开到哪一块的
+	if _zoom < 0.6:
+		for ty in w.tiles.y:
+			for tx in w.tiles.x:
+				var t := Vector2i(tx, ty)
+				var c := (w.tile_rect(t).position + Vector2(700.0, 900.0)) * PPM
+				_label(c, "%s%s" % [char(65 + tx), ty + 1],
+					Color(0.55, 0.72, 0.85, 0.35 * a))
 
 
 func _arrow(a: Vector2, b: Vector2, col: Color, width: float) -> void:
@@ -352,7 +470,8 @@ func _wheel(dir: int) -> void:
 			_mode = Mode.LAYER                   # 拉到最近再向下 -> 沉入船舱
 			_layer = _layer_order[_layer_order.find(_layer) + 1]
 		else:
-			_zoom = clampf(_zoom * (1.2 if dir > 0 else 1.0 / 1.2), 0.15, SHIP_ZOOM)
+			_zoom = clampf(_zoom * (1.2 if dir > 0 else 1.0 / 1.2),
+				_min_zoom(), SHIP_ZOOM)
 	_update_camera()
 	_update_hud()
 	queue_redraw()
@@ -564,13 +683,18 @@ func _run_shot_timeline() -> void:
 			_show_overlay(_title, false)
 			_started = true
 		4:
-			_zoom = 0.35                      # 出海前：整片海一览
+			# M2 的头号画面证据：拉到最远 = 整张大西洋海图，没去过的区域全是雾
+			_zoom = _min_zoom()
+			_warp(2.0)                        # 让第一幕落下来（目标卡要有内容）
 		8:
-			_capture("20_sea_overview")
+			_capture("38_chart_fog")
+		10:
+			_zoom = 0.8
+			_time_scale_idx = 2
+			voyage.orders.set_target_point(Vector2(41000, 10400))
+			_warp(240.0)
 		12:
-			_zoom = 1.0
-			voyage.orders.set_target_point(Vector2(3600, 3600))
-			_warp(900.0)
+			_capture("20_sea_overview")       # 出港：看得见伊比利亚那段海岸
 		14:
 			_capture("20b_act1_card")         # 第一幕落下来的剧情卡
 		16:
@@ -586,41 +710,57 @@ func _run_shot_timeline() -> void:
 		20:
 			_show_panel = false
 			_panel.visible = false
-			_warp(500.0)                      # 继续开，瞭望员会报告陆地
+			# 跨 tile 缝：船从 tile 2,0 一路开进 tile 1,0（缝在 x=32000）
+			# 就贴着伊比利亚的南岸走：缝两边都看得见同一段海岸，地形不许有断口
+			_zoom = 0.6
+			voyage.ship.set_pose(Vector2(33200, 8700), 200.0)
+			voyage.orders.set_target_point(Vector2(29000, 9300))
+			_warp(60.0)
+		22:
+			_capture("39_seam_before")        # 还在这边：缝就在船前面，海岸横在缝上
 		24:
-			_capture("22_island_sighted")
+			_warp(700.0)                      # 真的开过缝，不是摆过去
 		25:
-			_zoom = 4.0                       # 拉近看船：这里画的是真正的 SVG 船
-			_warp(5.0)
+			_capture("40_seam_after")         # 缝的另一侧：地形没有任何跳变
 		26:
-			_capture("23_ship_close_up")
+			_zoom = 4.0                       # 拉近看船：这里画的是真正的 SVG 船
+			voyage.ship.set_pose(Vector2(30000, 16000), 200.0)
+			_warp(30.0)
 		27:
+			_capture("23_ship_close_up")
+		28:
 			_zoom = SHIP_ZOOM                 # 一路滚到底：就是船内调试视图那个比例
 			_warp(5.0)
-		28:
-			_capture("24_deck_in_detail")
 		29:
+			_capture("24_deck_in_detail")
+		30:
 			_mode = Mode.LAYER                # 再继续向下：沉进船舱
 			_layer = 1
 			_warp(5.0)
-		30:
-			_capture("25_below_deck")
 		31:
+			_capture("25_below_deck")
+		32:
 			_mode = Mode.SEA
 			_layer = 2
 			_zoom = 1.0
 		34:
-			# 这条航线正好穿过暗礁 —— 风向突变之后船被压过去，触礁（因果链的中间一环）
-			voyage.orders.set_target_point(Vector2(2800, 1200))
-			_warp(1300.0)
+			# 这条航线正好穿过加那利暗礁 —— 触礁（因果链的中间一环）
+			voyage.ship.set_pose(Vector2(30200, 17500), 200.0)
+			voyage.orders.set_target_point(Vector2(28500, 19000))
+			_warp(400.0)
 		38:
 			_capture("26_reef_hit")
 		42:
-			voyage.orders.set_target_point(Vector2(4520, 3600))
-			_warp(1700.0)
+			# 靠到绿岬岛跟前：瞭望员报告陆地（第二幕）
+			voyage.ship.set_pose(Vector2(25000, 25000), 200.0)
+			voyage.orders.set_target_point(Vector2(21600, 26400))
+			_warp(60.0)
 		46:
+			_zoom = 0.4                       # 连岛带船一起看：这就是"右前方有陆地"
+			_capture("22_island_sighted")
+		48:
 			# 截图脚本：把船直接摆到滩头外（航行过程已经在前两格演示过了）
-			voyage.ship.set_pose(Vector2(4520, 3600), 0.0)
+			voyage.ship.set_pose(Vector2(21490, 26500), 0.0)
 			voyage.orders.anchored = true
 			voyage.orders.set_sail_level(ShipOrders.SailLevel.FURLED)
 			_warp(120.0)
@@ -650,47 +790,50 @@ func _run_shot_timeline() -> void:
 		62:
 			_capture("30_disembarking_one_by_one")
 		64:
-			_zoom = 5.0                       # 拉近看队形
+			_zoom = 0.45                      # 上岸时相机会再放大一倍：这个倍率能看见整座岛
 			_warp(60.0)                       # 都上岸了，站成队形
 		66:
 			_capture("31_ashore_in_formation")
 		68:
 			_zoom = 1.0
-			voyage.move_party_to(Vector2(5620, 3320))
+			voyage.move_party_to(Vector2(23500, 25700))     # 内陆遗迹
 			_warp(240.0)
 		72:
 			_capture("32_ruins")
 		76:
-			voyage.move_party_to(Vector2(6080, 3820))
+			voyage.move_party_to(Vector2(23900, 26800))     # 淡水溪流
 			_warp(200.0)
 		80:
 			_capture("33_stream")
 		84:
-			voyage.move_party_to(Vector2(4790, 3600))
+			voyage.move_party_to(Vector2(21800, 26500))     # 走回滩头
 			_warp(260.0)
 			_deliver_reports()
 		88:
 			_capture("34_back_with_reports")
 		90:
 			print("[shot] 报告：%s" % str(voyage.pending_reports))
-			_zoom = 0.35
-			# 第三幕：起锚、满帆、真的把船开回出发港（不是摆回去）
+			_zoom = _min_zoom()               # 拉到海图尺度：返航的航线一眼看完
+			# 第三幕：起锚、满帆、真的往出发港开一段（不是摆回去）
 			voyage.orders.anchored = false
 			voyage.orders.set_sail_level(ShipOrders.SailLevel.FULL)
-			voyage.orders.set_target_point(Vector2(700, 4000))
-			_warp(900.0)
+			voyage.orders.set_target_point(Vector2(44000, 12000))
+			_warp(600.0)
 		92:
-			_zoom = 0.35
+			_zoom = _min_zoom()
 			_capture("35_homeward")
 		94:
-			_warp(900.0)
+			# 24km 的返航靠快进也要一个多小时真实时间，截图脚本直接摆到港外
+			_zoom = 1.0
+			voyage.ship.set_pose(Vector2(44700, 12000), 180.0)
+			_warp(90.0)
 		96:
 			_capture("36_homeward_arrival")
 		98:
 			if not voyage.story.ending_ready:
 				print("[shot] 还没进港（离港 %.0f 米），摆到港外把第三幕走完" % \
-					voyage.ship.position_m().distance_to(Vector2(700, 4000)))
-				voyage.ship.set_pose(Vector2(1150, 4000), 180.0)
+					voyage.ship.position_m().distance_to(Vector2(44000, 12000)))
+				voyage.ship.set_pose(Vector2(44600, 12000), 180.0)
 				_warp(60.0)
 			print("[shot] 第三幕 = %s　结算就绪 = %s" % [
 				voyage.story.act_name(), str(voyage.story.ending_ready)])
@@ -698,6 +841,13 @@ func _run_shot_timeline() -> void:
 			_show_overlay(_ending, true)
 		100:
 			_capture("37_settlement")
+		102:
+			# 收尾：把结算页收起来，拉回海图 —— 一路探明的分块与航段都留在这张图上
+			_show_overlay(_ending, false)
+			_zoom = _min_zoom()
+			_warp(2.0)
+		104:
+			_capture("41_chart_explored")
 		110:
 			get_tree().quit(0)
 
@@ -726,5 +876,6 @@ func _capture(name: String) -> void:
 		return
 	var img := tex.get_image()
 	var err := img.save_png("%s/%s.png" % [_shot_dir, name])
-	print("[shot] %-24s err=%d  第 %.0f 分钟  %s" % [
-		name, err, voyage.t / 60.0, voyage.describe()])
+	print("[shot] %-24s err=%d  zoom=%.4f fade=%.2f  第 %.0f 分钟  %s" % [
+		name, err, _zoom, _chart.fade if _chart != null else -1.0,
+		voyage.t / 60.0, voyage.describe()])

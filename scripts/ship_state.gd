@@ -12,7 +12,8 @@ extends RefCounted
 
 const FIELDS := [
 	"id", "kind", "ship", "orders", "nav", "crew", "roster",
-	"ashore", "captain_pos", "captain_target", "ashore_count", "landing_point", "party",
+	"ashore", "captain_pos", "captain_target", "ashore_count", "landing_point",
+	"landing_land_id", "party",
 ]
 
 var data := {}

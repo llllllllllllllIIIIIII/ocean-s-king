@@ -88,11 +88,13 @@ func _draw_act_card() -> void:
 func _draw_status() -> void:
 	var v := voyage
 	var lines := PackedStringArray()
-	lines.append("第 %s　%.1f 节　%s　%s" % [
-		VoyageJournal.clock(v.t), v.ship.speed_kn(), v.orders.sail_level_name(),
-		("抛锚中" if v.orders.anchored else v.nav.method_name())])
-	lines.append("损伤：%s　操帆 %d 人" % [v.ship.describe_damage(), v.crew.hands_on_sails])
-	lines.append(v.roster.describe())
+	lines.append("%s %s　%.1f 节　%s" % [
+		v.date_string(), v.clock_string(), v.ship.speed_kn(), v.orders.sail_level_name()])
+	lines.append("%s　损伤：%s　操帆 %d 人" % [
+		("抛锚中" if v.orders.anchored else v.nav.method_name()),
+		v.ship.describe_damage(), v.crew.hands_on_sails])
+	lines.append("%s　已探明 %d/%d 块海图" % [
+		v.roster.describe(), v.discovered_tiles(), v.total_tiles()])
 	if v.ashore:
 		lines.append("☀ 你在岸上，身边 %d 人 —— 左键带队走，走回滩头按 L 上船" % v.party_size())
 	elif v.can_land():
@@ -131,7 +133,7 @@ func _draw_banner() -> void:
 func _draw_controls() -> void:
 	draw_string(font, Vector2(16.0, size.y - 20.0),
 		"左键 目标点·带队　X 抛锚　1/2/3 帆档　+/− 操帆人数　L 登陆·返船　"
-		+ "Tab 帆态　C 船员　. 快进　F5 存档　F9 读档　滚轮 缩放·沉入船舱",
+		+ "Tab 帆态　C 船员　. 快进　F5 存档　F9 读档　滚轮 缩放（拉远 = 海图）",
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.62, 0.7, 0.78))
 
 

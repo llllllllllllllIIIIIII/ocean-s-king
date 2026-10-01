@@ -39,6 +39,10 @@ var current_world := Vector2.ZERO   # 洋流（世界系 m/s），由海图每�
 # 用圆心+半径而不是回调：回调会捕获外部对象，形成引用环、退出时泄漏一堆对象。
 var land_center := Vector2.ZERO
 var land_radius := -1.0             # <= 0 表示这片海里没有陆地
+# M2 起：陆地不再只是一个圆（大西洋有海岸、有多个岛），所以再挂一份**纯数据**的形状表
+# （Geom2D 的圆 / 带子）。同样不是回调 —— 依旧是"把数据抄进来"，不持有 WorldMap。
+# 它是静态世界数据，不进存档（读档时 setup() 重新灌一次，见 docs/14 第 3 节）。
+var land_shapes: Array = []
 var last_blocked := false           # 这一帧是不是撞上了（给上层做损伤提示）
 # 损伤（docs/01：只做三处，每一处都要能在气动上看见效果）
 var damage := { "hull": 0.0, "mast": 0.0, "rudder": 0.0 }
@@ -318,7 +322,7 @@ func step(delta: float, wind_world: Vector2) -> void:
 	# 位置：世界速度 = R(heading) · (u, w)
 	var step_vec := Vector2(_u * cs - _w * sn, _u * sn + _w * cs) * delta
 	last_blocked = false
-	if land_radius > 0.0:
+	if land_radius > 0.0 or not land_shapes.is_empty():
 		var target := _pos_m + step_vec
 		if _blocked_at(target):
 			last_blocked = true
@@ -336,6 +340,12 @@ func step(delta: float, wind_world: Vector2) -> void:
 
 
 func _blocked_at(p: Vector2) -> bool:
+	# 先看 M2 的形状表（海岸 / 多个岛），没有再退回 v0.1 的那个圆
+	if not land_shapes.is_empty():
+		for s in land_shapes:
+			if Geom2D.inside(s, p):
+				return true
+		return false
 	return land_radius > 0.0 and p.distance_to(land_center) < land_radius
 
 

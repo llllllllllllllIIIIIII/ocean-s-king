@@ -71,7 +71,9 @@ func _test_field_coverage() -> void:
 		["VoyageJournal", v.journal, v.journal.capture_state(), []],
 		["WindField", v.wind, v.wind.capture_state(), []],
 		["ShipDynamics", v.ship, v.ship.capture_state(),
-			["physics", "land_center", "land_radius", "last_blocked", "_last"]],
+			# land_shapes 是 M2 加进来的**静态世界数据**（海岸/岛的纯数据形状表），
+			# 和 land_center/land_radius 一样由 setup() 重新灌，不进存档。
+			["physics", "land_center", "land_radius", "land_shapes", "last_blocked", "_last"]],
 		["ShipOrders", v.orders, v.orders.capture_state(), []],
 		["Navigator", v.nav, v.nav.capture_state(), ["orders"]],
 		["Crew", v.crew, v.crew.capture_state(),
