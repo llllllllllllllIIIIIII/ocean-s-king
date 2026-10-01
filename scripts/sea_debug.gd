@@ -14,12 +14,21 @@ extends Node2D
 
 const PPM := 0.5                  # 每米多少像素（zoom=0.25 时整片海 2000px 宽）
 const SIM_DT := 0.05
+# 一路滚到底的"船内视图"倍率：0.5 × 80 = 40 像素/米，正好等于船内调试视图的比例。
+# 也就是说这个场景的相机是**连续的**：整片海 → 海图 → 船 → 船舱，同一套东西。
+const SHIP_ZOOM := 80.0
+const LAYER_STEP_ZOOM := 1.6
+
+enum Mode { SEA, LAYER }
 
 var voyage: Voyage
 var _hud: Label
 var _font: Font
 var _cam: Camera2D
 var _zoom := 1.0
+var _mode: Mode = Mode.SEA
+var _layer := 2
+var _layer_order: Array[int] = []
 var _fast_forward := 0.0
 var _picker: LandingPicker
 var _shot_mode := false
@@ -43,6 +52,9 @@ func _ready() -> void:
 	add_child(_ship_view)
 	_ship_view.setup()
 	_ship_view.apply_pose(voyage.ship.position_m(), voyage.ship.heading_deg())
+	_layer_order.assign(_ship_view.layers.keys())
+	_layer_order.sort()
+	_layer_order.reverse()              # [3, 2, 1, 0]，下标越大层越低
 	_cam = Camera2D.new()
 	add_child(_cam)
 	_font = _pick_font()
@@ -71,7 +83,11 @@ func _process(delta: float) -> void:
 
 
 func _update_camera() -> void:
-	if voyage.ashore:
+	if _mode == Mode.LAYER:
+		# 沉进船舱了：相机锁在船体中心（和船内调试视图一样）
+		_cam.position = _ship_view.hull_center_world_px()
+		_cam.zoom = Vector2(_zoom, _zoom)
+	elif voyage.ashore:
 		# 状态 C：相机跟着船长，船离屏
 		_cam.position = voyage.captain_pos * PPM
 		_cam.zoom = Vector2(_zoom * 3.0, _zoom * 3.0)
@@ -88,8 +104,37 @@ func _sync_ship_view() -> void:
 	_ship_view.sail_jib_rad = deg_to_rad(180.0 - float(snap["sail_jib_deg"]))
 	_ship_view.sail_state = int(voyage.orders.sail_level)
 	_ship_view.anchored = voyage.ship.is_anchored()
-	_ship_view.zoom = 1.0
+	_ship_view.layer = _layer
+	_ship_view.show_ghost = _zoom > 20.0        # 拉到能看清船了才画上层虚影
+	_ship_view.draw_sea = _zoom > 20.0          # 近距离时由渲染器画海与网格
+	_ship_view.zoom = _zoom
+	_ship_view.crew_dots = _crew_dots()
 	_ship_view.queue_redraw()
+
+
+func _crew_dots() -> Array:
+	"""只有在看得清船的距离上才画人（海图尺度下那只是几个亚像素的点）。"""
+	var out := []
+	if _zoom < 20.0 or voyage.roster == null:
+		return out
+	for m in voyage.roster.members:
+		if m.at.z != _layer or m.ashore:
+			continue
+		out.append({"x": m.at.x, "y": m.at.y, "color": _job_color(m.job), "key": m.is_key})
+	return out
+
+
+func _job_color(job: String) -> Color:
+	match job:
+		"sail": return Color(0.45, 0.75, 1.0)
+		"helm": return Color(1.0, 0.85, 0.4)
+		"lookout": return Color(0.6, 1.0, 0.6)
+		"cook": return Color(1.0, 0.6, 0.35)
+		"repair": return Color(0.85, 0.85, 0.9)
+		"chores": return Color(0.9, 0.9, 0.6)
+		"eat": return Color(1.0, 0.95, 0.5)
+		"sleep": return Color(0.7, 0.6, 1.0)
+		_: return Color(0.72, 0.74, 0.78)
 
 
 # ------------------------------------------------------------------ 绘制
@@ -182,9 +227,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_zoom = clampf(_zoom * 1.2, 0.15, 8.0)
+			_wheel(-1)
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_zoom = clampf(_zoom / 1.2, 0.15, 8.0)
+			_wheel(1)
 		elif mb.button_index == MOUSE_BUTTON_LEFT:
 			var world := get_viewport().get_canvas_transform().affine_inverse() * mb.position
 			var target := world / PPM
@@ -197,6 +242,30 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		_key(event as InputEventKey)
 		_update_camera()
+
+
+func _wheel(dir: int) -> void:
+	"""滚轮就是一根轴：整片海 → 海图 → 船 → 穿过甲板沉进船舱。
+
+	这一条是刻意的：玩家不需要在"看船"和"看海"之间切场景 —— 同一套相机，
+	同一艘船，只是拉远拉近。拉到最近还继续向下，就进入船内分层模式。
+	"""
+	if _mode == Mode.LAYER:
+		var idx := _layer_order.find(_layer) + dir
+		if idx < 0:                              # 在最上层继续向上 -> 回到缩放
+			_mode = Mode.SEA
+			_layer = 2
+		else:
+			_layer = _layer_order[clampi(idx, 0, _layer_order.size() - 1)]
+	else:
+		if dir > 0 and _zoom >= SHIP_ZOOM:
+			_mode = Mode.LAYER                   # 拉到最近再向下 -> 沉入船舱
+			_layer = _layer_order[_layer_order.find(_layer) + 1]
+		else:
+			_zoom = clampf(_zoom * (1.2 if dir > 0 else 1.0 / 1.2), 0.15, SHIP_ZOOM)
+	_update_camera()
+	_update_hud()
+	queue_redraw()
 
 
 func _key(k: InputEventKey) -> void:
@@ -310,7 +379,10 @@ func _update_hud() -> void:
 	lines.append("测试海域（%.0f 分钟）%s" % [
 		v.t / 60.0, "　☀ 相机跟着船长" if v.ashore else ""])
 	lines.append("左键 设目标点　X 抛锚　1/2/3 帆档　+/− 人数　L 登陆/返船　. 快进一分钟")
-	lines.append("Tab 帆态面板　C 船员面板　滚轮 缩放")
+	lines.append("Tab 帆态面板　C 船员面板　滚轮：整片海 ⇄ 船 ⇄ 船舱（一路滚到底再往下）")
+	if _mode == Mode.LAYER:
+		lines.append("【船舱视图】L%d %s　高程 %+.0f 米　（向上滚回甲板，到最上层回到海面）" % [
+			_layer, _ship_view.layer_name(_layer), _ship_view.layer_elevation(_layer)])
 	lines.append("——")
 	lines.append(v.describe())
 	lines.append("损伤：%s" % v.ship.describe_damage())
@@ -364,59 +436,72 @@ func _run_shot_timeline() -> void:
 		26:
 			_capture("23_ship_close_up")
 		27:
-			_zoom = 1.0
+			_zoom = SHIP_ZOOM                 # 一路滚到底：就是船内调试视图那个比例
+			_warp(5.0)
+		28:
+			_capture("24_deck_in_detail")
+		29:
+			_mode = Mode.LAYER                # 再继续向下：沉进船舱
+			_layer = 1
+			_warp(5.0)
 		30:
+			_capture("25_below_deck")
+		31:
+			_mode = Mode.SEA
+			_layer = 2
+			_zoom = 1.0
+		34:
 			# 这条航线正好穿过暗礁 —— 风向突变之后船被压过去，触礁（因果链的中间一环）
 			voyage.orders.set_target_point(Vector2(2800, 1200))
 			_warp(1300.0)
-		36:
-			_capture("24_reef_hit")
-		40:
+		38:
+			_capture("26_reef_hit")
+		42:
 			voyage.orders.set_target_point(Vector2(4520, 3600))
 			_warp(1700.0)
-		44:
+		46:
 			# 截图脚本：把船直接摆到滩头外（航行过程已经在前两格演示过了）
 			voyage.ship.set_pose(Vector2(4520, 3600), 0.0)
 			voyage.orders.anchored = true
 			voyage.orders.set_sail_level(ShipOrders.SailLevel.FURLED)
 			_warp(120.0)
-		48:
-			_capture("25_anchored_off_beach")
 		50:
+			_capture("27_anchored_off_beach")
+		52:
 			# 登陆名单：这一版挂在 CanvasLayer 上（屏幕坐标），不再跟着相机跑
 			_picker.open(voyage.roster)
 			_picker.visible = true
 			_picker.toggle_current()
 			_picker.move(3)
 			_picker.toggle_current()
-		52:
-			_capture("26_landing_picker")
 		54:
+			_capture("28_landing_picker")
+		56:
 			_picker.visible = false
 			var ids := ["piloto", "carpintero", "cirujano", "escribano"]
 			print("[shot] 登陆：%s" % voyage.land(ids, 6))
 			voyage.move_party_to(Vector2(5620, 3320))
 			_warp(240.0)
-		58:
-			_capture("27_ruins")
-		62:
+		60:
+			_capture("29_ruins")
+		64:
 			voyage.move_party_to(Vector2(6080, 3820))
 			_warp(200.0)
-		66:
-			_capture("28_stream")
-		70:
+		68:
+			_capture("30_stream")
+		72:
 			voyage.move_party_to(Vector2(4790, 3600))
 			_warp(260.0)
 			_deliver_reports()
-		74:
-			_capture("29_back_with_reports")
 		76:
+			_capture("31_back_with_reports")
+		78:
 			print("[shot] 报告：%s" % str(voyage.pending_reports))
 			_zoom = 0.35
 			_warp(60.0)
-		80:
-			_capture("30_homeward")
-		86:
+		82:
+			_capture("32_homeward")
+		88:
 			get_tree().quit(0)
 
 
