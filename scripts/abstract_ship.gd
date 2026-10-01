@@ -157,17 +157,50 @@ func apply_summary(d: Dictionary) -> void:
 
 func capture_state() -> Dictionary:
 	var d := to_summary()
-	d["target"] = [target.x, target.y]
+	d["target"] = StateIO.v2(target)
 	d["has_target"] = has_target
 	d["speed_ms"] = speed_ms
-	d["waypoints"] = waypoints.duplicate()
+	# 航点也要摊成 [x, y]：Vector2 直接丢进 JSON.stringify 会变成字符串 "(x, y)"，
+	# 读档回来 waypoints[0] 就成了 String，step() 里赋给 Vector2 当场报错。
+	d["waypoints"] = _points_to_arrays(waypoints)
 	return d
 
 
 func apply_state(d: Dictionary) -> void:
 	apply_summary(d)
-	var t: Array = d.get("target", [pos.x, pos.y])
-	target = Vector2(float(t[0]), float(t[1]))
+	target = StateIO.to_v2(d.get("target", StateIO.v2(pos)))
 	has_target = bool(d.get("has_target", false))
 	speed_ms = float(d.get("speed_ms", 0.0))
-	waypoints = (d.get("waypoints", []) as Array).duplicate()
+	waypoints = _parse_points(d.get("waypoints", []))
+
+
+static func _points_to_arrays(points: Array) -> Array:
+	"""落盘用的形态：一律 [x, y] —— 走 StateIO，和别的类一个口径。"""
+	var out := []
+	for p in points:
+		if typeof(p) == TYPE_VECTOR2 or typeof(p) == TYPE_ARRAY:
+			out.append(StateIO.v2(p))
+	return out
+
+
+static func _parse_points(raw: Variant) -> Array:
+	"""读档：三种形态都要认 —— ①Vector2（内存里）②[x, y]（现存档）
+	③"(x, y)"（Vector2 被直接 stringify 出来的那种档，得救回来）。"""
+	var out := []
+	if typeof(raw) == TYPE_PACKED_VECTOR2_ARRAY:
+		for p in (raw as PackedVector2Array):
+			out.append(p)
+		return out
+	if typeof(raw) != TYPE_ARRAY:
+		return out
+	for p in raw:
+		if typeof(p) == TYPE_VECTOR2:
+			out.append(p)
+		elif typeof(p) == TYPE_ARRAY:
+			out.append(StateIO.to_v2(p))
+		elif typeof(p) == TYPE_STRING:
+			var bits := str(p).strip_edges().trim_prefix("(").trim_suffix(")").split(",")
+			if bits.size() >= 2:
+				out.append(Vector2(String(bits[0]).strip_edges().to_float(),
+					String(bits[1]).strip_edges().to_float()))
+	return out

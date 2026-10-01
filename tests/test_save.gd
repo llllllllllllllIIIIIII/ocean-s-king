@@ -29,6 +29,7 @@ func _initialize() -> void:
 	_test_roundtrip()
 	_test_continue_after_load()
 	_test_file_io_and_rejection()
+	_test_ai_route_roundtrip()
 	# 场景那一半要等引擎推过一帧（_ready() 还没跑时场景内部是空的）
 	_scene = load(SCENE).instantiate()
 	root.add_child(_scene)
@@ -247,6 +248,63 @@ func _write_raw(slot: String, text: String) -> void:
 	f.close()
 
 
+# ---------------------------------------------------------------- 4.5 AI 船的航点
+
+func _test_ai_route_roundtrip() -> void:
+	"""AI 船的航点必须能过一遍 JSON。
+
+	为什么单独拎出来测：`Vector2` 不是 JSON 类型，`JSON.stringify()` 会把它写成
+	字符串 `"(3000, 1200)"`。读档回来 `waypoints[0]` 就成了 String，而
+	`AbstractShip.step()` 第一件事就是 `target = waypoints[0]`（target 是 Vector2）
+	—— 当场 "Trying to assign value of type 'String' to a variable of type 'Vector2'",
+	而且**每帧刷一次**，三条 AI 船全停在原地。实测踩过一次（M8 收尾）。
+	"""
+	var a := _voyage()
+	_run(a, 60.0)
+	var ai: AbstractShip = null
+	for s in a.fleet.slots:
+		if str(s.get("kind", "")) == Fleet.KIND_AI and s.get("ship") != null:
+			ai = s["ship"]
+			break
+	_check(ai != null, "单机世界里带着 AI 船（船队 = 1 条细化 + 3 条 AI）")
+	if ai == null:
+		return
+	# 挂一串**确定的**航点（不依赖海图数据，免得换了海域这条测试就悬空）
+	ai.waypoints = [ai.pos + Vector2(3000.0, 0.0), ai.pos + Vector2(6000.0, 2000.0)]
+	ai.has_target = true
+
+	var r := SaveGame.save_game(a, "test_ai_route")
+	_check(bool(r.get("ok", false)), "带着航点写存档成功（%d 字节）" % int(r.get("bytes", 0)))
+	var b := _voyage()
+	var r2 := SaveGame.load_into(b, "test_ai_route")
+	_check(bool(r2.get("ok", false)), "带着航点读存档成功")
+
+	var got: AbstractShip = null
+	for s in b.fleet.slots:
+		if str(s.get("kind", "")) == Fleet.KIND_AI and s.get("ship") != null:
+			got = s["ship"]
+			break
+	_check(got != null, "读档后 AI 船还在")
+	if got == null:
+		return
+	_check(got.waypoints.size() == 2, "读档后航点个数没丢（%d 个）" % got.waypoints.size())
+	var bad := 0
+	for p in got.waypoints:
+		if typeof(p) != TYPE_VECTOR2:
+			bad += 1
+	_check(bad == 0, "读档后每个航点都是 Vector2（坏点 %d 个 —— 字符串就是那个 bug）" % bad)
+	# 真正的复现点：step() 的第一句就是 target = waypoints[0]
+	got.step(DT, b.sea)
+	if got.waypoints.size() > 0 and typeof(got.waypoints[0]) == TYPE_VECTOR2:
+		var w0: Vector2 = got.waypoints[0]
+		_check(got.target.distance_to(w0) < 0.001,
+			"step() 把航点接上了目标（差 %.4f 米）" % got.target.distance_to(w0))
+
+	var p := ProjectSettings.globalize_path(SaveGame.slot_path("test_ai_route"))
+	if FileAccess.file_exists(p):
+		DirAccess.remove_absolute(p)
+
+
 func _key(scene, code: int) -> void:
 	"""构造真实按键喂给场景（沿用 test_ship_debug_logic 的做法：可复现、不依赖真实输入）。"""
 	var e := InputEventKey.new()
@@ -303,6 +361,20 @@ func _test_scene_wiring() -> void:
 	for _i in 60:
 		sc.voyage.tick(DT)
 	_check(sc.voyage.t > t_saved, "读档后还能继续推进（%.0f 秒）" % sc.voyage.t)
+
+	# F9 之后 AI 船的航点还得是 Vector2（这条线走到过上面那个 String 崩法）
+	var wp_bad := 0
+	var wp_total := 0
+	for s in sc.voyage.fleet.slots:
+		if str(s.get("kind", "")) != Fleet.KIND_AI or s.get("ship") == null:
+			continue
+		var ai_ship: AbstractShip = s["ship"]
+		for wp in ai_ship.waypoints:
+			wp_total += 1
+			if typeof(wp) != TYPE_VECTOR2:
+				wp_bad += 1
+	_check(wp_bad == 0,
+		"F9 读档后 AI 船的航点仍是 Vector2（%d 个里 %d 个变成了字符串）" % [wp_total, wp_bad])
 
 	var p := ProjectSettings.globalize_path(SaveGame.slot_path("auto"))
 	if FileAccess.file_exists(p):

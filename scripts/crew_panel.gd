@@ -109,9 +109,13 @@ func _draw() -> void:
 			"紧张 %.0f%%　纪律 %.0f%%　事件 %d" % [voyage.society.tension * 100.0,
 				voyage.society.discipline * 100.0, voyage.society.event_count],
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1.0, 0.85, 0.55))
+		# M8：给陌生人一行"只读这一行也够"的简况（下面那张表是细节）
+		# 宽度只占左半边（右半边 900 起是规矩），别压到下面的表头
+		draw_string(font, Vector2(14, 44), _summary_line(roster),
+			HORIZONTAL_ALIGNMENT_LEFT, 872.0, 13, Color(0.98, 0.92, 0.7))
 
 	var crew := roster.key_crew()
-	var y := 44.0
+	var y := 62.0
 	# 表头
 	var col_x := 430.0
 	for j in JOB_ORDER.size():
@@ -201,6 +205,48 @@ func _draw() -> void:
 				voyage.society.why_unhappy(who, roster, voyage.rules),
 				HORIZONTAL_ALIGNMENT_LEFT, PANEL.x - rx - 20.0, 13, 3,
 				Color(0.9, 0.94, 0.99), VoyageHud.WRAP)
+
+
+func _summary_line(roster_ref: CrewRoster) -> String:
+	"""一句话概括四十个人现在什么样 —— 陌生人先读它，再看下面那张表。"""
+	if roster_ref == null:
+		return ""
+	var working := 0
+	var resting := 0
+	var ashore := 0
+	var loss := 0
+	var mood_sum := 0.0
+	var worst_tired: CrewMember = null
+	var worst_mood: CrewMember = null
+	for m in roster_ref.members:
+		if m.dead:
+			loss += 1
+			continue
+		if m.ashore:
+			ashore += 1
+			continue
+		mood_sum += m.mood
+		if m.working and m.job != "off_watch" and m.job != "eat" and m.job != "sleep":
+			working += 1
+		else:
+			resting += 1
+		if worst_tired == null or m.fatigue > worst_tired.fatigue:
+			worst_tired = m
+		if worst_mood == null or m.mood < worst_mood.mood:
+			worst_mood = m
+	var on_board := maxi(1, roster_ref.members.size() - ashore - loss)
+	var parts := PackedStringArray()
+	parts.append("在岗 %d / 休息 %d" % [working, resting])
+	parts.append("平均心情 %.0f%%" % (mood_sum / float(on_board) * 100.0))
+	if ashore > 0:
+		parts.append("岸上 %d" % ashore)
+	if loss > 0:
+		parts.append("阵亡 %d" % loss)
+	if worst_mood != null:
+		parts.append("最闷的是 %s（%.0f%%）" % [worst_mood.display_name, worst_mood.mood * 100.0])
+	if worst_tired != null and worst_tired.fatigue > 0.6:
+		parts.append("最累的是 %s（%.0f%%）" % [worst_tired.display_name, worst_tired.fatigue * 100.0])
+	return "全船 %d 人：%s" % [roster_ref.members.size(), "　".join(parts)]
 
 
 func _draw_bar(at: Vector2, value: float, color: Color, tag: String) -> void:
