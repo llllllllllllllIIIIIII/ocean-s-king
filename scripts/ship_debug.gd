@@ -59,6 +59,7 @@ func _ready() -> void:
 	ship.set_pose(Vector2.ZERO, 180.0)           # 船首朝 -x：和 Day 2 的调试画面同向
 	crew = Crew.new(ship)
 	crew.set_target_heading(180.0)
+	ship.step(0.0, wind.velocity_world())        # 只把风灌进去（dt=0，不推进状态）
 	crew.retrim()
 	_sync_view()
 
