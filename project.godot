@@ -12,7 +12,9 @@ config_version=5
 
 config/name="环球航行"
 config/description="16 世纪麦哲伦环球航行背景的远洋航行模拟 / 探索 / 管理游戏"
-run/main_scene="res://scenes/ship_debug.tscn"
+; Day 7 起：双击 exe / 按 F5 直接进入可玩的那条线（出港 → 登陆 → 返航结算）。
+; 船内分层调试视图还在，用 run_debug.cmd 或直接打开 scenes/ship_debug.tscn。
+run/main_scene="res://scenes/sea_debug.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 
 [display]

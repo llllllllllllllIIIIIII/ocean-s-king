@@ -4,11 +4,13 @@
 #   A 甲板/海面 —— 跟着船
 #   C 离船      —— 船长带人上岛，相机跟着船长，船留在海面上自己走（大副接管）
 #
-# 操作：
+# 操作（Day 7 定稿）：
+#   开场先是一页标题与背景（陌生人必须知道自己在哪儿、要干什么），按任意键开始
 #   左键 = 设目标点（船长在岸上时 = 带队伍走过去）
 #   X 抛锚 / 起锚　1/2/3 帆档　+/− 操帆人数
 #   L 登陆 / 返船　空格 登陆名单里勾人　Tab 帆态面板　C 船员面板
-#   . 快进一分钟（演示用）　滚轮 缩放
+#   . 快进 ×1/×4/×12（8 公里的海不开快进，一局就不是 15 分钟了）　滚轮 缩放
+#   走完第三幕 → 一页文本结算（R 重开）
 
 extends Node2D
 
@@ -22,14 +24,23 @@ const LAYER_STEP_ZOOM := 1.6
 enum Mode { SEA, LAYER }
 
 var voyage: Voyage
-var _hud: Label
+var _hud: VoyageHud
+var _title: TitleCard
+var _ending: EndingPanel
+var _hud_layer: CanvasLayer
+var _panel_layer: CanvasLayer
 var _font: Font
 var _cam: Camera2D
 var _zoom := 1.0
 var _mode: Mode = Mode.SEA
 var _layer := 2
 var _layer_order: Array[int] = []
-var _fast_forward := 0.0
+var _started := false              # 标题卡关掉之前，一帧模拟都不跑
+var _time_scales: Array[float] = [1.0, 4.0, 12.0]
+var _time_scale_idx := 0
+var _last_head := -1               # 上一次看到的"演到第几幕"，用来放剧情卡
+var _act_card_timer := 0.0         # 剧情卡的剩余播放时间（真实秒）
+var _act_card_seconds := 9.0       # 剧情卡放多久（截图模式下压到 2 秒，免得挡住一组图）
 var _picker: LandingPicker
 var _shot_mode := false
 var _frame := 0
@@ -43,6 +54,7 @@ var _show_crew_panel := false
 
 
 func _ready() -> void:
+	_shot_mode = OS.get_cmdline_user_args().has("shots")
 	voyage = Voyage.new()
 	voyage.setup()
 	_ship_view = ShipRenderer.new()
@@ -59,27 +71,44 @@ func _ready() -> void:
 	add_child(_cam)
 	_font = _pick_font()
 	_build_hud()
+	_build_overlays()
 	_update_camera()
 	_update_hud()
-	_shot_mode = OS.get_cmdline_user_args().has("shots")
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(_shot_dir))
+	# 截图模式不等人：直接开演（标题卡由时间线自己在第 2 帧截一张）
+	_started = _shot_mode
+	if not _shot_mode:
+		_act_card_seconds = 9.0
+		_show_overlay(_title, true)
+	else:
+		_act_card_seconds = 2.0
 
 
 func _process(delta: float) -> void:
 	if _shot_mode:
 		_run_shot_timeline()
 		return
-	var dt: float = minf(delta, 0.1)
-	voyage.tick(dt)
-	if _fast_forward > 0.0:
-		var left := minf(_fast_forward, 1.0)
-		_fast_forward -= left
-		var steps := int(left / SIM_DT)
-		for _i in steps:
-			voyage.tick(SIM_DT)
+	if _started:
+		_tick_sim(delta)
+		voyage.tick_ui(delta)          # 消息条按真实时间消失，不跟着快进闪过去
+	if _act_card_timer > 0.0:
+		_act_card_timer = maxf(0.0, _act_card_timer - delta)
 	_update_camera()
 	_update_hud()
 	queue_redraw()
+
+
+func _tick_sim(delta: float) -> void:
+	"""推进模拟。快进不是"把 dt 乘大" —— 那样物理步会变粗、气动跟着飘。
+	这里永远是固定步长 SIM_DT，快进只是每帧多跑几步。"""
+	var scale := _time_scales[_time_scale_idx]
+	var real_dt := minf(delta, 0.1)
+	if scale <= 1.0:
+		voyage.tick(real_dt)
+	else:
+		var steps := int(real_dt * scale / SIM_DT)
+		for _i in steps:
+			voyage.tick(SIM_DT)
 
 
 func _update_camera() -> void:
@@ -222,6 +251,15 @@ func _draw() -> void:
 	if voyage.orders.has_target_point:
 		draw_dashed_line(voyage.ship.position_m() * PPM, voyage.orders.target_point * PPM,
 			Color(0.5, 1.0, 0.7, 0.4), 2.0, 10.0)
+	# 抉择做完了（上过岸，或者把岛甩在了身后）：把回港的方向标出来。
+	# 没有它，第三幕的"返航"就只是一句话，玩家不知道往哪儿开。
+	if voyage.story.fired("act2") and not voyage.story.fired("act3") \
+			and not voyage.ashore and voyage.story.objective.begins_with("返航"):
+		var home := voyage.ship.position_m().lerp(Vector2(float(pp[0]), float(pp[1])), 0.5)
+		draw_dashed_line(voyage.ship.position_m() * PPM,
+			Vector2(float(pp[0]), float(pp[1])) * PPM, Color(1.0, 0.85, 0.45, 0.32), 2.0, 14.0)
+		draw_arc(pc, 22.0 * _marker_scale(), 0.0, TAU, 32, Color(1.0, 0.86, 0.45, 0.8), 2.0)
+		_label(home, "返航点：出发港", Color(1.0, 0.88, 0.5))
 
 
 func _arrow(a: Vector2, b: Vector2, col: Color, width: float) -> void:
@@ -257,6 +295,24 @@ func _marker_scale() -> float:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _shot_mode:
+		return
+	# 标题卡还摊在桌上：任何键、任何一次点击 = 开始（这是"陌生人 15 分钟"的第一道门）
+	if _title.visible:
+		var pressed := (event is InputEventKey and (event as InputEventKey).pressed) \
+			or (event is InputEventMouseButton and (event as InputEventMouseButton).pressed)
+		if pressed:
+			_show_overlay(_title, false)
+			_started = true
+		return
+	# 结算页：R 再走一趟，Esc 收起来继续看海（别的键不管）
+	if _ending.visible:
+		if event is InputEventKey and (event as InputEventKey).pressed \
+				and not (event as InputEventKey).echo:
+			match (event as InputEventKey).keycode:
+				KEY_R:
+					get_tree().reload_current_scene()
+				KEY_ESCAPE:
+					_show_overlay(_ending, false)
 		return
 	if event is InputEventMouseButton and event.pressed:
 		var mb := event as InputEventMouseButton
@@ -321,16 +377,17 @@ func _key(k: InputEventKey) -> void:
 		KEY_MINUS, KEY_KP_SUBTRACT:
 			voyage.orders.set_hands(voyage.orders.hands_on_sails - 1)
 		KEY_PERIOD:
-			_fast_forward += 60.0
+			_time_scale_idx = (_time_scale_idx + 1) % _time_scales.size()
+			voyage.say("时间 ×%d。" % int(_time_scales[_time_scale_idx]))
 		KEY_L:
 			if voyage.ashore:
 				var msg := voyage.return_to_ship()
-				voyage._say("（船长）" + msg, true)
+				voyage.say("（船长）" + msg, true)
 			elif voyage.can_land():
 				_picker.open(voyage.roster)
 				_picker.visible = true
 			else:
-				voyage._say("还没到滩头：先把船开过去，抛锚（X），再按 L。", true)
+				voyage.say("还没到滩头：先把船开过去，抛锚（X），再按 L。", true)
 		KEY_SPACE:
 			if _picker.visible:
 				_picker.toggle_current()
@@ -349,6 +406,8 @@ func _key(k: InputEventKey) -> void:
 		KEY_TAB:
 			_show_panel = not _show_panel
 			_panel.visible = _show_panel
+			if _show_panel:
+				voyage.story.note("open_sail_panel")
 		KEY_C:
 			_show_crew_panel = not _show_crew_panel
 			_crew_panel.visible = _show_crew_panel
@@ -361,13 +420,13 @@ func _key(k: InputEventKey) -> void:
 func _build_hud() -> void:
 	var cl := CanvasLayer.new()
 	add_child(cl)
-	_hud = Label.new()
-	_hud.position = Vector2(16, 12)
-	_hud.add_theme_font_override("font", _font)
-	_hud.add_theme_font_size_override("font_size", 15)
-	_hud.add_theme_color_override("font_color", Color(0.92, 0.96, 1.0))
-	_hud.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-	_hud.add_theme_constant_override("outline_size", 6)
+	_hud_layer = cl
+	_hud = VoyageHud.new()
+	_hud.font = _font
+	_hud.voyage = voyage
+	_hud.size = get_viewport_rect().size
+	# 界面不接鼠标：所有输入都走 _unhandled_input（点目标点、带队上岸）
+	_hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	cl.add_child(_hud)
 
 	_wind_gizmo = WindGizmo.new()
@@ -380,6 +439,7 @@ func _build_hud() -> void:
 	var cl2 := CanvasLayer.new()
 	cl2.layer = 2
 	add_child(cl2)
+	_panel_layer = cl2
 	_panel = SailPanel.new()
 	_panel.font = _font
 	_panel.size = SailPanel.PANEL
@@ -400,35 +460,66 @@ func _build_hud() -> void:
 	cl2.add_child(_crew_panel)
 
 
+func _build_overlays() -> void:
+	"""标题卡与结算页：盖在整幅画面最上面，而且不接鼠标（点击要能漏到下面去）。"""
+	var cl := CanvasLayer.new()
+	cl.layer = 8
+	add_child(cl)
+	var vp := get_viewport_rect().size
+	_ending = EndingPanel.new()
+	_ending.font = _font
+	_ending.size = vp
+	_ending.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ending.visible = false
+	cl.add_child(_ending)
+
+	var cl2 := CanvasLayer.new()
+	cl2.layer = 9
+	add_child(cl2)
+	_title = TitleCard.new()
+	_title.font = _font
+	_title.title = voyage.story.title
+	_title.subtitle = voyage.story.subtitle
+	_title.heading = voyage.story.opening_heading
+	_title.body = voyage.story.opening_body
+	_title.hint = voyage.story.opening_hint
+	_title.size = vp
+	_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_title.visible = false
+	cl2.add_child(_title)
+
+
+func _show_overlay(card: Control, on: bool) -> void:
+	"""标题卡 / 结算页是"幕间"：铺开的时候把航行界面整层收起来。
+
+	不收起的话半透明的底会把左上角的目标卡、右下角的风玫瑰透出来，
+	画面看着像两个界面糊在一起（第一版截图就是这个样子）。
+	"""
+	card.visible = on
+	var play_ui := not on and not (_ending != null and _ending.visible)
+	_hud_layer.visible = play_ui
+	_panel_layer.visible = play_ui
+
+
 func _update_hud() -> void:
 	if _hud == null:
 		return
 	_wind_gizmo.set_wind(voyage.wind.from_dir_deg, voyage.wind.tws_ms)
+	# 新的一幕落下来了：把剧情卡摆出来。用**真实**秒计时，快进时才不会一闪而过。
+	if voyage.story.head != _last_head:
+		_last_head = voyage.story.head
+		if _last_head >= 0:
+			_act_card_timer = _act_card_seconds
 	if _show_panel:
 		_panel.update_from(voyage.ship, voyage.crew, voyage.nav, voyage.orders)
 	if _show_crew_panel:
 		_crew_panel.update_from(voyage.roster)
-	var v := voyage
-	var lines: PackedStringArray = []
-	lines.append("测试海域（%.0f 分钟）%s" % [
-		v.t / 60.0, "　☀ 相机跟着船长" if v.ashore else ""])
-	lines.append("左键 设目标点　X 抛锚　1/2/3 帆档　+/− 人数　L 登陆/返船　. 快进一分钟")
-	lines.append("Tab 帆态面板　C 船员面板　滚轮：整片海 ⇄ 船 ⇄ 船舱（一路滚到底再往下）")
-	if _mode == Mode.LAYER:
-		lines.append("【船舱视图】L%d %s　高程 %+.0f 米　（向上滚回甲板，到最上层回到海面）" % [
-			_layer, _ship_view.layer_name(_layer), _ship_view.layer_elevation(_layer)])
-	lines.append("——")
-	lines.append(v.describe())
-	lines.append("损伤：%s" % v.ship.describe_damage())
-	lines.append("船员：%s" % v.roster.describe())
-	if v.ashore:
-		lines.append("船长在岸上，身边 %d 人。左键点岸边带他们走过去，走回滩头按 L 上船。" % v.party_size())
-	elif v.can_land():
-		lines.append("★ 到了滩头附近：按 L 选人登陆（记得先抛锚）")
-	lines.append("航海日志：%s" % (v.log_lines[-1] if v.log_lines.size() > 0 else "——"))
-	if v.message_timer > 0.0:
-		lines.append("【%s】" % v.last_message)
-	_hud.text = "\n".join(lines)
+	_hud.time_scale = _time_scales[_time_scale_idx]
+	_hud.act_card_timer = _act_card_timer
+	_hud.mode_line = ("船舱 L%d %s　高程 %+.0f 米（向上滚回甲板）" % [
+		_layer, _ship_view.layer_name(_layer), _ship_view.layer_elevation(_layer)]
+		if _mode == Mode.LAYER else "")
+	_hud.queue_redraw()
 
 
 func _pick_font() -> Font:
@@ -446,10 +537,21 @@ func _pick_font() -> Font:
 
 func _run_shot_timeline() -> void:
 	_frame += 1
+	# 截图模式里没有真实时间流逝（一帧就是一步），剧情卡按"一帧 = 0.4 秒"淡出
+	if _act_card_timer > 0.0:
+		_act_card_timer = maxf(0.0, _act_card_timer - 0.4)
+	voyage.tick_ui(0.5)               # 消息条同理：一帧当半秒
 	_update_camera()          # 截图模式下 _process 提前返回了，这里要自己同步相机
 	_update_hud()
 	queue_redraw()
 	match _frame:
+		1:
+			_show_overlay(_title, true)       # 开场：先给陌生人一页交代
+		2:
+			_capture("19_title_card")
+		3:
+			_show_overlay(_title, false)
+			_started = true
 		4:
 			_zoom = 0.35                      # 出海前：整片海一览
 		8:
@@ -458,9 +560,21 @@ func _run_shot_timeline() -> void:
 			_zoom = 1.0
 			voyage.orders.set_target_point(Vector2(3600, 3600))
 			_warp(900.0)
+		14:
+			_capture("20b_act1_card")         # 第一幕落下来的剧情卡
 		16:
 			_capture("21_under_way")
+		17:
+			_show_panel = true                # 教学第 2 步：帆态面板
+			_panel.visible = true
+			voyage.story.note("open_sail_panel")
+		19:
+			# 面板要等 _update_hud 把 ship/crew 灌进去、再等一帧才会画出来
+			# （AGENTS.md 的坑：改完状态隔一帧再截）
+			_capture("21a_sail_panel")
 		20:
+			_show_panel = false
+			_panel.visible = false
 			_warp(500.0)                      # 继续开，瞭望员会报告陆地
 		24:
 			_capture("22_island_sighted")
@@ -549,10 +663,31 @@ func _run_shot_timeline() -> void:
 		90:
 			print("[shot] 报告：%s" % str(voyage.pending_reports))
 			_zoom = 0.35
-			_warp(60.0)
-		94:
+			# 第三幕：起锚、满帆、真的把船开回出发港（不是摆回去）
+			voyage.orders.anchored = false
+			voyage.orders.set_sail_level(ShipOrders.SailLevel.FULL)
+			voyage.orders.set_target_point(Vector2(700, 4000))
+			_warp(900.0)
+		92:
+			_zoom = 0.35
 			_capture("35_homeward")
+		94:
+			_warp(900.0)
+		96:
+			_capture("36_homeward_arrival")
+		98:
+			if not voyage.story.ending_ready:
+				print("[shot] 还没进港（离港 %.0f 米），摆到港外把第三幕走完" % \
+					voyage.ship.position_m().distance_to(Vector2(700, 4000)))
+				voyage.ship.set_pose(Vector2(1150, 4000), 180.0)
+				_warp(60.0)
+			print("[shot] 第三幕 = %s　结算就绪 = %s" % [
+				voyage.story.act_name(), str(voyage.story.ending_ready)])
+			_ending.text = voyage.journal.settlement(voyage, voyage.story)
+			_show_overlay(_ending, true)
 		100:
+			_capture("37_settlement")
+		110:
 			get_tree().quit(0)
 
 
@@ -560,7 +695,7 @@ func _deliver_reports() -> void:
 	if not voyage.ashore:
 		return
 	var msg := voyage.return_to_ship()
-	voyage._say("（船长）" + msg, true)
+	voyage.say("（船长）" + msg, true)
 	_update_hud()
 
 

@@ -28,8 +28,10 @@ var method: Method = Method.HOLD
 var target_heading_deg := 0.0
 var tack_side := 1.0                 # 抢风时受风的一舷：+1 右舷 / −1 左舷
 var bearing_deg := 0.0               # 目标点的方位
-var tack_count := 0                  # 换过几次舷（面板上很好用）
+var tack_count := 0                  # 真的换过几次舷（受风舷翻到另一边）
+var beat_count := 0                  # 抢风走了几段（从别的航法切进抢风算一段）
 var _last_method: Method = Method.HOLD
+var _last_tack_side := 1.0           # 上一轮抢风时受风的那一舷
 
 
 func _init(orders_ref: ShipOrders) -> void:
@@ -96,10 +98,15 @@ func decide(ship: ShipDynamics) -> void:
 
 
 func _remember() -> void:
-	if method != _last_method:
-		if method == Method.BEAT and _last_method == Method.BEAT:
-			tack_count += 1
-		_last_method = method
+	# 换舷 = **一直在抢风**，但受风的那一舷翻到了另一边（船头真的转过来了）。
+	# 这里曾经写成一个永远进不去的分支（外层已经要求 method != _last_method），
+	# 于是 tack_count 永远是 0 —— 帆态面板上的"换舷 N 次"从来没动过。
+	if method == Method.BEAT and _last_method != Method.BEAT:
+		beat_count += 1
+	if method == Method.BEAT and _last_method == Method.BEAT and tack_side != _last_tack_side:
+		tack_count += 1
+	_last_tack_side = tack_side
+	_last_method = method
 
 
 func method_name() -> String:
@@ -114,4 +121,5 @@ func method_name() -> String:
 
 func describe() -> String:
 	var tgt := "%.0f°" % target_heading_deg
-	return "航海官：%s，舵手目标 %s，换舷 %d 次" % [method_name(), tgt, tack_count]
+	return "航海官：%s，舵手目标 %s，抢风 %d 段 / 换舷 %d 次" % [
+		method_name(), tgt, beat_count, tack_count]

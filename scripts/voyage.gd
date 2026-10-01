@@ -19,6 +19,8 @@ var orders: ShipOrders
 var nav: Navigator
 var crew: Crew
 var roster: CrewRoster
+var journal := VoyageJournal.new()   # 文书的航海日志（Day 7）：结算页的唯一数据源
+var story := Story.new()             # 三幕剧情（Day 7）：触发条件 + 文本 + 后果
 
 var t := 0.0
 var log_lines: Array = []          # 航海日志（文书记的）
@@ -39,6 +41,7 @@ var party := LandingParty.new()    # 登陆队：一个一个下船 + 岸上排�
 var last_message := ""             # 最新一条重要消息（HUD 上显示十几秒）
 var message_timer := 0.0
 var _shore_cooldown := 0.0         # 蹭滩提示的冷却
+var _prev_pos := Vector2.ZERO      # 上一帧的船位：只用来算航程
 
 
 func setup() -> void:
@@ -55,6 +58,7 @@ func setup() -> void:
 	roster = CrewRoster.new()
 	roster.setup()
 	crew.roster = roster
+	story.load_data()
 	# 陆地：船开不上干地（沙滩那一圈是浅水，可以靠上去登陆）
 	var isl := sea.island()
 	var c: Array = isl.get("center", [0, 0])
@@ -62,15 +66,17 @@ func setup() -> void:
 	ship.land_radius = float(isl.get("radius_m", 0.0)) - float(isl.get("beach_width_m", 0.0))
 	ship.step(0.0, wind.velocity_world())
 	crew.retrim()
-	log_event(sea.data.get("voyage", {}).get("act1_text", ""))
+	_prev_pos = ship.position_m()
+	journal.record(0.0, "story", "1519 年 9 月 20 日，圣卢卡尔港。五艘船出海，你带的是那艘六十吨的拉丁帆船。")
 	log_event("出发：%s。" % str(p.get("name", "出发港")))
 
 
 func tick(delta: float) -> void:
 	t += delta
-	message_timer = maxf(0.0, message_timer - delta)
 	wind.step(delta)
 	var pos := ship.position_m()
+	journal.advance(_prev_pos, pos)
+	_prev_pos = pos
 	# 洋流与背风区：同一个风，在岛后面就是软的；同一片水，在洋流带上自己会动
 	ship.current_world = sea.current_at(pos)
 	var wind_vec := wind.velocity_world() * sea.lee_factor(pos)
@@ -88,8 +94,13 @@ func tick(delta: float) -> void:
 	if ship.last_blocked and _shore_cooldown <= 0.0:
 		_shore_cooldown = 20.0
 		ship.apply_damage("hull", 0.06)
+		journal.decide("船底蹭上滩头，船体损伤 6% —— 靠得太近了。")
 		_say("船底蹭上滩头，木匠皱着眉头看了一眼。", true)
 	_events(delta)
+	story.tick(self, delta)
+	for msg in story.take_messages():
+		# 演出的弹窗只给玩家看，不进"文书最后写下的一条"（否则第三幕的收尾句会被顶掉）
+		_say(str(msg), true, false)
 	if ashore:
 		party.tick(delta)
 		captain_pos = party.captain
@@ -107,11 +118,11 @@ func _events(_delta: float) -> void:
 		fired["lookout"] = true
 		island_known = true
 		_say("瞭望员 佩德罗·卡斯科：右前方有陆地！", true)
-		log_event(sea.data.get("voyage", {}).get("act2_text", ""))
 	# ② 风向突变（Day 3 的风场只会缓变，这里是"意外"）
 	if not fired.has("wind_shift") and t > 300.0:
 		fired["wind_shift"] = true
 		wind.base_from_dir += 55.0
+		journal.decide("风向从东北转成东南，船头被压向下风。")
 		_say("风向变了：从东北转成东南，船头被压向下风。", true)
 	# ③ 触礁：这是那条**可见的因果链**的中间一环 ——
 	#    风转了 → 船被压向暗礁 → 撞上 → 船体受损 → 木匠去修
@@ -119,6 +130,7 @@ func _events(_delta: float) -> void:
 		reef_hit = true
 		ship.apply_damage("hull", 0.28)
 		ship.apply_damage("rudder", 0.10)
+		journal.decide("没有绕过暗礁：船体损伤 28%、舵 10%。")
 		_say("船底刮上礁石。木匠喊着要人下去看船缝。", true)
 		report("触礁：船体损伤约三成，舵也蹭到了一点。")
 		fired["reef_hit"] = true
@@ -128,8 +140,17 @@ func _events(_delta: float) -> void:
 		var hurt := _jury_target()
 		if hurt != null:
 			hurt.health = clampf(hurt.health - 0.35, 0.05, 1.0)
+			journal.decide("%s 在摇晃的甲板上摔断了肩膀。" % hurt.label())
 			_say("%s 在摇晃的甲板上滑倒，肩膀脱臼。外科医生把他扶了下去。" % hurt.label(), true)
 			report("%s 受了伤，已经交给外科医生。" % hurt.label())
+	# ⑤ 抉择的另一半：见过岛、又把它甩在船尾 —— 那就是决定不上岸
+	#    第二幕问的是"要不要登陆"，玩家可以回答"不"。这个"不"也必须被记下来，
+	#    否则结算页只会写"你什么也没干"。
+	if island_known and not fired.has("passed_by") and not ashore \
+			and not fired.has("landed") and pos.distance_to(_island_center()) > 3200.0:
+		fired["passed_by"] = true
+		journal.decide("绕过了绿岬岛，没有上岸。")
+		_say("绿岬岛被甩在船尾：你决定不在那儿停靠。", true)
 
 
 func _jury_target() -> CrewMember:
@@ -157,14 +178,18 @@ func _walk_ashore(delta: float) -> void:
 	if visited.has(id):
 		return
 	visited[id] = true
+	journal.landfall(str(poi["name"]), str(poi.get("text", "")), t)
 	_say("【%s】%s" % [str(poi["name"]), str(poi.get("text", ""))], true)
 	if id == "ruins" and not fired.has("ruins"):
 		fired["ruins"] = true
+		journal.decide("把遗迹墙上看不懂的字抄了下来 —— 和《圣经》的字母不一样。")
 		report("文书把遗迹墙上的字抄了下来 —— 和《圣经》的字母不一样。")
 	if id == "village" and not fired.has("village"):
 		fired["village"] = true
+		journal.decide("和部落接触：他们没有动手，你们也没有。")
 		report("和部落接触了：他们用手势比划着要交换，没有动手。")
 	if id == "stream":
+		journal.decide("在岛上的淡水溪流补了水：够装二十桶。")
 		report("找到淡水溪流，桶匠说够装二十桶。")
 
 
@@ -235,6 +260,7 @@ func land(ids: Array, hands := 6) -> String:
 		taken += 1
 	ashore_count = taken
 	ashore = true
+	fired["landed"] = true
 	landing_point = _shore_near(ship.position_m())
 	captain_pos = landing_point
 	captain_target = captain_pos
@@ -246,6 +272,8 @@ func land(ids: Array, hands := 6) -> String:
 	party.start(party_crew, landing_point, ship.position_m(), taken)
 	var msg := "带 %s 和 %d 名水手上岸。" % [
 		"、".join(names) if names.size() > 0 else "（不带关键船员）", ashore_count]
+	journal.decide(msg)
+	journal.record(t, "decision", msg)
 	_say(msg, true)
 	return msg
 
@@ -262,10 +290,16 @@ func return_to_ship() -> String:
 
 
 func _finish_boarding() -> void:
-	"""所有人都回到船上：清掉上岸标记，把攒下的报告一次性交给船长。"""
+	"""所有人都回到船上：清掉上岸标记，把攒下的报告一次性交给船长。
+
+	⚠️ 必须清**所有人**，不是只清 12 名关键船员 —— 第一版只清了关键船员，
+	6 名普通水手就一直挂着"上岸"，船从此永远少 6 双手（结算页上还会写
+	"岸上还有 6 人"）。Day 6 的测试只查了关键船员，所以一直没暴露。
+	"""
 	ashore = false
-	for m in roster.key_crew():
+	for m in roster.members:
 		m.ashore = false
+	journal.decide("从滩头起锚，带着全队返航。")
 	var msg := "回到船上。"
 	if pending_reports.size() > 0:
 		msg += "你不在的时候，船上发生了：\n" + "\n".join(pending_reports)
@@ -290,19 +324,35 @@ func party_size() -> int:
 
 # ------------------------------------------------------------ 日志与报告
 
-func log_event(text: String) -> void:
+func log_event(text: String, tracks_last_line := true) -> void:
 	if text.strip_edges() == "":
 		return
 	log_lines.append(text)
 	if log_lines.size() > 40:
 		log_lines.pop_front()
+	journal.record(t, "log", text, tracks_last_line)
 
 
-func _say(text: String, important := false) -> void:
-	log_event(text)
+func _say(text: String, important := false, tracks_last_line := true) -> void:
+	log_event(text, tracks_last_line)
 	if important:
 		last_message = text
 		message_timer = 12.0
+
+
+func say(text: String, important := false, tracks_last_line := true) -> void:
+	"""给界面用的公开入口（跨类调用私有方法不好，Day 6 已经栽过一次）。"""
+	_say(text, important, tracks_last_line)
+
+
+func tick_ui(real_delta: float) -> void:
+	"""界面自己的计时（消息条多久收回去）。
+
+	必须用**真实**时间。第一版把消息计时放在了 tick() 里，于是 ×12 快进时
+	"这条 12 秒的消息"实际只亮 1 秒 —— 玩家正看得见风景，字已经没了。
+	模拟时间和界面时间是两回事。
+	"""
+	message_timer = maxf(0.0, message_timer - real_delta)
 
 
 func report(text: String) -> void:

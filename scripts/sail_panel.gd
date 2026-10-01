@@ -189,7 +189,8 @@ func _draw_numbers(box: Rect2) -> void:
 		(crew.skill * 100.0) if crew else 0.0,
 		(crew.fatigue * 100.0) if crew else 0.0])
 	lines.append("── 航海官 ──")
-	lines.append(nav.method_name() if nav else "-")
+	lines.append("%s　抢风 %d 段 / 换舷 %d 次" % [
+		nav.method_name(), nav.beat_count, nav.tack_count] if nav else "-")
 	lines.append(orders.describe() if orders else "-")
 
 	var y := box.position.y + 6.0
