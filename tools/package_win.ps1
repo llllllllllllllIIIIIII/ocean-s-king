@@ -104,10 +104,31 @@ if ($LASTEXITCODE -ne 0) {
     exit 3
 }
 
+# --- 3.5 the note that ships WITH the game -----------------------------------
+# A friend who only gets the zip has no repository to read, so the zip carries its
+# own instructions. The text lives in release/player_readme.txt (UTF-8, Chinese) --
+# this script stays pure ASCII on purpose (see the header).
+$readmeSrc = Join-Path $root 'release\player_readme.txt'
+if (Test-Path -LiteralPath $readmeSrc) {
+    # Write it as UTF-8 WITH BOM: the file is Chinese, and an old Notepad reads a
+    # BOM-less UTF-8 file as ANSI (mojibake). The BOM costs 3 bytes and fixes that.
+    $readmeDst = Join-Path $appDir 'PLAY_ME_FIRST.txt'
+    $text = [System.IO.File]::ReadAllText($readmeSrc, [System.Text.UTF8Encoding]::new($false))
+    [System.IO.File]::WriteAllText($readmeDst, $text, [System.Text.UTF8Encoding]::new($true))
+    Write-Output 'added PLAY_ME_FIRST.txt'
+} else {
+    Write-Output "WARNING: $readmeSrc not found -- the zip will ship without instructions"
+}
+
 # --- 4. zip -----------------------------------------------------------------
 $zip = Join-Path $target 'ocean-s-king-v0.5-win64.zip'
 if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
-Compress-Archive -Path (Join-Path $appDir '*') -DestinationPath $zip
+# Name the payload instead of globbing the folder: a stray file in export/ (a debug
+# screenshot run drops .shots/ there) must never end up in what players download.
+$payload = @(Join-Path $appDir 'ocean-s-king.exe')
+$readmeDst = Join-Path $appDir 'PLAY_ME_FIRST.txt'
+if (Test-Path -LiteralPath $readmeDst) { $payload += $readmeDst }
+Compress-Archive -Path $payload -DestinationPath $zip
 $mb = [math]::Round((Get-Item -LiteralPath $zip).Length / 1MB, 2)
 Write-Output "OK: $zip ($mb MB)"
 Write-Output 'Next: upload it to a GitHub Release (docs/13 M8 card).'
