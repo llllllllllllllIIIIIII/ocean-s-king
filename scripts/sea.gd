@@ -59,6 +59,12 @@ func is_beach(pos: Vector2) -> bool:
 	return is_land(pos) and dist_to_island_center(pos) >= r - float(island().get("beach_width_m", 0.0))
 
 
+func is_dry_land(pos: Vector2) -> bool:
+	"""船开不上去的干地：岛的沙滩环以内。沙滩那一圈是浅水，船可以靠。"""
+	var r := float(island().get("radius_m", 0.0)) - float(island().get("beach_width_m", 0.0))
+	return dist_to_island_center(pos) <= r
+
+
 func is_reef(pos: Vector2) -> bool:
 	var reef: Dictionary = data.get("reef", {})
 	if reef.is_empty():

@@ -20,6 +20,7 @@ func _initialize() -> void:
 	print("=== test_world ===")
 	_test_sea_data()
 	_test_wind_and_current()
+	_test_land_collision()
 	_test_damage()
 	_test_voyage_flow()
 	_test_landing_chain()
@@ -92,6 +93,26 @@ func _test_wind_and_current() -> void:
 
 
 # ---------------------------------------------------------------- 3 损伤
+
+func _test_land_collision() -> void:
+	"""船不能再开到陆地上（现场反馈：船能碾上岛）。"""
+	var v := _voyage()
+	var dry: float = float(v.sea.island().get("radius_m", 0.0)) \
+		- float(v.sea.island().get("beach_width_m", 0.0))
+	var c := Vector2(5600, 3600)
+	# 从正西边直冲岛心，满帆
+	v.ship.set_pose(c + Vector2(-1500, 0), 0.0)
+	v.orders.set_sail_level(ShipOrders.SailLevel.FULL)
+	v.orders.set_target_point(c)
+	var deepest := 1e12
+	for _i in int(900.0 / DT):
+		v.tick(DT)
+		deepest = minf(deepest, v.ship.position_m().distance_to(c))
+	_check(deepest >= dry - 1.0,
+		"船进不了干地（最近到过离岛心 %.0f 米，干地边界 %.0f 米）" % [deepest, dry])
+	_check(v.ship.last_blocked or v.ship.speed_kn() < 1.0,
+		"冲到岸边会顶住或贴着岸滑（末速 %.1f 节）" % v.ship.speed_kn())
+
 
 func _test_damage() -> void:
 	var v := _voyage()

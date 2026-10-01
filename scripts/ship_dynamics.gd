@@ -35,6 +35,11 @@ var _sail_jib_deg := -90.0
 var _sail_area_scale := 1.0         # 帆档：全帆 1.0 / 缩帆 0.55 / 收帆 0
 var _anchored := false
 var current_world := Vector2.ZERO   # 洋流（世界系 m/s），由海图每帧灌进来
+# 陆地（圆形）：海图灌进来之后，船撞上就停下并沿着岸滑，不会开到岸上。
+# 用圆心+半径而不是回调：回调会捕获外部对象，形成引用环、退出时泄漏一堆对象。
+var land_center := Vector2.ZERO
+var land_radius := -1.0             # <= 0 表示这片海里没有陆地
+var last_blocked := false           # 这一帧是不是撞上了（给上层做损伤提示）
 # 损伤（docs/01：只做三处，每一处都要能在气动上看见效果）
 var damage := { "hull": 0.0, "mast": 0.0, "rudder": 0.0 }
 var _wind_world := Vector2.ZERO
@@ -311,8 +316,27 @@ func step(delta: float, wind_world: Vector2) -> void:
 	_heading_deg = fposmod(_heading_deg + _yaw_rate_dps * delta, 360.0)
 
 	# 位置：世界速度 = R(heading) · (u, w)
-	_pos_m += Vector2(_u * cs - _w * sn, _u * sn + _w * cs) * delta
+	var step_vec := Vector2(_u * cs - _w * sn, _u * sn + _w * cs) * delta
+	last_blocked = false
+	if land_radius > 0.0:
+		var target := _pos_m + step_vec
+		if _blocked_at(target):
+			last_blocked = true
+			# 沿一个轴滑：撞上陆地时船应该贴着岸滑开，而不是插进去或立刻停死
+			if not _blocked_at(Vector2(target.x, _pos_m.y)):
+				step_vec = Vector2(target.x - _pos_m.x, 0.0)
+			elif not _blocked_at(Vector2(_pos_m.x, target.y)):
+				step_vec = Vector2(0.0, target.y - _pos_m.y)
+			else:
+				step_vec = Vector2.ZERO
+				_u *= 0.3
+				_w *= 0.3
+	_pos_m += step_vec
 	_t += delta
+
+
+func _blocked_at(p: Vector2) -> bool:
+	return land_radius > 0.0 and p.distance_to(land_center) < land_radius
 
 
 func _to_ship(v: Vector2) -> Vector2:

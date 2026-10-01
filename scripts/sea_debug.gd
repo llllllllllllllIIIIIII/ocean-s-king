@@ -12,22 +12,21 @@
 
 extends Node2D
 
-const PPM := 0.25                 # 每米多少像素（zoom=1 时整片海 2000px 宽）
+const PPM := 0.5                  # 每米多少像素（zoom=0.25 时整片海 2000px 宽）
 const SIM_DT := 0.05
 
 var voyage: Voyage
 var _hud: Label
 var _font: Font
 var _cam: Camera2D
-var _zoom := 0.9
+var _zoom := 1.0
 var _fast_forward := 0.0
-var _picking_party := false
-var _party_index := 0
-var _party_pick := {}
+var _picker: LandingPicker
 var _shot_mode := false
 var _frame := 0
 var _shot_dir := "res://.shots"
 var _wind_gizmo: WindGizmo
+var _ship_view: ShipRenderer       # 海图上用**真正的 SVG 船**，不是占位三角块
 var _panel: SailPanel
 var _show_panel := false
 var _crew_panel: CrewPanel
@@ -37,6 +36,13 @@ var _show_crew_panel := false
 func _ready() -> void:
 	voyage = Voyage.new()
 	voyage.setup()
+	_ship_view = ShipRenderer.new()
+	_ship_view.px_per_m = PPM
+	_ship_view.draw_sea = false        # 海面由这个场景自己画
+	_ship_view.show_ghost = false
+	add_child(_ship_view)
+	_ship_view.setup()
+	_ship_view.apply_pose(voyage.ship.position_m(), voyage.ship.heading_deg())
 	_cam = Camera2D.new()
 	add_child(_cam)
 	_font = _pick_font()
@@ -72,6 +78,18 @@ func _update_camera() -> void:
 	else:
 		_cam.position = voyage.ship.position_m() * PPM
 		_cam.zoom = Vector2(_zoom, _zoom)
+
+
+func _sync_ship_view() -> void:
+	"""把船的状态交给真正的渲染器（和船内视图是同一个 ShipRenderer）。"""
+	var snap := voyage.ship.snapshot()
+	_ship_view.apply_pose(voyage.ship.position_m(), voyage.ship.heading_deg())
+	_ship_view.sail_main_rad = deg_to_rad(180.0 - float(snap["sail_main_deg"]))
+	_ship_view.sail_jib_rad = deg_to_rad(180.0 - float(snap["sail_jib_deg"]))
+	_ship_view.sail_state = int(voyage.orders.sail_level)
+	_ship_view.anchored = voyage.ship.is_anchored()
+	_ship_view.zoom = 1.0
+	_ship_view.queue_redraw()
 
 
 # ------------------------------------------------------------------ 绘制
@@ -126,32 +144,21 @@ func _draw() -> void:
 		draw_circle(v, 5.0, col)
 		draw_arc(v, float(poi.get("radius_m", 0.0)) * PPM, 0, TAU, 24, Color(col, 0.45), 1.5)
 		_label(v, str(poi["name"]), col)
-	# 船 / 船长
+	# 船：交给真正的 ShipRenderer 画（海图和船内视图是同一个渲染器）
+	_sync_ship_view()
+	# 拉远到看不清船的时候，给一个明显的光点，免得找不到自己的船
+	if _zoom < 0.7:
+		var sp := voyage.ship.position_m() * PPM
+		draw_circle(sp, 10.0, Color(1.0, 0.92, 0.55, 0.20))
+		draw_arc(sp, 10.0, 0.0, TAU, 20, Color(1.0, 0.95, 0.7, 0.85), 2.0)
 	if voyage.ashore:
 		var c := voyage.captain_pos * PPM
 		draw_circle(c, 7.0, Color(1.0, 0.85, 0.35))
 		draw_arc(c, 11.0, 0, TAU, 20, Color(1.0, 0.9, 0.5, 0.6), 2.0)
-		_draw_ship_marker(voyage.ship.position_m() * PPM, voyage.ship.heading_deg(), 0.8)
-	else:
-		_draw_ship_marker(voyage.ship.position_m() * PPM, voyage.ship.heading_deg(), 1.0)
 	# 航线：从船到目标点
 	if voyage.orders.has_target_point:
 		draw_dashed_line(voyage.ship.position_m() * PPM, voyage.orders.target_point * PPM,
 			Color(0.5, 1.0, 0.7, 0.4), 2.0, 10.0)
-	if _picking_party:
-		_draw_party_picker()
-
-
-func _draw_ship_marker(at: Vector2, heading_deg: float, alpha: float) -> void:
-	var h := deg_to_rad(heading_deg)
-	var fwd := Vector2(cos(h), sin(h))
-	var side := Vector2(-sin(h), cos(h))
-	var bow := at + fwd * 9.0
-	var st := at - fwd * 7.0 + side * 5.0
-	var pt := at - fwd * 7.0 - side * 5.0
-	draw_colored_polygon(PackedVector2Array([bow, st, pt]),
-		Color(0.95, 0.85, 0.55, alpha))
-	draw_line(at, at + fwd * 12.0, Color(0.6, 0.5, 0.3, alpha), 2.0)
 
 
 func _arrow(a: Vector2, b: Vector2, col: Color, width: float) -> void:
@@ -175,9 +182,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_zoom = clampf(_zoom * 1.2, 0.15, 4.0)
+			_zoom = clampf(_zoom * 1.2, 0.15, 8.0)
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_zoom = clampf(_zoom / 1.2, 0.15, 4.0)
+			_zoom = clampf(_zoom / 1.2, 0.15, 8.0)
 		elif mb.button_index == MOUSE_BUTTON_LEFT:
 			var world := get_viewport().get_canvas_transform().affine_inverse() * mb.position
 			var target := world / PPM
@@ -217,32 +224,25 @@ func _key(k: InputEventKey) -> void:
 				var msg := voyage.return_to_ship()
 				voyage._say("（船长）" + msg, true)
 			elif voyage.can_land():
-				_picking_party = true
-				_party_index = 0
-				_party_pick.clear()
+				_picker.open(voyage.roster)
+				_picker.visible = true
 			else:
 				voyage._say("还没到滩头：先把船开过去，抛锚（X），再按 L。", true)
 		KEY_SPACE:
-			if _picking_party:
-				var crew := voyage.roster.key_crew()
-				var m: CrewMember = crew[_party_index]
-				if _party_pick.has(m.id):
-					_party_pick.erase(m.id)
-				else:
-					_party_pick[m.id] = true
+			if _picker.visible:
+				_picker.toggle_current()
 			else:
 				voyage.orders.clear_target_point()
 		KEY_UP, KEY_W:
-			if _picking_party:
-				_party_index = clampi(_party_index - 1, 0, voyage.roster.key_crew().size() - 1)
+			if _picker.visible:
+				_picker.move(-1)
 		KEY_DOWN, KEY_S:
-			if _picking_party:
-				_party_index = clampi(_party_index + 1, 0, voyage.roster.key_crew().size() - 1)
+			if _picker.visible:
+				_picker.move(1)
 		KEY_ENTER, KEY_KP_ENTER:
-			if _picking_party:
-				var ids := _party_pick.keys()
-				_picking_party = false
-				voyage.land(ids, 6)
+			if _picker.visible:
+				_picker.visible = false
+				voyage.land(_picker.selected_ids(), _picker.hands)
 		KEY_TAB:
 			_show_panel = not _show_panel
 			_panel.visible = _show_panel
@@ -250,7 +250,7 @@ func _key(k: InputEventKey) -> void:
 			_show_crew_panel = not _show_crew_panel
 			_crew_panel.visible = _show_crew_panel
 		KEY_ESCAPE:
-			_picking_party = false
+			_picker.visible = false
 
 
 # ------------------------------------------------------------------ HUD 与面板
@@ -283,6 +283,12 @@ func _build_hud() -> void:
 	_panel.position = (get_viewport_rect().size - SailPanel.PANEL) * 0.5
 	_panel.visible = false
 	cl2.add_child(_panel)
+	_picker = LandingPicker.new()
+	_picker.font = _font
+	_picker.size = LandingPicker.PANEL
+	_picker.position = (get_viewport_rect().size - LandingPicker.PANEL) * 0.5
+	_picker.visible = false
+	cl2.add_child(_picker)
 	_crew_panel = CrewPanel.new()
 	_crew_panel.font = _font
 	_crew_panel.size = CrewPanel.PANEL
@@ -343,7 +349,7 @@ func _run_shot_timeline() -> void:
 		8:
 			_capture("20_sea_overview")
 		12:
-			_zoom = 0.9
+			_zoom = 1.0
 			voyage.orders.set_target_point(Vector2(3600, 3600))
 			_warp(900.0)
 		16:
@@ -352,48 +358,65 @@ func _run_shot_timeline() -> void:
 			_warp(500.0)                      # 继续开，瞭望员会报告陆地
 		24:
 			_capture("22_island_sighted")
+		25:
+			_zoom = 4.0                       # 拉近看船：这里画的是真正的 SVG 船
+			_warp(5.0)
 		26:
+			_capture("23_ship_close_up")
+		27:
+			_zoom = 1.0
+		30:
 			# 这条航线正好穿过暗礁 —— 风向突变之后船被压过去，触礁（因果链的中间一环）
 			voyage.orders.set_target_point(Vector2(2800, 1200))
 			_warp(1300.0)
-		32:
-			_capture("23_reef_hit")
 		36:
+			_capture("24_reef_hit")
+		40:
 			voyage.orders.set_target_point(Vector2(4520, 3600))
 			_warp(1700.0)
-		40:
+		44:
 			# 截图脚本：把船直接摆到滩头外（航行过程已经在前两格演示过了）
 			voyage.ship.set_pose(Vector2(4520, 3600), 0.0)
 			voyage.orders.anchored = true
 			voyage.orders.set_sail_level(ShipOrders.SailLevel.FURLED)
 			_warp(120.0)
-		44:
-			_capture("24_anchored_off_beach")
 		48:
+			_capture("25_anchored_off_beach")
+		50:
+			# 登陆名单：这一版挂在 CanvasLayer 上（屏幕坐标），不再跟着相机跑
+			_picker.open(voyage.roster)
+			_picker.visible = true
+			_picker.toggle_current()
+			_picker.move(3)
+			_picker.toggle_current()
+		52:
+			_capture("26_landing_picker")
+		54:
+			_picker.visible = false
 			var ids := ["piloto", "carpintero", "cirujano", "escribano"]
 			print("[shot] 登陆：%s" % voyage.land(ids, 6))
 			voyage.move_party_to(Vector2(5620, 3320))
 			_warp(240.0)
-		52:
-			_capture("25_ruins")
-		56:
+		58:
+			_capture("27_ruins")
+		62:
 			voyage.move_party_to(Vector2(6080, 3820))
 			_warp(200.0)
-		60:
-			_capture("26_stream")
-		64:
+		66:
+			_capture("28_stream")
+		70:
 			voyage.move_party_to(Vector2(4790, 3600))
 			_warp(260.0)
 			_deliver_reports()
-		68:
-			_capture("27_back_with_reports")
-		70:
+		74:
+			_capture("29_back_with_reports")
+		76:
 			print("[shot] 报告：%s" % str(voyage.pending_reports))
 			_zoom = 0.35
 			_warp(60.0)
-		74:
-			_capture("28_homeward")
 		80:
+			_capture("30_homeward")
+		86:
 			get_tree().quit(0)
 
 
@@ -423,26 +446,3 @@ func _capture(name: String) -> void:
 	var err := img.save_png("%s/%s.png" % [_shot_dir, name])
 	print("[shot] %-24s err=%d  第 %.0f 分钟  %s" % [
 		name, err, voyage.t / 60.0, voyage.describe()])
-
-
-func _draw_party_picker() -> void:
-	"""登陆名单：↑↓ 选人，空格勾选，回车确认。"""
-	var crew := voyage.roster.key_crew()
-	var w := 420.0
-	var h := 60.0 + float(crew.size()) * 24.0
-	var origin := (get_viewport_rect().size - Vector2(w, h)) * 0.5
-	draw_rect(Rect2(origin, Vector2(w, h)), Color(0.03, 0.06, 0.09, 0.95), true)
-	draw_rect(Rect2(origin, Vector2(w, h)), Color(0.95, 0.8, 0.35, 0.8), false, 2.0)
-	draw_string(_font, origin + Vector2(14, 26), "带谁上岸？（↑↓ 选人，空格勾选，回车确认）",
-		HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1.0, 0.95, 0.8))
-	for i in crew.size():
-		var m: CrewMember = crew[i]
-		var y := origin.y + 50.0 + float(i) * 24.0
-		var sel := i == _party_index
-		if sel:
-			draw_rect(Rect2(origin.x + 8.0, y - 16.0, w - 16.0, 23.0),
-				Color(0.85, 0.7, 0.3, 0.30), true)
-		var mark := "[×]" if _party_pick.has(m.id) else "[　]"
-		draw_string(_font, Vector2(origin.x + 16.0, y), "%s %s" % [mark, m.label()],
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 14,
-			Color(1.0, 0.98, 0.85) if sel else Color(0.85, 0.9, 0.95))

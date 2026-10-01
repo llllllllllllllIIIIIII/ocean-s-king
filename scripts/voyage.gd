@@ -36,6 +36,7 @@ var party_speed := 14.0            # 岸上走路（米/秒）：别让玩家在
 var ashore_count := 0              # 跟船长一起上岸的水手数（关键船员另算）
 var last_message := ""             # 最新一条重要消息（HUD 上显示十几秒）
 var message_timer := 0.0
+var _shore_cooldown := 0.0         # 蹭滩提示的冷却
 
 
 func setup() -> void:
@@ -52,6 +53,11 @@ func setup() -> void:
 	roster = CrewRoster.new()
 	roster.setup()
 	crew.roster = roster
+	# 陆地：船开不上干地（沙滩那一圈是浅水，可以靠上去登陆）
+	var isl := sea.island()
+	var c: Array = isl.get("center", [0, 0])
+	ship.land_center = Vector2(float(c[0]), float(c[1]))
+	ship.land_radius = float(isl.get("radius_m", 0.0)) - float(isl.get("beach_width_m", 0.0))
 	ship.step(0.0, wind.velocity_world())
 	crew.retrim()
 	log_event(sea.data.get("voyage", {}).get("act1_text", ""))
@@ -75,6 +81,12 @@ func tick(delta: float) -> void:
 	roster.tick(delta, orders.hands_on_sails)
 	crew.step(delta)
 	ship.step(delta, wind_vec)
+	# 蹭上滩头：给一点损伤与提示（不该天天撞，所以有冷却）
+	_shore_cooldown = maxf(0.0, _shore_cooldown - delta)
+	if ship.last_blocked and _shore_cooldown <= 0.0:
+		_shore_cooldown = 20.0
+		ship.apply_damage("hull", 0.06)
+		_say("船底蹭上滩头，木匠皱着眉头看了一眼。", true)
 	_events(delta)
 	if ashore:
 		_walk_ashore(delta)
@@ -228,6 +240,12 @@ func return_to_ship() -> String:
 
 
 func move_party_to(pos: Vector2) -> void:
+	# 队伍只能在岛上走：点远了就收到岛边
+	var c := _island_center()
+	var r := float(sea.island().get("radius_m", 0.0)) - 40.0
+	var d := pos - c
+	if d.length() > r:
+		pos = c + d.normalized() * r
 	captain_target = pos
 
 

@@ -30,10 +30,14 @@ var anchored := false              # 抛锚中：船首前面会画锚链与锚
 var crew_dots: Array = []          # 当前层的船员 [{x, y, color, key}]
 var show_grid := false
 var show_ghost := true
+var draw_sea := true               # 海图场景自己画海，就把这个关掉
 
 # 姿态：船在世界里的位置（米）与航向（度）。由 ShipDynamics 的快照驱动。
 var pose_pos_m := Vector2.ZERO
 var pose_heading_deg := 180.0
+# 世界像素/米。船内视图用 CELL（1 格 = 1 米 = 40 像素）；
+# 海图上整片海 8km，要用 0.25 这种小得多的值 —— 同一个渲染器，只是换把尺子。
+var px_per_m := CELL
 
 
 func setup(ship_path := "res://data/ships/caravel_60.json") -> void:
@@ -55,7 +59,12 @@ func world_ppu() -> float:
 
 func raster_ppu() -> float:
 	"""每个 SVG 单位在屏幕上占多少像素。只用来挑栅格化倍率。"""
-	return CELL * zoom / SVG_PER_CELL
+	return px_per_m * zoom / SVG_PER_CELL
+
+
+func _unit_scale() -> float:
+	"""把"船内视图的像素"换成"当前视图的像素"的比例。"""
+	return px_per_m / CELL
 
 
 func layer_name(lid: int) -> String:
@@ -80,10 +89,11 @@ func apply_pose(pos_m: Vector2, heading_deg: float) -> void:
 	var h := deg_to_rad(heading_deg)
 	var c := cos(h)
 	var s := sin(h)
-	var x_axis := Vector2(-c, -s)          # 画布 +x（船尾方向）在世界里的指向
-	var y_axis := Vector2(-s, c)           # 画布 +y（右舷方向）在世界里的指向
+	var k := _unit_scale()
+	var x_axis := Vector2(-c, -s) * k      # 画布 +x（船尾方向）在世界里的指向
+	var y_axis := Vector2(-s, c) * k       # 画布 +y（右舷方向）在世界里的指向
 	var local_origin := _cell_center(_mast_cell())
-	var origin := pos_m * CELL - (x_axis * local_origin.x + y_axis * local_origin.y)
+	var origin := pos_m * px_per_m - (x_axis * local_origin.x + y_axis * local_origin.y)
 	transform = Transform2D(x_axis, y_axis, origin)
 
 
@@ -106,7 +116,8 @@ func _mast_cell() -> Vector2i:
 # ------------------------------------------------------------------ 绘制
 
 func _draw() -> void:
-	_draw_sea()
+	if draw_sea:
+		_draw_sea()
 	_draw_layer(layer, 1.0, Vector2.ZERO, false)
 	if show_ghost:
 		var above := _layer_above(layer)
