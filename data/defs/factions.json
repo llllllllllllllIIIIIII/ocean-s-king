@@ -83,6 +83,15 @@
     }
   ],
   "_pursuit": "葡萄牙追捕（docs/22 第 9 章）：六环比六张卡更难写的是**进出条件**。这里的数决定「在势力水域里待多久进下一环」与「离开多久算甩掉」。玩家手段：改线 / 伪装 / 谈判 / 战斗。",
+  "_outposts": "葡萄牙在东方的**据点**（M14）：追捕线在这里同样成立，而且据点外围有**巡弋的船** —— 巡逻的发现距离比据点水域还远 `patrol_gap_m`。在据点可以买**通行许可**：`permit_days` 天之内巡逻不拦你、追捕线也不往前推。",
+  "outposts": [
+    { "port": "mozambique", "name": "莫桑比克据点", "permit_ducats": 240, "patrol_gap_m": 4000,
+      "text": "东非海岸上的补给站：淡水、木料，还有葡萄牙人的旗。往东去的船都得在这里露一次面。" },
+    { "port": "malacca", "name": "马六甲据点", "permit_ducats": 320, "patrol_gap_m": 3500,
+      "text": "海峡最窄处的一座石堡。过路的船要么交钱，要么绕远路。" },
+    { "port": "tidore", "name": "德那第据点", "permit_ducats": 300, "patrol_gap_m": 3500,
+      "text": "香料群岛里的一座木堡。他们知道这几座岛值多少钱，所以看得很紧。" }
+  ],
   "pursuit": {
     "_after_days": "after_days = **在这一环里待够这么多天**（都指在葡萄牙水域里）就进下一环。所以玩家有一到两天的时间去做点什么 —— 追捕不是一到就开打。",
     "rings": [
@@ -97,6 +106,7 @@
     "water_radius_m": 14000.0,
     "sight_range_m": 6000.0,
     "escape_days": 3.0,
+    "permit_days": 30.0,
     "actions": {
       "dodge": { "days": 1.0, "ring_delta": -1, "cost": {}, "text": "改线：绕开他们常走的那条路。" },
       "disguise": { "days": 2.0, "ring_delta": -2, "cost": { "canvas": 1 }, "text": "换旗、改舷号、把船尾的字刮掉。" },

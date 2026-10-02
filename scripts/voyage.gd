@@ -315,8 +315,10 @@ func _check_fleet_arrival() -> void:
 		return
 	reached_destination = true
 	story.ending_ready = true
-	_say("【船队】四条船都到了圣阿莱克索。文书把这一路的账摊在桌上。", true)
-	journal.decide("船队抵达圣阿莱克索，远征走完。")
+	var home := goal_port_name()
+	_say("【船队】%d 条船都回到了%s。文书把这一路的账摊在桌上。"
+		% [fleet.count(), home], true)
+	journal.decide("船队抵达%s，远征走完。" % home)
 	settle_royal_orders()
 
 
@@ -389,15 +391,90 @@ func _climate_wind_tick() -> void:
 
 
 func in_portuguese_waters() -> bool:
-	"""船在不在葡萄牙的水域里：离他们那四个据点任一个够近就算。"""
+	"""船在不在葡萄牙的水域里：离他们那几个据点任一个够近就算。
+
+	M14：**据点外还有巡弋的船** —— 巡逻的发现距离比据点水域再远 `patrol_gap_m`。
+	手里有**通行许可**的时候，巡逻当没看见你（只算据点自己的水域）。
+	"""
+	return bool(_portuguese_watch()["spotted"])
+
+
+func _portuguese_watch() -> Dictionary:
+	"""葡萄牙的眼睛（M14）：据点水域 + 据点外的巡逻船。返回"被看见了没有"。
+
+	它把 M11 的追捕线**接到东方**：莫桑比克 / 马六甲 / 德那第三处据点的旗与巡逻，
+	和里斯本那边的追捕是同一条状态机（`Pursuit`）。
+	"""
 	var here := ship.position_m()
+	var out := {"spotted": false, "in_waters": false, "by_patrol": false,
+		"outpost": "", "distance_m": INF}
+	var permit := pursuit.has_permit()
+	# 1) 据点自己的水域（M11 那四个：圣地亚哥 + 东方三个）—— 这一步一条都不许少，
+	#    少了它，M11 在佛得角外面的追捕线就断了。
 	for pid in Pursuit.waters():
 		for p in sea.ports():
 			if str(p.get("id", "")) != str(pid):
 				continue
-			if sea.dist(here, Geom2D.centroid(p["shape"])) <= Pursuit.water_radius_m():
-				return true
-	return false
+			var d := sea.dist(here, Geom2D.centroid(p["shape"]))
+			if d < float(out["distance_m"]):
+				out["distance_m"] = d
+				out["outpost"] = str(p.get("name", pid))
+			if d <= Pursuit.water_radius_m():
+				out["in_waters"] = true
+	# 2) 东方据点外还**巡弋着船**（M14）：发现距离再远 `patrol_gap_m`；有许可就不拦你
+	if not permit:
+		for o in Pursuit.outposts():
+			for p in sea.ports():
+				if str(p.get("id", "")) != str((o as Dictionary).get("port", "")):
+					continue
+				var d2 := sea.dist(here, Geom2D.centroid(p["shape"]))
+				if d2 > Pursuit.water_radius_m() \
+						and d2 <= Pursuit.water_radius_m() \
+							+ float((o as Dictionary).get("patrol_gap_m", 4000.0)):
+					out["by_patrol"] = true
+					if float(out["distance_m"]) > d2:
+						out["distance_m"] = d2
+						out["outpost"] = str((o as Dictionary).get("name", ""))
+	out["spotted"] = bool(out["in_waters"]) or bool(out["by_patrol"])
+	return out
+
+
+func buy_permit() -> Dictionary:
+	"""在葡萄牙**据点**买通行许可（M14）：花钱，之后 `permit_days` 天里巡逻不拦你、
+	追捕线也不往前推。
+
+	据点名单与价钱在 `data/defs/factions.json` 的 `outposts`（数值只有一个真源）。
+	"""
+	if not can_trade_here():
+		return {"ok": false, "reason": "先靠港"}
+	var o := Pursuit.outpost_for(docked_port)
+	if o.is_empty():
+		return {"ok": false, "reason": "这里不是葡萄牙据点"}
+	if pursuit.has_permit():
+		return {"ok": false, "reason": "许可还没到期（还剩 %.0f 天）" % pursuit.permit_days_left}
+	var cost := int((o as Dictionary).get("permit_ducats", 260))
+	if cargo.money < cost:
+		return {"ok": false, "reason": "钱不够（要 %d，有 %d）" % [cost, cargo.money]}
+	cargo.money -= cost
+	var days := pursuit.grant_permit()
+	var where := str((o as Dictionary).get("name", docked_port))
+	_say("在%s买了通行许可：%d 枚杜卡特，%d 天之内他们的巡逻不拦你。"
+		% [where, cost, int(days)], true)
+	journal.decide("在%s买了通行许可（%d 杜卡特 / %.0f 天）。" % [where, cost, days])
+	return {"ok": true, "cost": cost, "days": days, "outpost": where}
+
+
+func permit_report() -> String:
+	"""面板要读的一行：有没有许可、还剩几天、最近的是哪个据点。"""
+	var w := _portuguese_watch()
+	var bits := PackedStringArray()
+	if pursuit.has_permit():
+		bits.append("通行许可剩 %.0f 天" % pursuit.permit_days_left)
+	if bool(w["in_waters"]):
+		bits.append("在%s水域里" % str(w["outpost"]))
+	elif bool(w["by_patrol"]):
+		bits.append("离%s的巡逻 %.1f 公里" % [str(w["outpost"]), float(w["distance_m"]) / 1000.0])
+	return "　".join(bits)
 
 
 func _npc_contact_tick(delta: float) -> void:
@@ -1595,7 +1672,12 @@ func _setup_fleet_ships(port_pos: Vector2) -> void:
 			a.waypoints = route.duplicate()
 			for k in a.waypoints.size():
 				a.waypoints[k] = (a.waypoints[k] as Vector2) + offset
-			a.target = target + offset
+			# ⚠️ M15：**终点那一个航点不加偏移**。偏移只是为了让三条 AI 船别叠在一起，
+			# 可它一旦加到终点上，船就停在锚地圈（`Fleet.ARRIVE_RADIUS_M` = 900 米）外面 ——
+			# 那条船永远不算"抵达"，全队结算也就永远签不了（环球一圈回来时尤其明显）。
+			if a.waypoints.size() > 0:
+				a.waypoints[a.waypoints.size() - 1] = target
+			a.target = target
 			a.has_target = true
 		s["ship"] = a
 		s["kind"] = Fleet.KIND_AI
@@ -1636,7 +1718,14 @@ func default_destination() -> Vector2:
 	AI 船用它当目标；玩家掉线时房主也用它把那艘船接过去继续开。
 	M8 起改成"最后的那个港"—— 因为全队结算要求四条船都开到巴西，
 	AI 船要是只开到加那利就停，那条验收永远签不了。
+	M15 起：全球图的航线**首尾相接**（最后一段回到塞维利亚），这时终点就是**归乡港** ——
+	环球一圈回到出发港才算走完（`home_port_id()`）。
 	"""
+	var home := home_port_id()
+	if home != "":
+		for p in sea.ports():
+			if str(p.get("id", "")) == home:
+				return Geom2D.centroid(p["shape"])
 	var ports := sea.ports()
 	if ports.size() > 0:
 		return Geom2D.centroid(ports[ports.size() - 1]["shape"])
@@ -1645,6 +1734,37 @@ func default_destination() -> Vector2:
 		var c: Array = isl.get("center", [0, 0])
 		return Vector2(float(c[0]), float(c[1]))
 	return Vector2.ZERO
+
+
+func home_port_id() -> String:
+	"""这一片海的**归乡港**（M15）：航线首尾相接时，它就是出发港。
+
+	判据只看数据：`routes.json` 最后一段的 `to` == 第一段的 `from`，而且那个 id 真是港口。
+	大西洋（v0.5）与迷你海是**单程**航线（塞维利亚 → 巴西），返回空 ——
+	那两片海仍然按"最后一个港"走，v0.5 的验收一条都不动。
+	"""
+	var routes := sea.routes()
+	if routes.size() < 2:
+		return ""
+	var first := str((routes[0] as Dictionary).get("from", ""))
+	var last := str((routes[routes.size() - 1] as Dictionary).get("to", ""))
+	if first == "" or last != first:
+		return ""
+	for p in sea.ports():
+		if str(p.get("id", "")) == last:
+			return last
+	return ""
+
+
+func goal_port_name() -> String:
+	"""终点港的名字（结算页与消息条上要写它）。"""
+	var home := home_port_id()
+	if home == "":
+		return "圣阿莱克索"          # v0.5 那趟（大西洋）的终点
+	for p in sea.ports():
+		if str(p.get("id", "")) == home:
+			return str(p.get("name", home))
+	return home
 
 
 func _take_over(summary: Dictionary) -> void:

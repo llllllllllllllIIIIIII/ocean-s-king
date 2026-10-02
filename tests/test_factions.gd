@@ -26,6 +26,7 @@ func _initialize() -> void:
 	_test_save_contract()
 	_test_voyage_wiring()
 	_test_npc_ships()
+	_test_eastern_outposts()
 	_finish()
 
 
@@ -289,6 +290,91 @@ func _test_voyage_wiring() -> void:
 
 
 # ---------------------------------------------------------------- 收尾
+
+func _test_eastern_outposts() -> void:
+	"""M14：葡萄牙在东方的**据点**、据点外的**巡逻**、以及**通行许可**。
+
+	追捕线本来就有"四个水域"，这一节验的是：那三处东方据点真的接在同一条状态机上，
+	而且"花钱买路"这条手段能**关掉**巡逻的眼睛。
+	"""
+	var ops := Pursuit.outposts()
+	_check(ops.size() == 3, "三处东方据点（%d）" % ops.size())
+	var ids := []
+	for o in ops:
+		ids.append(str(o.get("port", "")))
+	for want in ["mozambique", "malacca", "tidore"]:
+		_check(ids.has(want), "据点名单里有 %s" % want)
+	_check(Pursuit.permit_days() > 0.0, "通行许可有期限（%.0f 天）" % Pursuit.permit_days())
+
+	var v := Voyage.new()
+	v.setup(Sea.GLOBAL_PATH)
+	v.encounters_enabled = false
+	# 把船摆在马六甲据点**水域之内**
+	var malacca := Vector2.ZERO
+	for p in v.sea.ports():
+		if str(p.get("id", "")) == "malacca":
+			malacca = Geom2D.centroid(p["shape"])
+	v.ship.set_pose(malacca, 90.0)
+	_check(v.in_portuguese_waters(), "马六甲据点水域里就算被看见")
+	# 挪到水域之外、但还在**巡逻**的发现距离里。
+	# ⚠️ 这个世界是**压缩**的（1 经度 = 889 米），几个据点彼此只隔十几公里 ——
+	# 所以不能"朝东挪 15 公里"就算了，得找一个真的在**所有**水域圈之外的点。
+	var offshore := Vector2.ZERO
+	var found_spot := false
+	var probes := [malacca]
+	for p in v.sea.ports():
+		if str(p.get("id", "")) in ["tidore", "mozambique"]:
+			probes.append(Geom2D.centroid(p["shape"]))
+	for c in probes:
+		for k in 72:
+			var p2 := v.sea.wrap_pos((c as Vector2) + Vector2(
+				cos(TAU * float(k) / 72.0), sin(TAU * float(k) / 72.0))
+				* (Pursuit.water_radius_m() + 1500.0))
+			v.ship.set_pose(p2, 90.0)
+			var w1 := v._portuguese_watch()
+			if not bool(w1["in_waters"]) and bool(w1["by_patrol"]):
+				offshore = p2
+				found_spot = true
+				break
+		if found_spot:
+			break
+	_check(found_spot, "找得到一处「在水域外、仍在巡逻范围内」的水面")
+	v.ship.set_pose(offshore, 90.0)
+	var watch := v._portuguese_watch()
+	_check(bool(watch["by_patrol"]) and not bool(watch["in_waters"]),
+		"绕到水域外一千五百米，巡逻还看得见（%s）" % str(watch["outpost"]))
+	# 追捕线真的会因此启动（连着待够一天就进第一环）
+	v.encounters_enabled = true          # `_pursuit_tick` 尊重这个开关（世界事件那条线）
+	v._pursuit_tick(60.0 * 86400.0 / VoyageJournal.voyage_time_scale)
+	_check(v.pursuit.active(), "巡逻看见你 → 追捕线启动（%s）" % v.pursuit.describe())
+
+	# 通行许可：在据点买，三十天之内巡逻当没看见你
+	v.docked_port = "malacca"
+	v.cargo.money = 2000
+	var money_before := v.cargo.money
+	var r := v.buy_permit()
+	_check(bool(r.get("ok", false)), "在据点买得到通行许可（%s）" % str(r.get("reason", "")))
+	_check(v.cargo.money == money_before - int(r.get("cost", 0)), "许可花了 %d 杜卡特" % int(r.get("cost", 0)))
+	_check(v.pursuit.has_permit(), "许可生效（还剩 %.0f 天）" % v.pursuit.permit_days_left)
+	_check(not bool(v._portuguese_watch()["by_patrol"]), "有许可时巡逻不再报你")
+	var ring_before := v.pursuit.ring
+	v._pursuit_tick(2.0 * 86400.0 / VoyageJournal.voyage_time_scale)
+	_check(v.pursuit.ring <= ring_before, "有许可时追捕线不往前推（第 %d 环）" % v.pursuit.ring)
+	var again := v.buy_permit()
+	_check(not bool(again.get("ok", false)), "许可没到期不能再买（%s）" % str(again.get("reason", "")))
+	# 许可到期之后，巡逻重新看得见
+	v.pursuit.permit_days_left = 0.0
+	v.ship.set_pose(offshore, 90.0)
+	_check(bool(v._portuguese_watch()["by_patrol"]), "许可到期后巡逻又看得见你")
+
+	# 存档：许可的剩余天数跟着世界状态走
+	var d := v.pursuit.capture_state()
+	var v2 := Voyage.new()
+	v2.setup(Sea.GLOBAL_PATH)
+	v2.pursuit.apply_state(d)
+	_check(is_equal_approx(v2.pursuit.permit_days_left, v.pursuit.permit_days_left),
+		"许可剩余天数进得了存档（%.1f → %.1f）" % [
+			v.pursuit.permit_days_left, v2.pursuit.permit_days_left])
 
 # ---------------------------------------------------------------- 8 NPC 船与"被截击"
 

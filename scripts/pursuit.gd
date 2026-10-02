@@ -64,6 +64,22 @@ static func water_radius_m() -> float:
 	return float(config().get("water_radius_m", 14000.0))
 
 
+static func outposts() -> Array:
+	"""葡萄牙在东方的据点（M14）：`mozambique` / `malacca` / `tidore`。"""
+	return defs().get("outposts", [])
+
+
+static func outpost_for(port_id: String) -> Dictionary:
+	for o in outposts():
+		if str((o as Dictionary).get("port", "")) == port_id:
+			return o
+	return {}
+
+
+static func permit_days() -> float:
+	return float(config().get("permit_days", 30.0))
+
+
 # ------------------------------------------------------------ 实例状态（进 WorldState）
 
 var ring := 0                  # 0 = 没被盯上；1..6 = 六环
@@ -72,6 +88,7 @@ var days_out := 0.0            # 离开水域多久（够 escape_days 就甩掉�
 var last_event := ""
 var times_escaped := 0
 var times_attacked := 0
+var permit_days_left := 0.0    # 通行许可还剩几天（M14，> 0 时巡逻不拦、环数不推进）
 
 
 func setup() -> void:
@@ -81,21 +98,50 @@ func setup() -> void:
 	last_event = ""
 	times_escaped = 0
 	times_attacked = 0
+	permit_days_left = 0.0
 
 
 func active() -> bool:
 	return ring > 0
 
 
+func has_permit() -> bool:
+	return permit_days_left > 0.0
+
+
+func grant_permit() -> float:
+	"""买下一张通行许可（M14）。返回给了多少天。"""
+	permit_days_left = Pursuit.permit_days()
+	last_event = "permit"
+	return permit_days_left
+
+
 func describe() -> String:
 	if ring <= 0:
-		return "没被盯上"
-	return "%s（第 %d 天）" % [Pursuit.ring_name(ring), int(days_in_ring)]
+		return "没被盯上" if not has_permit() \
+			else "没被盯上（通行许可还剩 %.0f 天）" % permit_days_left
+	return "%s（第 %d 天%s）" % [Pursuit.ring_name(ring), int(days_in_ring),
+		"，通行许可还剩 %.0f 天" % permit_days_left if has_permit() else ""]
 
 
 func tick(days: float, in_waters: bool) -> Dictionary:
 	"""推进：**只看"在不在葡萄牙水域里"**（与世界记忆、态度无关 —— 那些改的是别的东西）。"""
 	var ev := {"ring": ring, "advanced": false, "escaped": false, "entered": false}
+	# M14：通行许可还没到期 —— 巡逻当没看见你：环不推进，已经在追的也会慢慢松掉
+	if has_permit():
+		permit_days_left = maxf(0.0, permit_days_left - days)
+		if ring > 0:
+			days_out += days
+			if days_out >= float(config().get("escape_days", 3.0)):
+				ring = 0
+				days_in_ring = 0.0
+				days_out = 0.0
+				times_escaped += 1
+				last_event = "permit_clear"
+				ev["escaped"] = true
+		ev["ring"] = ring
+		ev["permit_days_left"] = permit_days_left
+		return ev
 	# "进水域"这件事不花时间：被看见就是被看见（所以 0 天也要能进第一环）
 	if ring == 0:
 		if not in_waters:
@@ -177,6 +223,7 @@ func capture_state() -> Dictionary:
 		"ring": ring, "days_in_ring": days_in_ring, "days_out": days_out,
 		"last_event": last_event, "times_escaped": times_escaped,
 		"times_attacked": times_attacked,
+		"permit_days_left": permit_days_left,
 	}
 
 
@@ -187,3 +234,4 @@ func apply_state(d: Dictionary) -> void:
 	last_event = str(d.get("last_event", ""))
 	times_escaped = int(d.get("times_escaped", 0))
 	times_attacked = int(d.get("times_attacked", 0))
+	permit_days_left = float(d.get("permit_days_left", 0.0))

@@ -165,11 +165,15 @@ static func _memory_line(memory: Dictionary) -> String:
 static func fleet_report(v: Voyage) -> Array:
 	"""四条船各自到哪儿了、伤了多少、发现了多少 —— 全队结算的那张表。
 
-	"到达"的判据：开到**圣阿莱克索（巴西）**的锚地圈里（终点港，docs/13 第 10 节的航段）。
+	"到达"的判据：开到**这一程的终点港**的锚地圈里 ——
+	v0.5（大西洋单程）是圣阿莱克索（巴西）；M15 起全球图的终点是**归乡港**圣卢卡尔。
 	"""
 	var goal := Vector2.ZERO
+	var want := v.home_port_id()
+	if want == "":
+		want = "sao_aleixo"
 	for p in v.sea.ports():
-		if str(p.get("id", "")) == "sao_aleixo":
+		if str(p.get("id", "")) == want:
 			goal = Geom2D.centroid(p["shape"])
 	if goal == Vector2.ZERO:
 		goal = v.sea.port_pos()
@@ -213,7 +217,8 @@ static func text(v: Voyage, journal: VoyageJournal, story: Story) -> String:
 		for line in d["lines"]:
 			out.append("  · " + str(line))
 		out.append("")
-	out.append("【船队】%d/%d 条船抵达圣阿莱克索" % [int(r["arrived"]), int(r["fleet_size"])])
+	out.append("【船队】%d/%d 条船抵达%s" % [
+		int(r["arrived"]), int(r["fleet_size"]), v.goal_port_name()])
 	for row in r["fleet"]:
 		out.append("  · %s%s　船体 %.0f%%　%d 人　%s" % [
 			str(row["name"]),
