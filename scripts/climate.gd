@@ -150,6 +150,19 @@ static func fresh_per_day() -> float:
 	return float((defs().get("scurvy", {}) as Dictionary).get("fresh_per_crew_per_day", 0.25))
 
 
+static func recovery_health_per_day(mood: float) -> float:
+	"""海上恢复（M15）：吃得够、心情不太差的时候，人自己会缓过来一点。"""
+	var r: Dictionary = defs().get("recovery", {})
+	if mood < float(r.get("mood_min", 0.35)):
+		return 0.0
+	return float(r.get("health_per_day", 0.004))
+
+
+static func shore_health() -> float:
+	"""上岛/靠港歇一天能补多少健康（岸上的休息与新鲜东西）。"""
+	return float((defs().get("recovery", {}) as Dictionary).get("shore_health", 0.15))
+
+
 static func death_health() -> float:
 	"""健康掉到这个数以下就有人死（坏血病与断粮共用这个门槛）。"""
 	var a: Dictionary = defs().get("attrition", {})

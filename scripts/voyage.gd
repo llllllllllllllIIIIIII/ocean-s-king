@@ -844,17 +844,23 @@ func _climate_health_tick(days: float, short_food: bool, short_water: bool) -> v
 	"""
 	var scurvy_h := Climate.scurvy_health_per_day(days_since_fresh)
 	var scurvy_m := Climate.scurvy_mood_per_day(days_since_fresh)
+	# M15：**海上恢复** —— 吃得够、心情不太差就缓回来一点。
+	# 少了它，长航段上健康只减不增：掉到阈值之后一次事件就成批死人（长跑实测 28 人）。
+	var regen := 0.0 if (short_food or short_water) else Climate.recovery_health_per_day(0.5)
 	var att_h := 0.0
 	if days_short >= Climate.attrition_grace_days():
 		att_h = Climate.attrition_health_per_day(short_food, short_water)
-	if scurvy_h <= 0.0 and att_h <= 0.0 and scurvy_m <= 0.0:
+	if scurvy_h <= 0.0 and att_h <= 0.0 and scurvy_m <= 0.0 and regen <= 0.0:
 		return
 	var deaths := 0
 	var threshold := Climate.death_health()
 	for m in roster.members:
 		if m.dead:
 			continue
-		m.health = clampf(m.health - (scurvy_h + att_h) * days, 0.0, 1.0)
+		var heal := 0.0
+		if regen > 0.0 and m.health < 0.98:
+			heal = Climate.recovery_health_per_day(m.mood) * days
+		m.health = clampf(m.health - (scurvy_h + att_h) * days + heal, 0.0, 1.0)
 		m.mood = clampf(m.mood - scurvy_m * days, 0.0, 1.0)
 		if m.health <= threshold:
 			_kill_of_the_sea(m)
@@ -2209,6 +2215,13 @@ func land(ids: Array, hands := 6) -> String:
 			cargo.add("food", food)
 			_say("上岸的人背回 %d 桶淡水与 %d 份新鲜吃食。" % [water, food], true)
 			journal.decide("在岛上补水：淡水 %d 桶、吃食 %d 份。" % [water, food])
+		# M15：岸上的休息与新鲜东西也养人（和靠港同一个口径，但弱一点）
+		var shore_h := Climate.shore_health()
+		for m in roster.members:
+			if m.dead:
+				continue
+			m.health = clampf(m.health + shore_h, 0.05, 1.0)
+			m.mood = clampf(m.mood + 0.08, 0.0, 1.0)
 	captain_pos = landing_point
 	captain_target = captain_pos
 	# 队伍：船长先上岸，船员按名单一个一个跟下来（小船一趟一个人）

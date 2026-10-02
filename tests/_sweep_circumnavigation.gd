@@ -18,6 +18,7 @@ const STOP_RADIUS_M := 1500.0    # 离港口的锚地多近就"靠港"
 const LOG_PATH := "user://sweep_circumnavigation.log"
 var TOTAL := 400000.0        # 可以用命令行覆盖：`-- 80000 10000`
 var REPORT := 20000.0
+var _last_alive := 40
 
 var _log: FileAccess
 var _wall0 := 0
@@ -97,6 +98,10 @@ func _initialize() -> void:
 				# 按最长的缺口装：关岛之前那一段约 120 个航程日没有港口
 				# （40 个人 × 每天 1 份口粮 / 3 升水）—— 真船长也会这么装。
 				# 舱位装不下就装到满（载重那本账仍然是船的数据说了算）。
+				# ⚠️ 给养优先：舱里要是塞着货，先卸货腾地方（真船长先保命、后赚钱）。
+				if v.cargo.free_kg() < 18000.0:
+					for item in v.cargo.ids_of_kind("goods"):
+						v.cargo.remove(str(item), v.cargo.qty(str(item)))
 				v.cargo.add("water", mini(240, v.cargo.how_many_fit("water")))
 				v.cargo.add("food", mini(4800, v.cargo.how_many_fit("food")))
 				# 新鲜食物：压住坏血病的那一条（M13 验收第 3 条的后半），但只放得住四十天
@@ -106,8 +111,15 @@ func _initialize() -> void:
 				v.cargo.money = maxi(v.cargo.money, 600)
 				v.days_since_fresh = 0.0
 				v.days_short = 0.0
-				_say("  · t=%.0f 靠上%s（第 %d 站）：修满、补足，接着走（%s）"
-					% [t, v.port_name(), stops, docked])
+				# ⚠️ `docked` 是**字符串**（港口名），别放进 `%d` 槽 —— 那会让整行 *
+				# 格式化失败、原样打出来（"a number is required"）。
+				_say("  · t=%.0f 靠上%s（第 %d 站）：修满、补足，接着走 —— 粮 %d / 水 %d / 鲜 %d / 人 %d"
+					% [t, v.port_name(), stops,
+					   v.cargo.qty("food"), v.cargo.qty("water"),
+					   v.cargo.qty("fresh_food"), _alive(v)])
+				# `docked` 是港口名（字符串），留给调试用：只在真的想知道时打开
+				if false:
+					_say("    （%s）" % docked)
 				v.undock()
 			v.orders.anchored = false
 			v.start_route_follow()
@@ -141,6 +153,14 @@ func _initialize() -> void:
 					v.orders.anchored = false
 					v.orders.set_target_point(off)
 		var rid := str(v.sea.world.region_of_tile(v.sea.tile_of(p)).get("id", ""))
+		# 有人死了就打一行（这是长跑里最要紧的信号之一）
+		var alive_now := _alive(v)
+		if alive_now < _last_alive:
+			_say("  ！t=%.0f 减员 %d 人（剩 %d）：粮 %d / 水 %d / 鲜 %d / 坏血病 %.0f 天 / 缺粮累计 %.1f 天"
+				% [t, _last_alive - alive_now, alive_now, v.cargo.qty("food"),
+				   v.cargo.qty("water"), v.cargo.qty("fresh_food"),
+				   v.days_since_fresh, v.days_short])
+			_last_alive = alive_now
 		if rid != "":
 			regions[rid] = true
 		if v.ship.last_blocked:
