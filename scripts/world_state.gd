@@ -25,6 +25,8 @@ const FIELDS := [
 	"factions", "pursuit", "npcs",
 	# M16：轻编队指令与沉掉的船（编队是**共享约定**，沉船是全世界都得知道的事）
 	"formation", "lost_ships",
+	# M18：探索产出、遇到过的民族、海图插旗（世界记忆）
+	"find_log", "known_peoples", "chart_flags",
 	"last_message", "message_timer", "log_lines", "pending_reports",
 	"_shore_cooldown", "story", "journal",
 ]

@@ -87,6 +87,10 @@ static func world_projection(v: Voyage) -> Dictionary:
 		# M16：编队指令是共享约定；沉船是全世界都得知道的事
 		"formation": v.formation,
 		"lost_ships": v.lost_ships.duplicate(true),
+		# M18：探索产出 / 民族 / 海图插旗（世界记忆）
+		"find_log": v.find_log.duplicate(),
+		"known_peoples": v.known_peoples.duplicate(),
+		"chart_flags": v.chart_flags.duplicate(true),
 	}
 
 
@@ -113,5 +117,8 @@ static func apply_world_projection(v: Voyage, d: Dictionary) -> void:
 	if v.fleet.set_formation(str(d.get("formation", "free"))):
 		v.formation = v.fleet.formation
 	v.lost_ships = (d.get("lost_ships", []) as Array).duplicate(true)
+	v.find_log = (d.get("find_log", {}) as Dictionary).duplicate()
+	v.known_peoples = (d.get("known_peoples", {}) as Dictionary).duplicate()
+	v.chart_flags = (d.get("chart_flags", []) as Array).duplicate(true)
 	for raw in d.get("fleet", []):
 		v.fleet.receive_summary(raw)

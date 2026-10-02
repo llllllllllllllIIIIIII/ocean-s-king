@@ -58,6 +58,10 @@ var formation := "free"
 var lost_ships: Array = []
 # M17：叛乱处置卡（临时塞进抉择队列；后果在 `rules.json` 的 `mutiny_responses`）
 const MUTINY_CARD := "mutiny_card"
+# M18：探索产出与海图插旗（都进 WorldState）
+var find_log := {}                  # 地点 id -> 那一样东西的 id（同一个地点只出一次）
+var known_peoples := {}             # 遇到过的民族（未知民族那一条的"新记录"）
+var chart_flags: Array = []         # 海图上插的旗 [{id, name, kind, pos:[x,y], t}]
 var culture := Culture.new()        # 当地文明的三档态度（M6）
 var locals := LocalGroup.new()      # 岛上那伙人（M6 收尾：他们是常驻实体，不是打起来才刷出来的）
 var weather := Weather.new()        # 自然环境（M7）
@@ -1184,6 +1188,77 @@ func answer_dilemma(option_id: String) -> Dictionary:
 
 # ------------------------------------------------------------ 分配与叛乱（M17）
 
+func try_find(place_id: String, where: String) -> Dictionary:
+	"""在某个地点试着发现一样东西（M18）：沉船 / 海底遗迹 / 宝藏 / 新物种 / 新资源 / 未知民族。
+
+	**可复现**：同一个地点只出一次，出哪一条由 `Expedition.pick()`（地点 id 的哈希）决定。
+	每一条都落到：知识一条 + 捞到的东西 + 五类结算的分数（未知民族还要和势力表对一次账）。
+	"""
+	if place_id == "":
+		return {"ok": false, "reason": "没有地点"}
+	if find_log.has(place_id):
+		return {"ok": false, "reason": "这个地方已经看过了", "id": str(find_log[place_id])}
+	var kind := Expedition.kind_for_where(where, place_id)
+	var f := Expedition.pick(place_id, kind)
+	if f.is_empty():
+		return {"ok": false, "reason": "这一类还没有条目"}
+	find_log[place_id] = str(f["id"])
+	memory["finds"] = int(memory.get("finds", 0)) + 1
+	var bits := PackedStringArray()
+	# ① 知识
+	var k: Dictionary = f.get("knowledge", {})
+	if not k.is_empty():
+		knowledge.note(str(k.get("category", "chart")), str(k.get("id", f["id"])),
+			str(k.get("title", f["name"])), str(k.get("text", "")), t)
+		bits.append("记了一条知识")
+	# ② 捞到的东西（货舱与金币）
+	var loot: Dictionary = f.get("loot", {})
+	for item in (loot.get("supplies", {}) as Dictionary).keys():
+		cargo.add(str(item), int(loot["supplies"][item]))
+		bits.append("+%d %s" % [int(loot["supplies"][item]), cargo.item_name(str(item))])
+	if int(loot.get("ducats", 0)) > 0:
+		cargo.money += int(loot["ducats"])
+		bits.append("+%d 金币" % int(loot["ducats"]))
+	# ③ 五类结算的分数：**类别给的底分 + 这一条自己的加成**（有些条目比同类更值钱）
+	var score: Dictionary = (Expedition.kind_def(kind).get("score", {}) as Dictionary).duplicate()
+	for key in (f.get("score", {}) as Dictionary).keys():
+		score[str(key)] = int(score.get(str(key), 0)) + int(f["score"][key])
+	for key in score.keys():
+		ending_score[str(key)] = int(ending_score.get(str(key), 0)) + int(score[key])
+	# ④ 未知民族：新群体是一条**新记录**，而且真的改当地人对你的态度
+	if bool(f.get("people", false)):
+		known_peoples[str(f["id"])] = str(f.get("name", ""))
+		factions.react("locals", "leave_alone", 1)
+		bits.append("记下了一个新的群体")
+	_say("【%s】%s" % [Expedition.kind_name(kind), str(f.get("text", ""))], true)
+	journal.record(t, "find", "%s：%s" % [Expedition.kind_name(kind), str(f.get("name", ""))])
+	return {
+		"ok": true, "kind": kind, "kind_name": Expedition.kind_name(kind),
+		"id": str(f["id"]), "name": str(f.get("name", "")),
+		"knowledge": str(k.get("id", "")), "loot": loot,
+		"score": f.get("score", {}), "people": bool(f.get("people", false)),
+		"summary": "、".join(bits),
+	}
+
+
+func add_chart_flag(name := "", kind := "note") -> Dictionary:
+	"""海图上插一面旗（M18）：位置就是船现在的位置，进 WorldState、跟着存档走。"""
+	var pos := ship.position_m()
+	var flag := {
+		"id": "flag_%03d" % (chart_flags.size() + 1),
+		"name": name if name != "" else "旗 %d" % (chart_flags.size() + 1),
+		"kind": kind, "pos": [pos.x, pos.y], "t": t,
+	}
+	chart_flags.append(flag)
+	_say("在海图上插了一面旗：%s。" % str(flag["name"]), true)
+	journal.decide("海图插旗：%s。" % str(flag["name"]))
+	return flag
+
+
+func finds_report() -> String:
+	return "探索产出 %d 处、民族 %d 个、海图旗 %d 面" % [
+		find_log.size(), known_peoples.size(), chart_flags.size()]
+
 func distribute_gain(kind: String, amount: float) -> Dictionary:
 	"""一笔收益按规矩分下去（战利品 / 贸易 / 探险所得）—— 见 `Society.distribute()`。"""
 	var r := society.distribute(kind, amount, rules, roster)
@@ -2237,6 +2312,8 @@ func _events(_delta: float) -> void:
 		journal.decide("没有绕过暗礁：船体损伤 28%、舵 10%。")
 		_say("船底刮上礁石。木匠喊着要人下去看船缝。", true)
 		report("触礁：船体损伤约三成，舵也蹭到了一点。")
+		# M18：礁石上往往横着别人的船（**沉船**这一类产出）
+		try_find("reef_%d_%d" % [int(pos.x / 1000.0), int(pos.y / 1000.0)], "reef")
 		fired["reef_hit"] = true
 	# ④ 船员伤病（触礁之后才可能发生 —— 因果链的第二环）
 	if fired.has("reef_hit") and not fired.has("injury") and t > 60.0:
@@ -2443,6 +2520,8 @@ func land(ids: Array, hands := 6) -> String:
 				continue
 			m.health = clampf(m.health + shore_h, 0.05, 1.0)
 			m.mood = clampf(m.mood + 0.08, 0.0, 1.0)
+		# M18：上岸也是**探索** —— 这座岛会出一?样东西（沉船之外的五类之一）
+		try_find("island_" + land_id, "island")
 	captain_pos = landing_point
 	captain_target = captain_pos
 	# 队伍：船长先上岸，船员按名单一个一个跟下来（小船一趟一个人）
@@ -2587,6 +2666,10 @@ func capture_world_state() -> Dictionary:
 		# M16：轻编队指令与沉船记录（编队是共享约定，沉船全世界都得知道）
 		"formation": formation,
 		"lost_ships": lost_ships.duplicate(true),
+		# M18：探索产出、遇到过的民族、海图插旗（都是世界记忆，进存档）
+		"find_log": find_log.duplicate(),
+		"known_peoples": known_peoples.duplicate(),
+		"chart_flags": chart_flags.duplicate(true),
 		"last_message": last_message,
 		"message_timer": message_timer,
 		"log_lines": log_lines.duplicate(),
@@ -2624,6 +2707,9 @@ func apply_world_state(d: Dictionary) -> void:
 	if bool(fleet.set_formation(str(d.get("formation", "free")))):
 		formation = fleet.formation
 	lost_ships = (d.get("lost_ships", []) as Array).duplicate(true)
+	find_log = (d.get("find_log", {}) as Dictionary).duplicate()
+	known_peoples = (d.get("known_peoples", {}) as Dictionary).duplicate()
+	chart_flags = (d.get("chart_flags", []) as Array).duplicate(true)
 	last_message = str(d.get("last_message", ""))
 	message_timer = float(d.get("message_timer", 0.0))
 	log_lines = (d.get("log_lines", []) as Array).duplicate()

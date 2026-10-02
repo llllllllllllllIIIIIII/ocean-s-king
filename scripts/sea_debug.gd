@@ -63,6 +63,8 @@ var _shot_mode := false
 var _strait_only := false            # M12：只跑海峡那两张的专用快路径
 var _frame := 0
 var _shot_dir := "res://.shots"
+var _tri: TriView = null           # M18：三视图
+var _tri_only := false             # 截图快路径：`-- shots tri`
 var _wind_gizmo: WindGizmo
 var _ship_view: ShipRenderer       # 海图上用**真正的 SVG 船**，不是占位三角块
 var _chart: ChartView              # M2：拉远之后淡入的海图层
@@ -109,6 +111,7 @@ func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
 	_shot_mode = args.has("shots")
 	_strait_only = _shot_mode and args.has("strait")
+	_tri_only = _shot_mode and args.has("tri")
 	voyage = Voyage.new()
 	voyage.setup(_region_from_args(args))
 	# 海图层要先于船加进来：Node2D 的子节点按加入顺序画，
@@ -137,6 +140,15 @@ func _ready() -> void:
 	_chart.font = _font
 	_build_hud()
 	_build_overlays()
+	# M18：三视图（俯视 / 侧视 / 艉视）—— 默认藏着，按 `T` 摊开
+	_tri = TriView.new()
+	_tri.visible = false
+	_tri.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_panel_layer.add_child(_tri)
+	_tri.configure(voyage)
+	_tri.set_anchors_preset(Control.PRESET_CENTER)
+	_tri.size = Vector2(660.0, 260.0)
+	_tri.position = Vector2(160.0, 90.0)
 	_build_net()
 	# M8：声音（自产素材，许可见 assets/audio/LICENSES.md）
 	_audio = AudioDirector.new()
@@ -289,7 +301,9 @@ func _begin_voyage(show_title: bool) -> void:
 
 func _process(delta: float) -> void:
 	if _shot_mode:
-		if _strait_only:
+		if _tri_only:
+			_run_tri_shots()
+		elif _strait_only:
 			_run_strait_shots()
 		else:
 			_run_shot_timeline()
@@ -1003,6 +1017,23 @@ func _key(k: InputEventKey) -> void:
 			var fr := voyage.set_formation(str(modes[(at + 1) % modes.size()]))
 			if bool(fr.get("ok", false)):
 				voyage.say("（编队）" + voyage.formation_report(), true)
+		KEY_T:
+			# M18：三视图（俯视 / 侧视 / 艉视）
+			if _tri != null:
+				_tri.visible = not _tri.visible
+				if _tri.visible:
+					_tri.configure(voyage)
+					var marks := PackedStringArray()
+					for m in _tri.damage_marks():
+						if float(m["value"]) > 0.01:
+							marks.append("%s %.0f%%" % [str(m["label"]), float(m["value"]) * 100.0])
+					voyage.say("（三视图）" + ("无损伤" if marks.is_empty() else "　".join(marks)), true)
+		KEY_Q:
+			# M18：在海图上插一面旗（带位置，进存档）
+			var flag := voyage.add_chart_flag("旗 %d" % (voyage.chart_flags.size() + 1), "note")
+			if _chart != null:
+				_chart.queue_redraw()
+			voyage.say("（海图）插旗：%s　共 %d 面" % [str(flag["name"]), voyage.chart_flags.size()], true)
 		KEY_N:
 			# M8：沿航线走（航海官不会绕开海岸，航线数据会）
 			if voyage.following_route:
@@ -1504,6 +1535,39 @@ func _run_strait_shots() -> void:
 			_zoom = 6.0
 		4:
 			_capture("66_strait_east_mouth")
+		5:
+			get_tree().quit(0)
+
+
+func _run_tri_shots() -> void:
+	"""M18 的**专用快路径**：把七处损伤摆出来，让三视图把它们全画上。
+
+	两张：`67_tri_view_damage`（六处损伤）与 `68_tri_view_hazard`（再点起火与进水）。
+	用 `-- shots tri`。
+	"""
+	_frame += 1
+	_update_camera()
+	_update_hud()
+	queue_redraw()
+	match _frame:
+		1:
+			voyage.encounters_enabled = false
+			voyage.ship.apply_damage("hull", 0.35)
+			voyage.ship.apply_damage("mast", 0.25)
+			voyage.ship.apply_damage("rudder", 0.20)
+			voyage.ship.apply_damage("sail", 0.30)
+			voyage.ship.apply_damage("hold", 0.15)
+			voyage.ship.apply_damage("magazine", 0.20)
+			_tri.visible = true
+			_tri.configure(voyage)
+		2:
+			_capture("67_tri_view_damage")
+		3:
+			voyage.ship.apply_hazard("fire", 0.5)
+			voyage.ship.apply_hazard("flood", 0.4)
+			_tri.configure(voyage)
+		4:
+			_capture("68_tri_view_hazard")
 		5:
 			get_tree().quit(0)
 

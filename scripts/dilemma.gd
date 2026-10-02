@@ -53,6 +53,38 @@ func option_of(id: String, option_id: String) -> Dictionary:
 	return {}
 
 
+func is_available(d: Dictionary, o: Dictionary, v: Voyage) -> bool:
+	"""这个选项现在**能不能选**（M18：知识会解锁新的选项）。
+
+	条写在真源里：`requires.knowledge` = "类别:id"。不知道就锁着 ——
+	面板上仍然看得到（玩家知道"还有一条路，只是自己不懂"）。
+	"""
+	var req: Dictionary = o.get("requires", {})
+	if req.is_empty():
+		return true
+	if req.has("knowledge"):
+		var parts := str(req["knowledge"]).split(":", false, 1)
+		if parts.size() != 2:
+			return true
+		return v.knowledge.has(parts[0], parts[1])
+	return true
+
+
+func available_options(id: String, v: Voyage) -> Array:
+	var out := []
+	for o in def_of(id).get("options", []):
+		out.append(o)
+	return out
+
+
+func locked_options(id: String, v: Voyage) -> Array:
+	var out := []
+	for o in def_of(id).get("options", []):
+		if not is_available(def_of(id), o, v):
+			out.append(str(o.get("id", "")))
+	return out
+
+
 func is_resolved(id: String) -> bool:
 	return resolved.has(id)
 
@@ -149,6 +181,9 @@ func resolve(v: Voyage, id: String, option_id: String) -> Dictionary:
 	var o := option_of(id, option_id)
 	if o.is_empty():
 		return {"ok": false, "reason": "没有这个选项"}
+	# M18：知识没到位的选项选不了（"知道之后多出一个选择"的那一半）
+	if not is_available(d, o, v):
+		return {"ok": false, "reason": "你还不知道怎么走这条路"}
 	var eff: Dictionary = o.get("effects", {})
 	var before := _snapshot(v)
 	# ① 船员状态

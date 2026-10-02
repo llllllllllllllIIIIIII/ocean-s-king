@@ -130,6 +130,28 @@ func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size_px), Color(0.42, 0.34, 0.22, 0.8 * a), false, 3.0 * _s)
 	_scale_bar(a)
 	_compass(a)
+	# ⑩ M18：玩家插的旗（进存档，读回来还在这张图上）
+	_chart_flags(a)
+
+
+func _chart_flags(a: float) -> void:
+	"""海图插旗（M18）：旗杆 + 旗面 + 名字，画在写的位置上。"""
+	if voyage == null:
+		return
+	for f in voyage.chart_flags:
+		var p: Array = (f as Dictionary).get("pos", [])
+		if p.size() < 2:
+			continue
+		var at := Vector2(float(p[0]), float(p[1])) * px_per_m
+		var lw := 1.0 * _s
+		draw_line(at, at + Vector2(0.0, -26.0 * _s), INK, lw)
+		var tri := PackedVector2Array([
+			at + Vector2(0.0, -26.0 * _s), at + Vector2(16.0 * _s, -20.0 * _s),
+			at + Vector2(0.0, -14.0 * _s),
+		])
+		draw_colored_polygon(tri, Color(0.72, 0.24, 0.2, 0.9 * a))
+		_text(at + Vector2(18.0 * _s, -16.0 * _s), str((f as Dictionary).get("name", "")),
+			Color(0.35, 0.28, 0.2, a), 12)
 
 
 # ------------------------------------------------------------ 零件
