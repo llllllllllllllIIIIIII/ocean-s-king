@@ -18,6 +18,14 @@
 
 **不使用 AI 生成位图**：这是矢量代码资产，手绘 SVG 更可控、更可复用。
 
+> **导出时必须让部件"原样进包"**（2026-10-02 实测踩到）：`SvgBank` 是**运行时读 .svg 源文本**
+> 再按缩放栅格化的（这正是"无损缩放"那条的实现），可 `.svg` 在 Godot 里默认是**导入资源** ——
+> `.import` 写 `importer="texture"` 时，导出会把 `res://…svg` 重映射到 `.godot/imported/*.ctex`，
+> 运行时用 `FileAccess` 读源文本就读不到了：**源码模式一切正常，导出包里整条船退化成一个纯色方块**。
+> 处置：部件全部设成 **"Keep File (exported as is)"**（`importer="keep"`），
+> 由 `tools/set_parts_keep_import.py` 一次改完（加了新部件就跑一次），
+> `tests/test_svg_parts.gd` 每个部件两条断言盯着它（有没有 `.import`、是不是 `keep`）。
+
 ---
 
 ## 2. 坐标与锚点规范（这是"能不能对得齐"的关键）

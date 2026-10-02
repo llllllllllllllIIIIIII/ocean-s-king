@@ -90,14 +90,7 @@ func _ready() -> void:
 	add_child(_chart)
 	# 别人的船：一艘一个渲染器，只画外观。它们**没有**船员点 —— 别人船上
 	# 没有逐人模拟，这是 docs/14 那条 UI 规矩的画面形态。
-	for rid in voyage.fleet.others():
-		var rv := ShipRenderer.new()
-		rv.px_per_m = PPM
-		rv.draw_sea = false
-		rv.show_ghost = false
-		add_child(rv)
-		rv.setup()
-		_fleet_views[rid] = rv
+	_rebuild_fleet_views()
 	_ship_view = ShipRenderer.new()
 	_ship_view.px_per_m = PPM
 	_ship_view.draw_sea = false        # 海面由这个场景自己画
@@ -212,13 +205,39 @@ func _on_welcome(ship_id: String, summary: Dictionary, world: Dictionary) -> voi
 	var region := str(world.get("region", Sea.ATLANTIC_PATH))
 	voyage.setup(region, ship_id, summary)
 	NetProtocol.apply_world_projection(voyage, world)
+	# ① **本机开哪条船是房主定的**：进来之前本机默认开的是特立尼达，现在可能换成别的 ——
+	#    "别人那几条船"的名单整个变了，渲染器要按新名单重排。不重排的后果：
+	#    房主那条船没有渲染器（**看不见房主**），而自己那条船反而被画两遍。
+	# ② 该把航行界面打开了：房间界面收起来之后 HUD/面板层还是隐藏的 ——
+	#    那样客户端就是"没有 UI、消息看不见、按键没反应"（除了左键移动，那是画在海面上的）。
+	_rebuild_fleet_views()
+	_begin_voyage(false)
 	_ship_view.apply_pose(voyage.ship.position_m(), voyage.ship.heading_deg())
 	_chart.world = voyage.sea.world
+	_chart.voyage = voyage
 	_zoom = 0.8
-	_room.visible = false
-	_started = true
 	voyage.say("（船队）你接手了 %s。海上的风与时间跟着房主走。" % voyage.fleet.name_of(ship_id), true)
 	_update_camera()
+
+
+func _rebuild_fleet_views() -> void:
+	"""按**现在**的船队名单给"别人的船"各建一个渲染器。
+
+	客户端是房主分配船位的，进来前后"本机开哪条"会变，所以这份名单必须能重排
+	（第一次是单机/开局那条，第二次是 WELCOME 之后）。
+	"""
+	for rv in _fleet_views.values():
+		if is_instance_valid(rv):
+			rv.queue_free()
+	_fleet_views.clear()
+	for rid in voyage.fleet.others():
+		var rv := ShipRenderer.new()
+		rv.px_per_m = PPM
+		rv.draw_sea = false
+		rv.show_ghost = false
+		add_child(rv)
+		rv.setup()
+		_fleet_views[rid] = rv
 
 
 func _on_rejected(reason: String) -> void:

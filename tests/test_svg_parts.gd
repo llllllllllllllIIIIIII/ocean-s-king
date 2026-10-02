@@ -27,6 +27,16 @@ func _initialize() -> void:
 		var d: Dictionary = defs["parts"][name]
 		var path := BASE + str(d["file"])
 		_check(FileAccess.file_exists(path), "部件文件不存在：%s" % path)
+		# --- 1b) 导出包里还读得到吗？（M8 收尾踩到的坑）---
+		# `.svg` 在 Godot 里是**导入资源**：`.import` 写 importer="texture" 时，导出会把
+		# `res://…svg` 重映射到 .ctex，运行时用 FileAccess 读源文本就读不到了 ——
+		# 表现是导出后整条船退化成一个纯色方块（源码模式完全正常）。
+		# 所以这里的每一个部件都必须是 "Keep File (exported as is)"。
+		var imp := path + ".import"
+		_check(FileAccess.file_exists(imp), "部件缺少 .import（导出会读不到源文件）：%s" % imp)
+		if FileAccess.file_exists(imp):
+			_check(FileAccess.get_file_as_string(imp).find('importer="keep"') >= 0,
+				"部件 %s 的 .import 不是 keep —— 导出包里会读不到（跑 tools/set_parts_keep_import.py）" % name)
 		if not FileAccess.file_exists(path):
 			continue
 		var text := FileAccess.get_file_as_string(path)

@@ -59,7 +59,13 @@ advanced_options=false
 dedicated_server=false
 custom_features=""
 export_filter="all_resources"
-include_filter=""
+; Include *.svg explicitly. SvgBank reads the .svg SOURCE at runtime (FileAccess)
+; and rasterizes it -- that is the whole "vector ship" design. But Godot exports
+; .svg as an imported resource, so without this filter the source never lands in
+; the pck, the parts fail to load, and the ship degrades to a plain block.
+; (Found the hard way in M8; comments here must be ASCII and use ';' not '#',
+;  otherwise this whole key gets swallowed.)
+include_filter="*.svg"
 exclude_filter=""
 export_path="export/ocean-s-king/ocean-s-king.exe"
 encryption_include_filters=""

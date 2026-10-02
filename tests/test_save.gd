@@ -548,6 +548,33 @@ func _test_scene_wiring() -> void:
 	_check(sc._ending.visible, "S 能再把账摊开看一遍")
 	_key(sc, KEY_ESCAPE)
 
+	# —— 客户端那条路（M8 收尾补的三条）——
+	# 房主那条路是"单机出海"，客户端走的是 `_on_welcome()`；它以前少两步，
+	# 于是"没 UI、按键没反应、看不见房主那条船"。这里就盯这两步。
+	var host := Voyage.new()
+	host.setup(GEO)
+	host.orders.set_target_point(Vector2(36000, 20000))
+	for _i in 300:
+		host.tick(0.5)
+	var world := NetProtocol.world_projection(host)
+	world["region"] = host.region_path
+	sc._on_welcome("san_antonio", host.fleet.summary_of("san_antonio"), world)
+	_check(sc._hud_layer.visible and sc._panel_layer.visible,
+		"客户端拿到船位后有了 HUD 与面板层（否则就是没有 UI、按键没反应）")
+	_check(not sc._room.visible, "客户端那屏的房间界面收起来了")
+	_check(sc.voyage.fleet.local_id == "san_antonio",
+		"本机开的是房主分的那条船（%s）" % sc.voyage.fleet.local_id)
+	var missing := PackedStringArray()
+	for id in sc.voyage.fleet.others():
+		if not sc._fleet_views.has(str(id)):
+			missing.append(str(id))
+	_check(missing.is_empty(), "别人的船每条都有渲染器（缺：%s）" % (
+		"无" if missing.is_empty() else ", ".join(missing)))
+	_check(sc._fleet_views.has("trinidad"),
+		"房主那条船在渲染器名单里 —— 客户端看得见它")
+	_check(not sc._fleet_views.has("san_antonio"),
+		"自己那条船不在「别人的船」名单里（不然会画两遍）")
+
 	var p := ProjectSettings.globalize_path(SaveGame.slot_path("auto"))
 	if FileAccess.file_exists(p):
 		DirAccess.remove_absolute(p)
