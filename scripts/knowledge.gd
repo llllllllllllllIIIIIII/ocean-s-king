@@ -19,9 +19,26 @@ const CATEGORIES := [
 	{ "id": "language", "name": "语言" },
 	{ "id": "trade", "name": "贸易情报" },
 	{ "id": "war", "name": "战争情报" },
+	# M14：坏血病（M13 的太平洋事件）与热病都用这一类 —— 加上它，知识页里才显示得出来
+	{ "id": "medicine", "name": "医术与药" },
 ]
 
 var entries: Array = []              # [{category, id, title, text, t}]
+# M14：**卖出去过的**知识（"类别:id" -> true）。卖过一次就不能再卖第二遍 ——
+# 不然同一条海图可以在同一个港反复换钱。它进存档（WorldState 那本账要守恒）。
+var sold: Dictionary = {}
+
+
+func key_of(category: String, id: String) -> String:
+	return "%s:%s" % [category, id]
+
+
+func is_sold(category: String, id: String) -> bool:
+	return sold.has(key_of(category, id))
+
+
+func mark_sold(category: String, id: String) -> void:
+	sold[key_of(category, id)] = true
 
 
 func category_name(id: String) -> String:
@@ -96,10 +113,11 @@ func describe() -> String:
 # ------------------------------------------------------------ 存档（WorldState，docs/14 第 2 节）
 
 func capture_state() -> Dictionary:
-	return { "entries": entries.duplicate(true) }
+	return { "entries": entries.duplicate(true), "sold": sold.duplicate() }
 
 
 func apply_state(d: Dictionary) -> void:
 	if d.is_empty():
 		return
 	entries = (d.get("entries", []) as Array).duplicate(true)
+	sold = (d.get("sold", {}) as Dictionary).duplicate()

@@ -8,8 +8,10 @@
       "id": "sanlucar",
       "services": ["supply", "repair", "trade"],
       "stock": { "food": 900, "water": 90, "wood": 60, "canvas": 30, "powder": 12, "lead": 400,
-                 "match": 40, "medicine": 12, "cloth": 40, "wine": 30, "salt": 40 },
-      "mul": { "ivory": 1.6, "brazilwood": 1.5, "cloth": 0.8, "wine": 0.8 }
+                 "match": 40, "medicine": 12, "cloth": 40, "wine": 30, "salt": 40,
+                 "cloves": 6, "nutmeg": 6, "silk": 8, "porcelain": 4 },
+      "mul": { "ivory": 1.6, "brazilwood": 1.5, "cloth": 0.8, "wine": 0.8,
+               "cloves": 4.0, "nutmeg": 3.8, "silk": 3.2, "porcelain": 3.5 }
     },
     {
       "id": "santa_cruz",
@@ -53,21 +55,27 @@
     {
       "id": "cebu",
       "services": ["supply", "trade"],
-      "stock": { "food": 140, "water": 30, "wood": 10, "canvas": 4, "salt": 20 },
-      "mul": { "cloth": 2.2, "wine": 2.0, "lead": 1.6, "salt": 0.9 }
+      "stock": { "food": 140, "water": 30, "wood": 10, "canvas": 4, "salt": 20,
+                 "silk": 120, "porcelain": 90 },
+      "mul": { "cloth": 2.2, "wine": 2.0, "lead": 1.6, "salt": 0.9,
+               "silk": 0.8, "porcelain": 0.7, "cloves": 1.4, "nutmeg": 1.4 }
     },
     {
       "id": "tidore",
       "services": ["supply", "repair", "trade"],
-      "stock": { "food": 120, "water": 28, "wood": 16, "canvas": 8, "salt": 30, "cloth": 6 },
-      "mul": { "cloth": 2.8, "wine": 2.6, "salt": 0.6, "medicine": 1.4 }
+      "stock": { "food": 120, "water": 28, "wood": 16, "canvas": 8, "salt": 30, "cloth": 6,
+                 "cloves": 400, "nutmeg": 300, "porcelain": 20 },
+      "mul": { "cloth": 2.8, "wine": 2.6, "salt": 0.6, "medicine": 1.4,
+               "cloves": 0.4, "nutmeg": 0.4, "silk": 1.5, "porcelain": 0.9 }
     },
     {
       "id": "malacca",
       "services": ["supply", "repair", "trade"],
       "stock": { "food": 200, "water": 40, "wood": 24, "canvas": 14, "cloth": 60, "salt": 50,
-                 "ivory": 40, "wine": 10, "medicine": 6, "powder": 4, "lead": 120, "match": 12 },
-      "mul": { "cloth": 0.7, "wine": 0.8, "salt": 0.7, "ivory": 1.5, "brazilwood": 1.6 }
+                 "ivory": 40, "wine": 10, "medicine": 6, "powder": 4, "lead": 120, "match": 12,
+                 "cloves": 150, "nutmeg": 120, "silk": 200, "porcelain": 150 },
+      "mul": { "cloth": 0.7, "wine": 0.8, "salt": 0.7, "ivory": 1.5, "brazilwood": 1.6,
+               "cloves": 1.1, "nutmeg": 1.1, "silk": 0.9, "porcelain": 0.9 }
     },
     {
       "id": "mozambique",

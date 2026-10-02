@@ -1,0 +1,102 @@
+{
+  "_comment": "印度洋与好望角段的事件池（M14）：季风掉头、热病、海盗、当地的王国，以及绕好望角那一关。条件里的 `region: indian` 读的是 M9 的分区图幅（东经 12°–105°、南纬 0°–40°）。",
+  "_design": "这一段的两件事：**风向会掉头**（同一个港口，半年前顺风、半年后顶风），和**补给点变稀**（从香料群岛到好望角之间只有几个据点）。事件都围着这两件事写。",
+  "version": 1,
+  "pool": "external",
+  "events": [
+    {
+      "id": "indian_monsoon_reversal",
+      "name": "季风掉头",
+      "priority": 3,
+      "requires": { "region": "indian", "days_min": 300 },
+      "effects": {
+        "weather": { "id": "squall", "hours": 6.0 },
+        "mood": -0.03,
+        "tension": 0.05,
+        "message": "风向换了。领航员把去年的记录翻出来对着看：同一个季节，上次是顺风，这回是顶头。"
+      },
+      "text": "在印度洋，等风不是怯懦，是算术。",
+      "knowledge": {
+        "category": "current",
+        "id": "monsoon_reversal",
+        "title": "季风掉头",
+        "text": "印度洋的风一年掉两次头。什么时候从这里往西走、什么时候往东走，都是有月份的 —— 走错了就是几个月。"
+      }
+    },
+    {
+      "id": "indian_fever",
+      "name": "热病",
+      "priority": 3,
+      "requires": { "region": "indian", "days_min": 320 },
+      "effects": {
+        "health": -0.06,
+        "mood": -0.05,
+        "tension": 0.08,
+        "message": "靠岸补过水之后，先是两个人打摆子，三天之后是七个。外科医生把药品箱子搬到了甲板上。"
+      },
+      "text": "热带的病不是从海上来的，是从岸上带回来的。",
+      "knowledge": {
+        "category": "medicine",
+        "id": "tropical_fever",
+        "title": "热病",
+        "text": "热带海岸的静水与闷热带着一种病：打摆子、出汗、反复。上岸取水要挑活水，夜里别睡在低处。"
+      }
+    },
+    {
+      "id": "indian_pirate_sail",
+      "name": "帆影",
+      "priority": 2,
+      "requires": { "region": "indian", "days_min": 310 },
+      "effects": {
+        "tension": 0.08,
+        "mood": -0.04,
+        "memory_add": { "pirate_watch": 1 },
+        "message": "天边三条帆影，不挂旗，也不避让。炮组自己就位了 —— 这一带的船，先看你的舷侧有几门炮。"
+      },
+      "text": "印度洋上跑商的人都知道：先把炮擦亮，再谈价钱。",
+      "knowledge": {
+        "category": "war",
+        "id": "indian_pirates",
+        "title": "印度洋的海盗",
+        "text": "这一段海上没有谁发通行证。挂不挂旗都不算数，舷侧的火力才是话事的那一位。"
+      }
+    },
+    {
+      "id": "indian_sultan_port",
+      "name": "苏丹的港口",
+      "priority": 2,
+      "requires": { "region": "indian", "days_min": 330 },
+      "effects": {
+        "mood": 0.04,
+        "memory_add": { "traded_sultan": 1 },
+        "message": "岸上的城比塞维利亚还大。管事的人收下礼物，问的第一句是：你们是从哪条路来的？"
+      },
+      "text": "在这一带，别人最想知道的不是你的货，是你的航路。",
+      "knowledge": {
+        "category": "culture",
+        "id": "indian_kingdoms",
+        "title": "印度洋的王国",
+        "text": "这一带的港口各有自己的王与规矩。货能卖，路不能随便说 —— 航路本身就是最贵的货。"
+      }
+    },
+    {
+      "id": "cape_of_storms",
+      "name": "好望角的狂风",
+      "priority": 3,
+      "requires": { "region": "indian", "days_min": 340 },
+      "effects": {
+        "weather": { "id": "storm", "hours": 8.0 },
+        "damage": { "mast": 0.08, "sail": 0.06 },
+        "mood": -0.05,
+        "message": "绕过那道岬角的时候，风从西边整片压过来。桅杆响了一夜，天亮时主帆裂了一道口子。"
+      },
+      "text": "这道角本来不叫好望角，叫风暴角。",
+      "knowledge": {
+        "category": "chart",
+        "id": "cape_of_good_hope",
+        "title": "好望角",
+        "text": "非洲最南端那一道岬角。绕过它就进了大西洋 —— 但西风带在这里一年到头都在压船。"
+      }
+    }
+  ]
+}

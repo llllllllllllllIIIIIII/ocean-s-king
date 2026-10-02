@@ -30,6 +30,9 @@ var ready := false
 var fatigue_mult := 1.0
 var mood_bias := 0.0
 var grumble_count := 0             # 抱怨过几次（验收第 1 条要数它）
+# M14：港口招来的人（进存档、进结算的生还人数）与普通船员的工作优先级（静态数据）
+var recruited := 0
+var _hand_prio: Dictionary = {}
 
 var _grumble_pool := [
 	"这帆脚索又缠住了。",
@@ -75,6 +78,7 @@ func setup() -> void:
 	var center := float(hands.get("skill_center", 0.45))
 	var spread := float(hands.get("skill_spread", 0.15))
 	var hand_prio: Dictionary = hands.get("prio", {})
+	_hand_prio = hand_prio.duplicate()
 	for i in count:
 		var m := CrewMember.new()
 		m.id = "hand_%02d" % (i + 1)
@@ -114,6 +118,43 @@ func _place_members() -> void:
 			m.at = deck[i_deck % deck.size()]
 			i_deck += 5
 		m.path = [m.at]
+
+
+func recruit(count := 1, skill_center := 0.45, origin := "") -> Array:
+	"""在港口招人（M14）：新水手的技能按**来源地**给一个中心值 + 确定性偏差（不用随机数）。
+
+	招来的人是真的名册成员：有岗位、有技能、进存档、进结算的生还人数
+	（`Settlement` 数的是活着的人）。所以"在路上补人"这件事在结算里看得见。
+	"""
+	var out := []
+	var deck := path.reachable_cells(2)
+	for _i in count:
+		var m := CrewMember.new()
+		recruited += 1
+		m.id = "recruit_%02d" % recruited
+		m.id_hash = absi(m.id.hash())
+		m.is_key = false
+		m.post = "水手"
+		# 来源地写进显示名：面板上能看出"这个人是从哪儿上的船"
+		m.display_name = ("%s #%02d" % [origin, recruited]) if origin != "" else "#R%02d" % recruited
+		var wobble := (float((recruited * 3) % 7) / 6.0 - 0.5) * 2.0      # −1..1，确定性的
+		var s := clampf(skill_center + wobble * 0.12, 0.15, 0.85)
+		m.skills = {
+			"seamanship": s,
+			"navigation": maxf(0.05, s - 0.25),
+			"helm": maxf(0.05, s - 0.15),
+			"cooking": maxf(0.05, s - 0.30),
+			"medicine": maxf(0.05, s - 0.35),
+			"repair": maxf(0.05, s - 0.20),
+		}
+		m.prio = _hand_prio.duplicate()
+		if not deck.is_empty():
+			m.at = deck[(recruited * 5) % deck.size()]
+			m.path = [m.at]
+		members.append(m)
+		out.append(m)
+	log_event("在港口招了 %d 个人上船。" % count)
+	return out
 
 
 func tick(delta: float, sail_demand: int) -> void:
@@ -370,6 +411,7 @@ func capture_state() -> Dictionary:
 		"log_lines": log_lines.duplicate(),
 		"members": people,
 		"grumble_count": grumble_count,
+		"recruited": recruited,
 	}
 
 
@@ -380,6 +422,7 @@ func apply_state(d: Dictionary) -> void:
 	_assign_timer = float(d.get("_assign_timer", 1e9))
 	_grumble_cursor = int(d.get("_grumble_cursor", 0))
 	grumble_count = int(d.get("grumble_count", 0))
+	recruited = int(d.get("recruited", 0))
 	log_lines = (d.get("log_lines", []) as Array).duplicate()
 	var by_id := {}
 	for m in members:
@@ -389,3 +432,11 @@ func apply_state(d: Dictionary) -> void:
 		var cid := str(raw.get("id", ""))
 		if by_id.has(cid):
 			by_id[cid].apply_state(raw)
+		else:
+			# M14：**港口招来的人**不在 `crew_12.json` 里 —— 存档里多出来的成员要按存档建回来，
+			# 否则读档之后"招来的人凭空消失"，结算的生还人数也对不上。
+			var m2 := CrewMember.new()
+			m2.id = cid
+			m2.id_hash = absi(cid.hash())
+			m2.apply_state(raw)
+			members.append(m2)

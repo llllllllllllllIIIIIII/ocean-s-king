@@ -24,6 +24,11 @@ const INPUT := "input"        # 客户端 → 房主：一件会影响"世界"�
 # 命中与伤亡由**受击方所属的权威**判定并广播结果（docs/22 第 4.4 节）。
 const FIRE := "fire"          # 开火方 → 房主 → 受击方的拥有者：这一轮舷侧的输入
 const NAVAL := "naval"        # 受击方权威 → 房主 → 全部：这一轮的结果
+# M14：**两段式交易**。港口库存是房主权威、船上的货与钱是拥有者权威，
+# 所以一条交易要分两段走：客户端申请 → 房主执行库存那一半 → 回执 →
+# 申请方把货与钱落到自己的货舱（docs/17 第 8 节那条"客户端只能看价格"的限制到此解除）。
+const TRADE_REQUEST := "trade_req"   # 客户端 → 房主：我要在这个港买/卖这个
+const TRADE_ACK := "trade_ack"       # 房主 → 申请人：库存那一半执行完了，价格与数量在这
 
 # --- 心跳 ---
 const PING := "ping"
@@ -67,6 +72,9 @@ static func world_projection(v: Voyage) -> Dictionary:
 		"discovered": v.discovered.duplicate(),
 		"known_places": v.known_places.duplicate(),
 		"reef_hit": v.reef_hit,
+		# M14：港口库存与价格也是 WorldState（一直就是，只是以前没广播）——
+		# 两段式交易之后客户端的港口账必须跟着房主走，不然"客户端看到的价格"会飘。
+		"ports": v.ports.capture_state(),
 		"story": v.story.capture_state(),
 		"journal": v.journal.capture_state(),
 		# M11：势力态度与王室命令、葡萄牙追捕的环、别的船 —— 都是"世界对我们做了什么"，
@@ -90,6 +98,7 @@ static func apply_world_projection(v: Voyage, d: Dictionary) -> void:
 	v.discovered = (d.get("discovered", {}) as Dictionary).duplicate()
 	v.known_places = (d.get("known_places", {}) as Dictionary).duplicate()
 	v.reef_hit = bool(d.get("reef_hit", false))
+	v.ports.apply_state(d.get("ports", {}))
 	v.story.apply_state(d.get("story", {}))
 	v.journal.apply_state(d.get("journal", {}))
 	v.factions.apply_state(d.get("factions", {}))

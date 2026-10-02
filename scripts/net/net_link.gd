@@ -137,6 +137,27 @@ func _on_message(peer: int, kind: String, payload: Dictionary) -> void:
 				var id := str(payload.get("ship_id", ""))
 				if id != "":
 					voyage.fleet.detach_player(id, voyage.default_destination())
+		NetProtocol.TRADE_REQUEST:
+			# M14：交易的第一段。港口库存是**房主权威** —— 申请方不自己动它。
+			if session.is_host():
+				var result: Dictionary = voyage.host_execute_trade(payload)
+				session.send_to(peer, NetProtocol.TRADE_ACK,
+					{"req": payload, "result": result}, true)
+		NetProtocol.TRADE_ACK:
+			# 第二段：回执到手，申请方把**自己的**货与钱落账（拥有者权威）。
+			if session.is_client():
+				voyage.client_apply_trade(payload)
+
+
+func send_trade_request(req: Dictionary) -> void:
+	"""客户端：把这一笔交易交给房主（"申请"那一段）。"""
+	if session == null or not session.is_online():
+		return
+	if session.is_host():
+		var result: Dictionary = voyage.host_execute_trade(req)
+		voyage.client_apply_trade({"req": req, "result": result})
+		return
+	session.send_to_host(NetProtocol.TRADE_REQUEST, req, true)
 
 
 func send_fire(req: Dictionary) -> void:

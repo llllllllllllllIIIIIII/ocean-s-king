@@ -114,6 +114,20 @@ static func item_name(id: String) -> String:
 	return id
 
 
+static func item_unit(id: String) -> String:
+	for it in Cargo.defs_data().get("items", []):
+		if str(it.get("id", "")) == id:
+			return str(it.get("unit", "件"))
+	return "件"
+
+
+static func unit_kg_of(id: String) -> float:
+	for it in Cargo.defs_data().get("items", []):
+		if str(it.get("id", "")) == id:
+			return float(it.get("kg", 1.0))
+	return 1.0
+
+
 func unit_price(port: String, item: String) -> float:
 	"""一件多少钱：基准价 × 地区系数 × 库存压力。"""
 	var base := 1.0
@@ -138,40 +152,73 @@ func can_trade(port: String, item: String) -> bool:
 	return has_service(port, "trade") and stock.get(port, {}).has(item)
 
 
-func buy(port: String, item: String, n: int, cargo: Cargo) -> Dictionary:
-	"""买：钱出去、货进来、**港口库存同步减少**（守恒）。"""
+# --- 两段式交易的两半（M14）-------------------------------------------------
+# 港口库存与价格是**房主权威**（`AGENTS.md` 铁律 11），船上的钱与货是**船主权威**。
+# 联机时这两本账在两个进程上，所以一次交易必须拆成两半：
+#   `check_*` —— 只回答"港口这边答不答应"并报价（价目表是房主/本机那一份）
+#   `apply_*` —— 港口这边落账（扣 / 加库存），**不碰任何人的船**
+# 单机的 `buy` / `sell` 就是"这两半 + 本机 Cargo 的账"，所以两条路走的是同一个报价
+# 与同一条守恒口径（`test_ports` 的断言一条都没动）。
+
+func check_buy(port: String, item: String, n: int, money: int, free_kg: float) -> Dictionary:
+	"""港口这一侧：这批货卖不卖给你、卖多少钱。**不改任何值。**"""
 	if n <= 0:
 		return {"ok": false, "reason": "买多少？"}
 	if not can_trade(port, item):
 		return {"ok": false, "reason": "这个港口不做这门生意"}
 	if stock_of(port, item) < n:
-		return {"ok": false, "reason": "%s 只剩 %d" % [cargo.item_name(item), stock_of(port, item)]}
-	if not cargo.fits(item, n):
-		return {"ok": false, "reason": "装不下了（货舱还剩 %.1f 吨）" % (cargo.free_kg() / 1000.0)}
+		return {"ok": false, "reason": "%s 只剩 %d" % [item_name(item), stock_of(port, item)]}
+	if free_kg < unit_kg_of(item) * float(n):
+		return {"ok": false, "reason": "装不下了（货舱还剩 %.1f 吨）" % (free_kg / 1000.0)}
 	var price := buy_price(port, item)
 	var cost := price * n
-	if cargo.money < cost:
-		return {"ok": false, "reason": "钱不够（要 %d，有 %d）" % [cost, cargo.money]}
-	cargo.money -= cost
-	cargo.add(item, n)
-	stock[port][item] = stock_of(port, item) - n
+	if money < cost:
+		return {"ok": false, "reason": "钱不够（要 %d，有 %d）" % [cost, money]}
 	return {"ok": true, "cost": cost, "unit": price, "item": item, "qty": n}
 
 
-func sell(port: String, item: String, n: int, cargo: Cargo) -> Dictionary:
-	"""卖：货出去、钱进来、**港口库存同步增加**（守恒）。"""
+func apply_buy(port: String, item: String, n: int) -> void:
+	"""港口这一侧落账：库存减少（**守恒的另一半**由买方自己落）。"""
+	stock[port][item] = stock_of(port, item) - n
+
+
+func check_sell(port: String, item: String, n: int, have: int) -> Dictionary:
+	"""港口这一侧：这批货收不收、给多少钱。**不改任何值。**"""
 	if n <= 0:
 		return {"ok": false, "reason": "卖多少？"}
 	if not can_trade(port, item):
 		return {"ok": false, "reason": "这个港口不收这个"}
-	if not cargo.has(item, n):
-		return {"ok": false, "reason": "船上只有 %d %s" % [cargo.qty(item), cargo.item_unit(item)]}
+	if have < n:
+		return {"ok": false, "reason": "船上只有 %d %s" % [have, item_unit(item)]}
 	var price := sell_price(port, item)
-	var gain := price * n
-	cargo.remove(item, n)
-	cargo.money += gain
+	return {"ok": true, "gain": price * n, "unit": price, "item": item, "qty": n}
+
+
+func apply_sell(port: String, item: String, n: int) -> void:
+	"""港口这一侧落账：库存增加。"""
 	stock[port][item] = stock_of(port, item) + n
-	return {"ok": true, "gain": gain, "unit": price, "item": item, "qty": n}
+
+
+func buy(port: String, item: String, n: int, cargo: Cargo) -> Dictionary:
+	"""买：钱出去、货进来、**港口库存同步减少**（守恒）。"""
+	var r := check_buy(port, item, n, cargo.money, cargo.free_kg())
+	if not bool(r.get("ok", false)):
+		return r
+	cargo.money -= int(r["cost"])
+	cargo.add(item, n)
+	apply_buy(port, item, n)
+	return r
+
+
+func sell(port: String, item: String, n: int, cargo: Cargo) -> Dictionary:
+	"""卖：货出去、钱进来、**港口库存同步增加**（守恒）。"""
+	var r := check_sell(port, item, n, cargo.qty(item))
+	if not bool(r.get("ok", false)):
+		return r
+	cargo.remove(item, n)
+	cargo.money += int(r["gain"])
+	apply_sell(port, item, n)
+	return r
 
 
 func repair(port: String, part: String, amount: float, cargo: Cargo, ship: ShipDynamics) -> Dictionary:

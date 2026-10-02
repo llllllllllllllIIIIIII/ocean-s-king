@@ -1335,16 +1335,90 @@ func port_name() -> String:
 func can_trade_here() -> bool:
 	"""买卖会动**港口库存**（房主权威），所以 v0.5 只让房主在港里交易。
 
-	客户端可以看价格与库存（只读），但按不下"买"—— 这条写进 docs/17 的限制清单，
-	两段式确认（申请→房主执行→回执）留给以后。
+	M14：**客户端也能交易了** —— 走两段式（申请 → 房主执行库存 → 回执 →
+	申请方落到自己的货舱）。港口库存仍然只有房主能写，`docs/17` 第 8 节那条限制到此解除。
 	"""
 	# M7：因果链里那一环 —— 坏名声会让港口不做你的生意（`ports_refuse`）
-	return docked_port != "" and not is_client() and not fired.has("ports_refuse")
+	return docked_port != "" and not fired.has("ports_refuse")
+
+
+func host_execute_trade(req: Dictionary) -> Dictionary:
+	"""两段式交易的第一段（**房主**）：只动港口库存那一半，并回一份价格清单。
+
+	船上的货与钱不在这里动 —— 那是拥有者权威（`client_apply_trade`）。
+	申请里带的钱 / 舱位 / 存货是**船主自报**的数（铁律 11：船的账由船主报），
+	房主的职责是守住港口那一本（校验与报价都走 `Ports.check_*`，只有这一份口径）。
+	"""
+	var port := str(req.get("port", docked_port))
+	var item := str(req.get("item", ""))
+	var n := int(req.get("n", 0))
+	var side := str(req.get("side", "buy"))
+	if n <= 0 or item == "":
+		return {"ok": false, "reason": "数量或货不对"}
+	if not ports.has_port(port):
+		return {"ok": false, "reason": "没有这个港口"}
+	var r := {}
+	if side == "buy":
+		r = ports.check_buy(port, item, n, int(req.get("money", 0)), float(req.get("free_kg", 0.0)))
+		if bool(r.get("ok", false)):
+			ports.apply_buy(port, item, n)
+			r["total"] = int(r["cost"])
+			journal.decide("有人从%s买走 %d %s。" % [port, n, ports.item_name(item)])
+	else:
+		r = ports.check_sell(port, item, n, int(req.get("have", 0)))
+		if bool(r.get("ok", false)):
+			ports.apply_sell(port, item, n)
+			r["total"] = int(r["gain"])
+			journal.decide("有人往%s卖了 %d %s。" % [port, n, ports.item_name(item)])
+	r["side"] = side
+	r["port"] = port
+	return r
+
+
+func client_apply_trade(payload: Dictionary) -> Dictionary:
+	"""两段式交易的第二段（**申请方**）：把货与钱落到自己的货舱。
+
+	钱与货是拥有者权威，所以只有这一侧能写它 —— 房主只碰库存。
+	"""
+	var res: Dictionary = payload.get("result", {})
+	if not bool(res.get("ok", false)):
+		_say("这笔买卖没成：%s" % str(res.get("reason", "")), true)
+		return res
+	var item := str(res.get("item", ""))
+	var n := int(res.get("qty", 0))
+	var total := int(res.get("total", 0))
+	if str(res.get("side", "buy")) == "buy":
+		if cargo.money < total:
+			return {"ok": false, "reason": "钱不够（要 %d，有 %d）" % [total, cargo.money]}
+		if not cargo.fits(item, n):
+			return {"ok": false, "reason": "装不下了"}
+		cargo.money -= total
+		cargo.add(item, n)
+		_say("在%s买下 %d %s（%d 杜卡特）。" % [docked_port, n, cargo.item_name(item), total], true)
+	else:
+		if not cargo.has(item, n):
+			return {"ok": false, "reason": "船上只有 %d" % cargo.qty(item)}
+		cargo.remove(item, n)
+		cargo.money += total
+		_say("把 %d %s卖给了%s（+%d 杜卡特）。" % [n, cargo.item_name(item), docked_port, total], true)
+	return res
 
 
 func port_buy(item: String, n: int) -> Dictionary:
 	if not can_trade_here():
-		return {"ok": false, "reason": "只能在靠港时交易（联机时由房主交易）"}
+		return {"ok": false, "reason": "只能在靠港时交易"}
+	if is_client():
+		# M14 两段式：本机先自检（钱与舱位是拥有者权威），再请房主动库存
+		var unit := ports.buy_price(docked_port, item)
+		if cargo.money < unit * n:
+			return {"ok": false, "reason": "钱不够（要 %d，有 %d）" % [unit * n, cargo.money]}
+		if not cargo.fits(item, n):
+			return {"ok": false, "reason": "装不下了"}
+		if link != null:
+			link.send_trade_request({"ship_id": fleet.local_id, "port": docked_port,
+				"item": item, "n": n, "side": "buy",
+				"money": cargo.money, "free_kg": cargo.free_kg()})
+		return {"ok": true, "pending": true, "qty": n, "unit": unit}
 	var r := ports.buy(docked_port, item, n, cargo)
 	if bool(r.get("ok", false)):
 		_say("买了 %d %s %s，花了 %d 金币。" % [
@@ -1354,7 +1428,14 @@ func port_buy(item: String, n: int) -> Dictionary:
 
 func port_sell(item: String, n: int) -> Dictionary:
 	if not can_trade_here():
-		return {"ok": false, "reason": "只能在靠港时交易（联机时由房主交易）"}
+		return {"ok": false, "reason": "只能在靠港时交易"}
+	if is_client():
+		if not cargo.has(item, n):
+			return {"ok": false, "reason": "船上只有 %d" % cargo.qty(item)}
+		if link != null:
+			link.send_trade_request({"ship_id": fleet.local_id, "port": docked_port,
+				"item": item, "n": n, "side": "sell", "have": cargo.qty(item)})
+		return {"ok": true, "pending": true, "qty": n}
 	var r := ports.sell(docked_port, item, n, cargo)
 	if bool(r.get("ok", false)):
 		_say("卖了 %d %s %s，得到 %d 金币。" % [
@@ -1410,6 +1491,59 @@ func port_repair(part: String, amount := 1.0) -> Dictionary:
 		journal.decide("在%s修船：%s %.0f%%。" % [port_name(),
 			names.get(part, part), do_amount * 100.0])
 	return r
+
+
+func port_sell_knowledge(category: String, id: String) -> Dictionary:
+	"""卖一条海图 / 情报（M14）：换钱、记进世界记忆，**买方态度真的变**。
+
+	同一条只能卖一次（`Knowledge.sold`）—— 不然能在同一个港反复换钱。
+	价格按类别给（`resources.json` 的 `knowledge_price`），数值只有一个真源。
+	"""
+	if not can_trade_here():
+		return {"ok": false, "reason": "先靠港"}
+	if not knowledge.has(category, id):
+		return {"ok": false, "reason": "船上没有这条知识"}
+	if knowledge.is_sold(category, id):
+		return {"ok": false, "reason": "这条已经卖过了"}
+	var table: Dictionary = Cargo.defs_data().get("knowledge_price", {})
+	var price := int(maxf(1.0, round(float(table.get(category, 60)))))
+	cargo.money += price
+	knowledge.mark_sold(category, id)
+	memory["sold_charts"] = int(memory.get("sold_charts", 0)) + 1
+	# 买方行为真的变：商人的反应表里 `trade` 是 +0.04 —— 卖情报给他们，他们记这份情
+	factions.react("merchants", "trade", 1)
+	_say("把这条情报卖给了%s，换回 %d 枚杜卡特。" % [port_name(), price], true)
+	journal.decide("卖了一条知识（%s）：%d 杜卡特。" % [knowledge.category_name(category), price])
+	return {"ok": true, "price": price, "category": category, "id": id}
+
+
+func port_recruit(n := 1, cost_each := 40) -> Dictionary:
+	"""在港口招人（M14）：花钱、上人 —— 来源地决定技能的中心值。
+
+	招来的人是**真的名册成员**：有岗位、有技能、进存档、进结算的生还人数。
+	"""
+	if not can_trade_here():
+		return {"ok": false, "reason": "先靠港"}
+	if n <= 0:
+		return {"ok": false, "reason": "招几个？"}
+	var cost := n * cost_each
+	if cargo.money < cost:
+		return {"ok": false, "reason": "钱不够（要 %d，有 %d）" % [cost, cargo.money]}
+	var port := sea.port_at(ship.position_m())
+	var origin := str(port.get("faction", ""))
+	var center := 0.42
+	if origin == "西班牙" or origin == "葡萄牙":
+		center = 0.52
+	elif origin == "当地":
+		center = 0.46
+	cargo.money -= cost
+	var people := roster.recruit(n, center, origin)
+	var ids := []
+	for m in people:
+		ids.append(m.id)
+	_say("在%s招了 %d 个人上船。" % [port_name(), n], true)
+	journal.decide("在%s补了 %d 名水手（每人 %d 杜卡特）。" % [port_name(), n, cost_each])
+	return {"ok": true, "count": n, "cost": cost, "ids": ids}
 
 
 func tick_real(real_delta: float) -> void:

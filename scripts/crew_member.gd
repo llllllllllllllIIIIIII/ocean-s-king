@@ -111,6 +111,11 @@ func _job_name(j: String) -> String:
 func capture_state() -> Dictionary:
 	return {
 		"id": id,
+		# M14：这四样本来是 `crew_12.json` 里的**静态数据**（关键船员的岗位/技能），
+		# 但港口招来的人不在那个文件里 —— 不存的话读档之后"招来的人没了岗位和技能"。
+		# 存下来对关键船员只是冗余，对招来的人是必需。
+		"is_key": is_key, "display_name": display_name,
+		"post": post, "post_es": post_es, "skills": skills.duplicate(),
 		"hunger": hunger, "fatigue": fatigue, "health": health, "mood": mood,
 		"job": job, "working": working,
 		"at": StateIO.v3i(at),
@@ -127,6 +132,12 @@ func capture_state() -> Dictionary:
 func apply_state(d: Dictionary) -> void:
 	if d.is_empty():
 		return
+	is_key = bool(d.get("is_key", is_key))
+	display_name = str(d.get("display_name", display_name))
+	post = str(d.get("post", post))
+	post_es = str(d.get("post_es", post_es))
+	if d.has("skills"):
+		skills = (d.get("skills", {}) as Dictionary).duplicate()
 	hunger = float(d.get("hunger", 0.2))
 	fatigue = float(d.get("fatigue", 0.15))
 	health = float(d.get("health", 1.0))

@@ -32,7 +32,20 @@
       "base_price": 22, "text": "既是货物，也是船员的盼头。" },
     { "id": "salt", "name": "盐", "unit": "袋", "kg": 50, "kind": "goods",
       "base_price": 5, "text": "腌肉用。廉价，但哪一站都缺。" }
+    ,
+    { "id": "cloves", "name": "丁香", "unit": "袋", "kg": 60, "kind": "goods",
+      "base_price": 30, "text": "摩鹿加几个小岛上的东西。带一袋回欧洲，值它在产地十倍的价钱。" },
+    { "id": "nutmeg", "name": "肉豆蔻", "unit": "袋", "kg": 60, "kind": "goods",
+      "base_price": 26, "text": "产地更窄。谁占住那几个岛，谁就定欧洲的价。" },
+    { "id": "silk", "name": "丝绸", "unit": "匹", "kg": 8, "kind": "goods",
+      "base_price": 40, "text": "从更东边来的东西：轻、贵、不怕水 —— 远洋船最喜欢的货。" },
+    { "id": "porcelain", "name": "瓷器", "unit": "箱", "kg": 35, "kind": "goods",
+      "base_price": 55, "text": "易碎。装箱的人比谁都紧张，压舱的位置得挑。" }
   ],
+  "knowledge_price": {
+    "_comment": "知识的价格（M14）：海图与情报也能卖钱。按**类别**给底价，卖出时记进世界记忆。类别见 scripts/knowledge.gd 的 CATEGORIES。",
+    "chart": 160, "trade": 120, "current": 90, "culture": 110, "species": 70, "language": 60, "war": 200
+  },
   "consumption": {
     "_comment": "按**航程日**算（见 docs/15 第 6 节的压缩系数）。口粮档位是 M5 的规则表，这一期先固定 1.0。",
     "ration_per_person_day": 1.0,
