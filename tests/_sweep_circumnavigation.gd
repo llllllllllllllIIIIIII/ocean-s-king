@@ -11,25 +11,42 @@ extends SceneTree
 # 否则船员会饿死 —— 那验的是断粮（`test_climate` 专盯），不是连通性。
 
 const DT := 0.5
+const STOP_RADIUS_M := 1500.0    # 离港口的锚地多近就"靠港"
+# 说明：航段跟随在离航点 ~500 米时就切下一段，所以船不一定能走到 `can_dock()` 那个
+# 450 米的圈里。长跑里那会让它**跳过好几个补给港**（船体因此一路掉到 0%）。
+# 所以：先到 1500 米内，把船摆进锚地（`set_pose` 是测试/重置用的口子），再正常靠港。
+const LOG_PATH := "user://sweep_circumnavigation.log"
 var TOTAL := 400000.0        # 可以用命令行覆盖：`-- 80000 10000`
 var REPORT := 20000.0
 
+var _log: FileAccess
+var _wall0 := 0
+
+
+func _say(s: String) -> void:
+	print(s)
+	if _log != null:
+		_log.store_line(s)
+		_log.flush()
+
 
 func _initialize() -> void:
-	print("=== sweep_circumnavigation ===")
+	_log = FileAccess.open(LOG_PATH, FileAccess.WRITE)
+	_wall0 = Time.get_ticks_msec()
+	_say("=== sweep_circumnavigation ===")
 	var args := OS.get_cmdline_user_args()
 	if args.size() > 0:
 		TOTAL = float(args[0])
 	if args.size() > 1:
 		REPORT = float(args[1])
-	print("（扫 %d 游戏秒，每 %d 秒报一次）" % [int(TOTAL), int(REPORT)])
+	_say("（扫 %d 游戏秒，每 %d 秒报一次；靠港就补满）" % [int(TOTAL), int(REPORT)])
 	var v := Voyage.new()
 	v.setup(Sea.GLOBAL_PATH)
 	v.encounters_enabled = false
 	v.orders.anchored = false
 	v.orders.set_sail_level(ShipOrders.SailLevel.FULL)
 	v.start_route_follow()
-	print("出发：%s　终点：%s（归乡港 %s）" % [
+	_say("出发：%s　终点：%s（归乡港 %s）" % [
 		v.port_name(), v.goal_port_name(), v.home_port_id()])
 
 	var t := 0.0
@@ -42,26 +59,51 @@ func _initialize() -> void:
 	var regions := {}
 	var ending_at := -1.0
 	var next_provision := 0.0
+	var serviced := {}                 # 靠过哪些港（每个港只停一次）
+	var stops := 0
 	while t < TOTAL:
-		# 每 20000 游戏秒补一次给养 + 修一点船（模拟"沿途靠港"）
-		if t >= next_provision:
-			next_provision += 20000.0
-			v.cargo.add("food", 900)
-			v.cargo.add("water", 90)
-			v.cargo.add("wood", 6)
-			v.cargo.add("canvas", 4)
-			v.days_since_fresh = 0.0
-			v.days_short = 0.0
-			v.ship.apply_damage("hull", -0.10)
-			v.ship.apply_damage("mast", -0.10)
-			v.ship.apply_damage("sail", -0.10)
 		v.tick(DT)
 		t += DT
 		var p := v.ship.position_m()
 		if is_nan(p.x) or is_nan(p.y) or not v.sea.in_bounds(p):
-			print("  [BAD] t=%.0f 位置出问题（%s）" % [t, str(p)])
+			_say("  [BAD] t=%.0f 位置出问题（%s）" % [t, str(p)])
 			quit(1)
 			return
+		# **靠港补给**（M15 卡片里那句"中途自动停靠补给"）：
+		# 进了锚地圈就抛锚、靠港、修满、补足口粮淡水，再出海接着跟航线走。
+		for port in v.sea.ports():
+			var pid := str(port.get("id", ""))
+			if serviced.has(pid):
+				continue
+			var centroid := Geom2D.centroid(port["shape"])
+			if v.sea.dist(p, centroid) > STOP_RADIUS_M:
+				continue
+			serviced[pid] = true
+			stops += 1
+			v.ship.set_pose(centroid, v.ship.heading_deg())
+			v.orders.anchored = true
+			var docked := v.dock()
+			if v.docked_port != "":
+				# 真游戏里修船要木料帆布与工钱、口粮要花钱买；这一步验的是**连通性**，
+				# 所以按"港口愿意把远征队补满"来算（数字只在长跑里用）。
+				for part in ["hull", "mast", "rudder", "sail", "hold", "magazine"]:
+					v.ship.apply_damage(str(part), -1.0)
+				# 按最长的缺口装：关岛之前那一段约 120 个航程日没有港口
+				# （40 个人 × 每天 1 份口粮 / 3 升水）—— 真船长也会这么装。
+				# 舱位装不下就装到满（载重那本账仍然是船的数据说了算）。
+				v.cargo.add("water", mini(240, v.cargo.how_many_fit("water")))
+				v.cargo.add("food", mini(4800, v.cargo.how_many_fit("food")))
+				v.cargo.add("wood", mini(40, v.cargo.how_many_fit("wood")))
+				v.cargo.add("canvas", mini(30, v.cargo.how_many_fit("canvas")))
+				v.cargo.money = maxi(v.cargo.money, 600)
+				v.days_since_fresh = 0.0
+				v.days_short = 0.0
+				_say("  · t=%.0f 靠上%s（第 %d 站）：修满、补足，接着走（%s）"
+					% [t, v.port_name(), stops, docked])
+				v.undock()
+			v.orders.anchored = false
+			v.start_route_follow()
+			break
 		var rid := str(v.sea.world.region_of_tile(v.sea.tile_of(p)).get("id", ""))
 		if rid != "":
 			regions[rid] = true
@@ -79,28 +121,33 @@ func _initialize() -> void:
 		if t >= next_report:
 			next_report += REPORT
 			var ll := v.sea.m_to_lonlat(p)
-			print("  t=%7.0f s（%5.1f 天）　经纬 %7.2f / %6.2f　%.1f 节　航程 %5.0f 公里　船体 %.0f%%　活 %d 人　图幅 %s　剩 %d 段"
+			_say("  t=%7.0f s（%5.1f 天）　经纬 %7.2f / %6.2f　%.1f 节　航程 %5.0f 公里　船体 %.0f%%　活 %d 人　图幅 %s　剩 %d 段　靠港 %d 次"
 				% [t, t * VoyageJournal.voyage_time_scale / 86400.0, ll.x, ll.y,
 				   v.ship.speed_kn(), v.journal.distance_km(), (1.0 - v.ship.damage_of("hull")) * 100.0,
-				   _alive(v), rid, v.route_waypoints.size()])
+				   _alive(v), rid, v.route_waypoints.size(), stops])
+		if ending_at >= 0.0:
+			break                      # 触发了结局就收工（不用把预算跑完）
 
-	print("---")
-	print("结论：%s" % ("**跑通了**：触发结局" if ending_at >= 0.0 else "**没跑完**（到预算为止还没触发结局）"))
-	print("　· 全程 %.0f 游戏秒 = %.1f 个航程日（真实用时 %.1f 分钟）" % [
-		t, t * VoyageJournal.voyage_time_scale / 86400.0, t / 3600.0 / 60.0])
-	print("　· 触发结局的时刻：%s" % ("t=%.0f" % ending_at if ending_at >= 0.0 else "—"))
-	print("　· 航程 %.0f 公里（航海日志）" % v.journal.distance_km())
-	print("　· 贴着干地累计 %.0f 个航程小时（占 %.1f%%）；几乎不动累计 %.0f 个航程小时" % [
+	_say("---")
+	_say("结论：%s" % ("**跑通了**：触发结局" if ending_at >= 0.0 else "**没跑完**（到预算为止还没触发结局）"))
+	_say("　· 全程 %.0f 游戏秒 = %.1f 个航程日（真实用时 %.1f 分钟）" % [
+		t, t * VoyageJournal.voyage_time_scale / 86400.0,
+		float(Time.get_ticks_msec() - _wall0) / 60000.0])
+	_say("　· 触发结局的时刻：%s" % ("t=%.0f" % ending_at if ending_at >= 0.0 else "—"))
+	_say("　· 航程 %.0f 公里（航海日志）；靠港 %d 次" % [v.journal.distance_km(), stops])
+	_say("　· 贴着干地累计 %.0f 个航程小时（占 %.1f%%）；几乎不动累计 %.0f 个航程小时" % [
 		blocked_t * VoyageJournal.voyage_time_scale / 3600.0,
 		blocked_t / maxf(1.0, t) * 100.0,
 		slow_t * VoyageJournal.voyage_time_scale / 3600.0])
-	print("　· 单小时最小净前进 %s 米；走过的图幅 %d 个（%s）" % [
+	_say("　· 单小时最小净前进 %s 米；走过的图幅 %d 个（%s）" % [
 		("∞" if worst_hour_m == INF else "%.0f" % worst_hour_m),
 		regions.size(), ", ".join(regions.keys())])
 	for row in Settlement.fleet_report(v):
-		print("　· %s：离终点 %.0f 米　船体 %.0f%%　%d 人　%s" % [
+		_say("　· %s：离终点 %.0f 米　船体 %.0f%%　%d 人　%s" % [
 			str(row["name"]), float(row["distance_to_goal_m"]), float(row["hull_pct"]) * 100.0,
 			int(row["crew_count"]), "到位" if bool(row["arrived"]) else "没到"])
+	if _log != null:
+		_log.close()
 	quit(0 if ending_at >= 0.0 else 1)
 
 

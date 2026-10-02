@@ -29,6 +29,7 @@ func _initialize() -> void:
 	_test_hazards()
 	_test_pacific_content()
 	_test_aground_escape()
+	_test_sea_repair()
 	_finish()
 
 
@@ -400,6 +401,48 @@ func _test_aground_escape() -> void:
 
 
 # ---------------------------------------------------------------- 收尾
+
+func _test_sea_repair() -> void:
+	"""M15：**海上自修**（M13 卡片里"长期磨损与修补"的另一半）——
+	带料的话，木匠能在航行中把船补回来一点；没料就不动。"""
+	var cfg: Dictionary = Climate.defs().get("sea_repair", {})
+	_check(not cfg.is_empty(), "真源里有海上自修这一块")
+	_check(float(cfg.get("hull_per_day", 0.0)) > 0.0, "自修速度来自真源（%.3f/天）"
+		% float(cfg.get("hull_per_day", 0.0)))
+	# 有料：船体损伤真的往回走，木料帆布真的少
+	var v := _v()
+	v.ship.apply_damage("hull", 0.20)
+	v.ship.apply_damage("sail", 0.10)
+	v.cargo.add("wood", 20)
+	v.cargo.add("canvas", 20)
+	var hull_before := v.ship.damage_of("hull")
+	var wood_before := v.cargo.qty("wood")
+	for i in 4:
+		v._sea_repair(1.0)          # 四天
+	_check(v.ship.damage_of("hull") < hull_before, "带料时船体在自修（%.3f → %.3f）"
+		% [hull_before, v.ship.damage_of("hull")])
+	_check(v.cargo.qty("wood") <= wood_before, "自修吃木料（%d → %d）"
+		% [wood_before, v.cargo.qty("wood")])
+	# 没料：一点不动
+	var v2 := _v()
+	v2.cargo.remove("wood", v2.cargo.qty("wood"))      # 出发时就带了一点料，先掏空
+	v2.cargo.remove("canvas", v2.cargo.qty("canvas"))
+	v2.ship.apply_damage("hull", 0.20)
+	var before2 := v2.ship.damage_of("hull")
+	for i in 4:
+		v2._sea_repair(1.0)
+	_check(is_equal_approx(v2.ship.damage_of("hull"), before2), "没料就一点不修（%.3f）" % before2)
+	# 人手不够：同样不动
+	var v3 := _v()
+	v3.ship.apply_damage("hull", 0.20)
+	v3.cargo.add("wood", 20)
+	v3.cargo.add("canvas", 20)
+	for m in v3.roster.members:
+		m.ashore = true
+	var before3 := v3.ship.damage_of("hull")
+	v3._sea_repair(4.0)
+	_check(is_equal_approx(v3.ship.damage_of("hull"), before3), "没人手就不修")
+
 
 func _check(ok: bool, msg: String) -> void:
 	_checks += 1

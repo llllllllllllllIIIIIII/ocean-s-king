@@ -659,9 +659,14 @@ func _route_tick(delta: float) -> void:
 # ------------------------------------------------------------ 补给与港口（M4）
 
 func crew_on_board() -> int:
+	"""船上现在有多少人：**在船上且活着的**才算（上岸的由登陆队那本账管）。
+
+	⚠️ M15 修的一处：这里原来只排除 `ashore`，没排除 `dead` —— 死掉的人照样算
+	"船上的人"，于是**口粮照吃、摘要里人数照报**。三年尺度上这就露馅了。
+	"""
 	var n := 0
 	for m in roster.members:
-		if not m.ashore:
+		if not m.ashore and not m.dead:
 			n += 1
 	return n
 
@@ -817,6 +822,7 @@ func _consume_supplies(delta: float) -> void:
 	days_short = days_short + days if (short_food > 0 or short_water > 0) else 0.0
 	_climate_health_tick(days, short_food > 0, short_water > 0)
 	_wear_tick(days)
+	_sea_repair(days)
 
 
 func _climate_health_tick(days: float, short_food: bool, short_water: bool) -> void:
@@ -866,6 +872,56 @@ func _wear_tick(step_days: float) -> void:
 	var wear := Climate.wear_for_day(days_at_sea)
 	for part in wear.keys():
 		ship.apply_damage(str(part), float(wear[part]) * step_days)
+
+
+func _sea_repair(step_days: float) -> void:
+	"""**海上自修**（M13 卡片里"长期磨损与修补"的另一半，M15 落地）。
+
+	木匠带着人在航行中捻缝、补帆、换缆：慢、吃木料与帆布、人手不够就不干。
+	长跑抓到的账：太平洋那一整段（约 130 个航程日）没有港口 ——
+	只靠"靠港修"是撑不过去的，而真船上本来就有这一手。
+
+	材料按**真的修了多少**折算：修满一天的量就吃一天的量，修不满就少扣。
+	"""
+	var cfg: Dictionary = Climate.defs().get("sea_repair", {})
+	if cfg.is_empty():
+		return
+	if crew_on_board() < int(cfg.get("min_crew", 8)):
+		return
+	var total_per_day := 0.0
+	for part in ["hull", "mast", "sail"]:
+		total_per_day += maxf(0.0, float(cfg.get("%s_per_day" % part, 0.0)))
+	if total_per_day <= 0.0:
+		return
+	# 先算这一次能修多少（受"每天的修复量"和"实际损伤"两头限制）
+	var plan := {}
+	var fixed_total := 0.0
+	for part in ["hull", "mast", "sail"]:
+		var per_day := maxf(0.0, float(cfg.get("%s_per_day" % part, 0.0)))
+		var have := ship.damage_of(part)
+		if per_day <= 0.0 or have <= 0.001:
+			continue
+		var done := minf(per_day * step_days, have)
+		plan[part] = done
+		fixed_total += done
+	if fixed_total <= 0.0:
+		return
+	# 材料：按"修了多少 / 一天能干多少"折算（攒小数，见 Cargo.spend_fraction）
+	var work := clampf(fixed_total / (total_per_day * step_days), 0.0, 1.0)
+	var wood := float(cfg.get("wood_per_day", 0.0)) * step_days * work
+	var canvas := float(cfg.get("canvas_per_day", 0.0)) * step_days * work
+	# 料要两样都够（够不着就这一轮不修 —— 不能"扣了木头没帆布"白扣一半）
+	var need := {}
+	if wood > 0.0:
+		need["wood"] = wood
+	if canvas > 0.0:
+		need["canvas"] = canvas
+	if not need.is_empty() and not bool(cargo.can_pay(need)["ok"]):
+		return
+	for k in need.keys():
+		cargo.spend_fraction(str(k), float(need[k]))
+	for part in plan.keys():
+		ship.apply_damage(str(part), -float(plan[part]))
 
 
 func _society_tick(delta: float) -> void:
@@ -1180,9 +1236,13 @@ func naval_start_vs(foe_ship_id: String, foe_crew := 40, gap := 300.0) -> Dictio
 
 
 func _alive_crew_count() -> int:
+	"""还能干活的人：**活着 + 在船上**（岸上的不算 —— 他们不在船上操帆）。
+
+	海战/点人数用它；"生还人数"（结算那本账）另算（`Settlement` 数的是 `not dead`）。
+	"""
 	var n := 0
 	for m in roster.members:
-		if not m.dead:
+		if not m.dead and not m.ashore:
 			n += 1
 	return n
 

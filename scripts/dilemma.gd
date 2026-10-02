@@ -10,6 +10,8 @@ extends RefCounted
 # 不然改了数据、忘了改代码，就会出现"条件明明满足了却不弹"的鬼故事。
 
 const DEFS_PATH := "res://data/defs/dilemmas.json"
+# M15：逃亡类后果**不许把船走空**（同 `Society.MIN_CREW_ABOARD`，两边一个口径）
+const MIN_ABOARD := 12
 
 var defs: Dictionary = {}          # 静态
 var resolved: Dictionary = {}      # dilemma_id -> option_id（**会变的值**）
@@ -140,9 +142,16 @@ func resolve(v: Voyage, id: String, option_id: String) -> Dictionary:
 				m.health = clampf(m.health - float(eff["hurt"]), 0.05, 1.0)
 				break
 	if eff.has("deserters"):
+		# ⚠️ M15：同 `Society` —— 船上至少留 `MIN_ABOARD` 个人，不许把船走空
+		var aboard := 0
+		for m in v.roster.members:
+			if not m.ashore and not m.dead:
+				aboard += 1
+		var room := maxi(0, aboard - MIN_ABOARD)
+		var want := mini(int(eff["deserters"]), room)
 		var gone := 0
 		for m in v.roster.members:
-			if gone >= int(eff["deserters"]):
+			if gone >= want:
 				break
 			if m.ashore:
 				continue

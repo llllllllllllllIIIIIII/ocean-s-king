@@ -57,5 +57,15 @@
     "mast_per_day": 0.0008,
     "rudder_per_day": 0.0005,
     "sail_per_day": 0.0012
+  },
+  "sea_repair": {
+    "_comment": "**海上自修**（M13 卡片里'长期磨损与修补'的另一半）：木匠带着人在航行中捻缝、补帆、换缆。慢，而且吃木料与帆布 —— 这就是为什么远洋船必须带料。人手不够（< min_crew）或者料用光就停。",
+    "_rates": "每天的修复量（0..1 的损伤尺子里）；材料按'真的修了多少'折算，见 Voyage._sea_repair()。",
+    "min_crew": 8,
+    "hull_per_day": 0.006,
+    "mast_per_day": 0.003,
+    "sail_per_day": 0.004,
+    "wood_per_day": 0.035,
+    "canvas_per_day": 0.025
   }
 }

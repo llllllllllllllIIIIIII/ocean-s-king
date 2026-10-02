@@ -2,6 +2,7 @@
   "_comment": "自然环境（M7）。天气不是随机播放的动画：它要真的改风、改损伤、改瞭望距离、改火器的哑火率 —— 否则验收第 3 条（风暴真的改变航行结果）不成立。",
   "version": 1,
   "_units": "damage_per_hour 是每**航程小时**往船体/桅杆上砸多少损伤；wind_mult 乘在风场上。",
+  "_v1_scale": "⚠️ M15 定的标尺（自拍，可否决）：这一组数原来是按 v0.5 那条 20 天的横渡标定的 —— 放回 v1.0 的**三年**尺度上高了一个数量级（长跑实测：太平洋上 29 个航程日掉 68% 船体，一趟跨洋必然把船磨光）。现在整体 ×0.2：一场八小时的风暴大约磨掉 1% 船体，一条三周的航段约 15–20%，靠港修 + 海上自修（`climate.json` 的 `sea_repair`）刚好能撑住一条三年航线。风速、能见度、哑火天气一律没动 —— 风暴照样真的改变航行结果。",
   "states": [
     {
       "id": "clear", "name": "晴", "wind_mult": 1.0, "misfire_weather": "dry",
@@ -12,13 +13,13 @@
     {
       "id": "squall", "name": "雷暴", "wind_mult": 1.35, "misfire_weather": "rain",
       "visibility_m": 900, "fatigue_mult": 1.5, "mood_bias": -0.05,
-      "damage_per_hour": { "hull": 0.0015, "mast": 0.003 }, "hours": [1.0, 5.0],
+      "damage_per_hour": { "hull": 0.0003, "mast": 0.0006 }, "hours": [1.0, 5.0],
       "text": "一条黑线压过来，甲板上先落了几滴雨，接着是整片水。"
     },
     {
       "id": "storm", "name": "风暴", "wind_mult": 1.9, "misfire_weather": "rain",
       "visibility_m": 300, "fatigue_mult": 2.0, "mood_bias": -0.14,
-      "damage_per_hour": { "hull": 0.006, "mast": 0.009, "rudder": 0.003 }, "hours": [2.0, 8.0],
+      "damage_per_hour": { "hull": 0.0012, "mast": 0.0018, "rudder": 0.0006 }, "hours": [2.0, 8.0],
       "text": "桅杆在响。每一道浪都比甲板高，掌舵的人要绑在舵柄上。"
     },
     {

@@ -18,6 +18,8 @@ const GROUP_NOVICES := "novices"
 const LOG_MAX := 8
 const SOCIAL_STEP := 60.0            # 每 60 个游戏秒结算一次社会（≈ 半小时航程日）
 const EVENT_COOLDOWN_DAYS := 0.8
+# M15：逃亡事件**不许把船走空** —— 船上至少留这么多人（现实里剩下的人也不敢都走）
+const MIN_CREW_ABOARD := 12
 
 # 事件表：按严重度递进。`needs` 是触发条件（紧张度下限 + 额外的量），
 # `effects` 是后果（全部是数）—— 每一条都会被 test_society 断言。
@@ -261,9 +263,18 @@ func _fire(ev: Dictionary, roster: CrewRoster, rules: Rules) -> void:
 			break
 	# 逃亡真的会少人
 	if ev.has("deserters"):
+		# ⚠️ M15：**不许把整船人走空**。三年尺度上，靠岸就少两个人、几十次下来
+		# 船上只剩一条空船（长跑里真的抓到了：40 个人全部"上岸"，摘要报 0 人）。
+		# 现实里也说得通：剩下的人不敢都走 —— 走光了船就沉在这儿。
+		var aboard := 0
+		for m in roster.members:
+			if not m.ashore and not m.dead:
+				aboard += 1
+		var room := maxi(0, aboard - MIN_CREW_ABOARD)
+		var want := mini(int(ev["deserters"]), room)
 		var gone := 0
 		for m in roster.members:
-			if gone >= int(ev["deserters"]):
+			if gone >= want:
 				break
 			if m.ashore:
 				continue
