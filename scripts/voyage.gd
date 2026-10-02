@@ -2168,6 +2168,20 @@ func land(ids: Array, hands := 6) -> String:
 	var shore := sea.nearest_shore(ship.position_m())
 	landing_point = shore["pos"]
 	landing_land = shore["land"]
+	# M15：**岛链就是补给点**（M13 卡片里"太平洋岛链补给点"那条）。
+	# 上岸的人能背回多少：十二条水 + 一百二十份吃的，每座岛**每程只算一次**
+	# （同一座岛来回刷就没有"太平洋很空"这回事了）。
+	# ⚠️ 它必须在 `landing_land` 赋值**之后** —— 早一步 `land_id` 还是空的。
+	var land_id := str(landing_land.get("id", ""))
+	if land_id != "" and not visited.has("refilled_" + land_id):
+		visited["refilled_" + land_id] = true
+		var water := mini(12, cargo.how_many_fit("water"))
+		var food := mini(120, cargo.how_many_fit("food"))
+		if water > 0 or food > 0:
+			cargo.add("water", water)
+			cargo.add("food", food)
+			_say("上岸的人背回 %d 桶淡水与 %d 份新鲜吃食。" % [water, food], true)
+			journal.decide("在岛上补水：淡水 %d 桶、吃食 %d 份。" % [water, food])
 	captain_pos = landing_point
 	captain_target = captain_pos
 	# 队伍：船长先上岸，船员按名单一个一个跟下来（小船一趟一个人）

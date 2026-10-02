@@ -358,9 +358,20 @@ func _test_pacific_content() -> void:
 	_check(landed, "能找到一处上得了岸的滩头")
 	if landed:
 		v2.days_since_fresh = 40.0
+		v2.cargo.remove("water", v2.cargo.qty("water"))
+		var water_before := v2.cargo.qty("water")
 		v2.land([], 4)
 		_check(is_equal_approx(v2.days_since_fresh, 0.0),
 			"上岛就把坏血病计时清零（40 → %.0f 天）" % v2.days_since_fresh)
+		_check(v2.cargo.qty("water") > water_before,
+			"岛链是补给点：上岸的人能背回淡水（%d → %d 桶）"
+			% [water_before, v2.cargo.qty("water")])
+		# 同一座岛只算一次（不然来回刷就没有"太平洋很空"这回事了）
+		var water_2 := v2.cargo.qty("water")
+		v2.ashore = false
+		v2.days_since_fresh = 40.0
+		v2.land([], 4)
+		_check(v2.cargo.qty("water") == water_2, "同一座岛不重复刷补给（还是 %d 桶）" % water_2)
 
 
 # ---------------------------------------------------------------- 9 搁浅兜底

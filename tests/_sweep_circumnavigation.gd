@@ -45,6 +45,10 @@ func _initialize() -> void:
 	v.encounters_enabled = false
 	v.orders.anchored = false
 	v.orders.set_sail_level(ShipOrders.SailLevel.FULL)
+	# **远洋口粮**：太平洋那一段一百多天没有港口 —— 真船长这时候就是半份口粮、
+	# 严格配水（`Rules` 里现成的档位，代价是心情），不然载重根本装不下。
+	v.set_rule("ration", "half")
+	v.set_rule("water", "strict")
 	v.start_route_follow()
 	_say("出发：%s　终点：%s（归乡港 %s）" % [
 		v.port_name(), v.goal_port_name(), v.home_port_id()])
@@ -61,6 +65,7 @@ func _initialize() -> void:
 	var next_provision := 0.0
 	var serviced := {}                 # 靠过哪些港（每个港只停一次）
 	var stops := 0
+	var island_stops := 0
 	while t < TOTAL:
 		v.tick(DT)
 		t += DT
@@ -93,8 +98,8 @@ func _initialize() -> void:
 				# 舱位装不下就装到满（载重那本账仍然是船的数据说了算）。
 				v.cargo.add("water", mini(240, v.cargo.how_many_fit("water")))
 				v.cargo.add("food", mini(4800, v.cargo.how_many_fit("food")))
-				v.cargo.add("wood", mini(40, v.cargo.how_many_fit("wood")))
-				v.cargo.add("canvas", mini(30, v.cargo.how_many_fit("canvas")))
+				v.cargo.add("wood", mini(20, v.cargo.how_many_fit("wood")))
+				v.cargo.add("canvas", mini(10, v.cargo.how_many_fit("canvas")))
 				v.cargo.money = maxi(v.cargo.money, 600)
 				v.days_since_fresh = 0.0
 				v.days_short = 0.0
@@ -104,6 +109,24 @@ func _initialize() -> void:
 			v.orders.anchored = false
 			v.start_route_follow()
 			break
+		# **上岛补给**（M13 的规则：岛链就是太平洋上的补给点）：
+		# 新鲜东西快断、又刚好挨着岸的时候，上去补水补食再回来接着走。
+		if v.days_since_fresh > 25.0 and not v.ashore and v.can_land():
+			var before_water := v.cargo.qty("water")
+			v.orders.anchored = true
+			v.land([], 4)
+			if v.ashore:
+				island_stops += 1
+				_say("  · t=%.0f 上岛补水（淡水 %d → %d 桶，坏血病计时清零）"
+					% [t, before_water, v.cargo.qty("water")])
+				v.return_to_ship()
+				var guard := 0
+				while v.ashore and guard < 400:
+					v.tick(DT)
+					t += DT
+					guard += 1
+			v.orders.anchored = false
+			v.start_route_follow()
 		var rid := str(v.sea.world.region_of_tile(v.sea.tile_of(p)).get("id", ""))
 		if rid != "":
 			regions[rid] = true
@@ -134,7 +157,8 @@ func _initialize() -> void:
 		t, t * VoyageJournal.voyage_time_scale / 86400.0,
 		float(Time.get_ticks_msec() - _wall0) / 60000.0])
 	_say("　· 触发结局的时刻：%s" % ("t=%.0f" % ending_at if ending_at >= 0.0 else "—"))
-	_say("　· 航程 %.0f 公里（航海日志）；靠港 %d 次" % [v.journal.distance_km(), stops])
+	_say("　· 航程 %.0f 公里（航海日志）；靠港 %d 次、上岛补水 %d 次" % [
+		v.journal.distance_km(), stops, island_stops])
 	_say("　· 贴着干地累计 %.0f 个航程小时（占 %.1f%%）；几乎不动累计 %.0f 个航程小时" % [
 		blocked_t * VoyageJournal.voyage_time_scale / 3600.0,
 		blocked_t / maxf(1.0, t) * 100.0,
