@@ -105,6 +105,14 @@ func _draw_status() -> void:
 			% v.party_size())
 	if v.battle != null and not v.battle.over:
 		lines.append("⚔ %s　G 齐射/各自为战　H 冲　J 退" % v.battle.describe())
+	if v.naval != null and not v.naval.over:
+		# M10：海战 —— 距离、双方人数、装好了几门炮，以及五条命令
+		var st: Dictionary = v.naval.stats()
+		lines.append("⚓ 海战 %d 米　我方 %d 人 / 对面 %d 人　%s（%s）"
+			% [int(st["gap_m"]), int(st["own_crew"]), int(st["foe_crew"]),
+			   v.naval.guns_own.describe(),
+			   str(Ballistics.ammo(v.naval.ammo_want).get("name", ""))])
+		lines.append("　G 开火　H 等齐射　J 接舷　U 拉开　Y 换弹")
 	if v.following_route:
 		lines.append("🧭 沿航线走中（N 取消；左键自己点目标也行）")
 	elif v.ashore and v.culture.will_fight("green_cape"):

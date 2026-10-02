@@ -27,6 +27,7 @@ var rules := Rules.new()           # 玩家定的规矩（M5，本船）
 var society := Society.new()       # 船上社会（M5，本船）
 var dilemmas := Dilemma.new()      # 三个高压抉择（M5，本船）
 var battle: LandBattle = null      # 上岸打起来的那一场（M6，null = 没在打）
+var naval: NavalBattle = null      # 海上咬上的那一场（M10，null = 没在打）
 var culture := Culture.new()        # 当地文明的三档态度（M6）
 var locals := LocalGroup.new()      # 岛上那伙人（M6 收尾：他们是常驻实体，不是打起来才刷出来的）
 var weather := Weather.new()        # 自然环境（M7）
@@ -82,6 +83,7 @@ var message_timer := 0.0
 var _shore_cooldown := 0.0         # 蹭滩提示的冷却
 var _prev_pos := Vector2.ZERO      # 上一帧的船位：只用来算航程
 var _battle_entry_of: Dictionary = {}   # 战斗单位的序号 -> 队形里的下标（打完把状态写回队伍）
+var _naval_start_crew := 0              # 这一场海战开打时我们有多少人（收账时用它算伤亡）
 
 
 func setup(region := Sea.DATA_PATH, ship_id := "trinidad", inherited := {}) -> void:
@@ -190,6 +192,12 @@ func tick(delta: float) -> void:
 		battle.tick(delta, cargo)
 		if battle.over:
 			_resolve_battle()
+	if naval != null and not naval.over:
+		# 海战不走陆地那套单位寻路：它只认识距离、装填与弹药，
+		# 挨打的那几下直接落在 `ship` 的三处损伤上（和气动同一条链路）。
+		naval.tick(delta, cargo, ship)
+		if naval.over:
+			_resolve_naval()
 	_check_fleet_arrival()
 	_route_tick()
 	_stall_hint(delta)
@@ -600,6 +608,110 @@ func begin_land_battle(locals_count := 10, weather := "") -> Dictionary:
 
 func battle_report() -> String:
 	return battle.describe() if battle != null else ""
+
+
+# ------------------------------------------------------------ 海战（M10）
+
+func begin_naval_battle(foe_crew := 40, foe_weather := "", gap := 0.0) -> Dictionary:
+	"""海上咬上了。玩家在自己那条船上指挥 —— 所以船长必须在船上。
+
+	**受击方权威**：这一场里"我们挨的那几下"由本机结算（`NavalBattle._take_hits`），
+	"对面挨的那几下"由对面那一侧的机器结算（单机就是同一个 `foe_apply`）。
+	联机的双进程对账是 M10 剩下的活（docs/23 的 M10 卡片）。
+
+	海盗船本身在 M11 才有真正的 NPC 船；这一期先用一个明确的入口把遭遇接进来
+	（主场景按 `V`），M11 把"被截击"变成世界自己发生的事。
+	"""
+	if naval != null and not naval.over:
+		return {"ok": false, "reason": "海上已经打起来了"}
+	if ashore:
+		return {"ok": false, "reason": "船长在岸上 —— 船上的事交给大副了"}
+	var crew_now := _alive_crew_count()
+	if crew_now <= 0:
+		return {"ok": false, "reason": "船上没人了"}
+	var w := foe_weather if foe_weather != "" else weather.state_id
+	var g := gap if gap > 0.0 else float(Ballistics.naval().get("start_gap_m", 900.0))
+	_naval_start_crew = crew_now
+	naval = NavalBattle.new()
+	naval.setup(crew_now, foe_crew, w, g)
+	naval.guns_own.powder_wet = weather.misfire_weather() == "rain"
+	_say("【海战】一条船从雾里冲出来（%d 人对 %d 人）。炮组就位。" % [crew_now, foe_crew], true)
+	journal.record(t, "naval", "海上遭遇：%d 名船员对 %d 名敌人。" % [crew_now, foe_crew])
+	return {"ok": true, "crew": crew_now, "foe": foe_crew, "gap_m": g, "weather": w}
+
+
+func naval_report() -> String:
+	if naval == null:
+		return ""
+	var st := naval.stats()
+	return "距离 %d 米　我方 %d 人　对面 %d 人　船壳 %.0f%%" % [
+		int(st["gap_m"]), int(st["own_crew"]), int(st["foe_crew"]),
+		(1.0 - float(st["own_hull"])) * 100.0]
+
+
+func _alive_crew_count() -> int:
+	var n := 0
+	for m in roster.members:
+		if not m.dead:
+			n += 1
+	return n
+
+
+func _living_members() -> Array:
+	var out := []
+	for m in roster.members:
+		if not m.dead:
+			out.append(m)
+	return out
+
+
+func _resolve_naval() -> void:
+	"""打完收账：伤员与阵亡写回名册（和陆战同一条链），损伤已经落在船上。"""
+	var st := naval.stats()
+	var losses := maxi(0, _naval_start_crew - int(st["own_crew"]))
+	var living := _living_members()
+	var surgeon := false
+	for m in roster.key_crew():
+		if m.post == "外科医生" and not m.dead:
+			surgeon = true
+	var meds := cargo.qty("medicine")
+	var saved := 0
+	var lost := 0
+	var idx := living.size() - 1
+	for i in losses:
+		if idx < 0:
+			break
+		var m2: CrewMember = living[idx]
+		idx -= 1
+		if surgeon and meds > 0 and i % 2 == 0:
+			meds -= 1
+			cargo.remove("medicine", 1)
+			m2.health = minf(m2.health, 0.45)
+			saved += 1
+		else:
+			m2.dead = true
+			m2.health = 0.0
+			m2.job = "dead"
+			ending_score["crew"] = int(ending_score.get("crew", 0)) - 1
+			_say("【讣告】%s 在海上阵亡。" % m2.label(), true)
+			journal.record(t, "death", "讣告：%s 在海上阵亡。" % m2.label())
+			fired["lost_" + m2.id] = true
+			lost += 1
+	var head := "海战结束：%s。" % str(st["outcome"])
+	if saved > 0:
+		head += "外科医生救回了 %d 个人。" % saved
+	if lost > 0:
+		head += "有 %d 个人没救回来。" % lost
+	_say(head, true)
+	journal.decide("海上打了一仗：倒 %d、阵亡 %d、对面剩下 %d 人（结果 %s）。" % [
+		losses, lost, int(st["foe_crew"]), str(st["outcome"])])
+	memory["naval"] = int(memory.get("naval", 0)) + 1
+	if str(st["outcome"]) == "won":
+		ending_score["history"] = int(ending_score.get("history", 0)) + 1
+		memory["prize"] = int(memory.get("prize", 0)) + 1
+	elif str(st["outcome"]) == "lost":
+		ending_score["history"] = int(ending_score.get("history", 0)) - 1
+	naval = null
 
 
 func _crew_positions(squad: Array) -> Array:

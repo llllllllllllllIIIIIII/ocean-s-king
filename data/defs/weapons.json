@@ -54,6 +54,15 @@
       "text": "火器装填的那一分多钟里，全靠它。"
     },
     {
+      "id": "culverin", "name": "寇非林长炮", "kind": "naval", "ammo_types": ["round_shot", "chain_shot", "scatter"],
+      "caliber_mm": 140, "reload_s": 300.0, "reload_skilled_s": 210.0, "skill_for_reload": "gunnery",
+      "range_effective_m": 1100.0, "range_max_m": 1600.0, "half_range_m": 400.0,
+      "base_hit": 0.15, "skill_weight": 0.45, "damage": 1.2, "vs": "structure",
+      "misfire_dry": 0.05, "ammo": { "powder": 1.6, "lead": 16.0 },
+      "crew": 4, "gun_crew": 4, "carry_kg": 1900.0,
+      "text": "主炮。一发一十六磅铁球，装一次五分钟 —— 舷侧齐射打的是时机，不是射速。"
+    },
+    {
       "id": "sword", "name": "剑盾", "kind": "melee", "reach_m": 1.6,
       "base_hit": 0.62, "skill_weight": 0.4, "damage": 0.30, "vs": "person",
       "cycle_s": 3.0, "crew": 1, "carry_kg": 3.0,
@@ -63,24 +72,60 @@
   "ammo_types": [
     {
       "id": "single_ball", "name": "单发铅弹",
-      "vs_person": 1.0, "vs_structure": 0.35,
+      "vs_person": 1.0, "vs_structure": 0.35, "vs_rigging": 0.25,
       "band_m": [0.0, 250.0],
       "text": "一颗一颗压进去。"
     },
     {
       "id": "scatter", "name": "霰弹",
-      "vs_person": 1.0, "vs_structure": 0.08,
+      "vs_person": 1.0, "vs_structure": 0.08, "vs_rigging": 0.10,
       "band_m": [80.0, 200.0],
       "_band": "把人打成一团的东西：八十米内没张开、两百米外散得太开 —— 所以有效区间是 80–200 米。",
       "text": "一包小铅丸。打人极狠，砸墙没用。"
     },
     {
       "id": "round_shot", "name": "实心弹",
-      "vs_person": 0.10, "vs_structure": 1.0,
+      "vs_person": 0.10, "vs_structure": 1.0, "vs_rigging": 0.30,
       "band_m": [0.0, 1600.0],
       "text": "一颗铁球。砸结构、砸船，打人几乎没用。"
+    },
+    {
+      "id": "chain_shot", "name": "链弹",
+      "vs_person": 0.15, "vs_structure": 0.04, "vs_rigging": 1.0,
+      "band_m": [80.0, 400.0],
+      "_band": "两个铁球中间拴一段链子，专撕帆索：两百米内最狠，四百米外散开。",
+      "text": "打帆不打船。把对面的桅杆打瘫，比在船壳上凿个洞划算得多。"
     }
   ],
+  "_naval": "舷炮（M10）。一门炮 + 一个炮组（2–4 人，`gun_crew`）；数字真源仍是上面的 weapons / ammo_types，这里只放'海战特有的'那几件：舷侧齐射的增益、各自为战的罚、起始距离、接舷规则。",
+  "naval": {
+    "broadside_gain": 0.9,
+    "_broadside": "一侧的炮同时打：命中系数 = 1 + broadside_gain × clamp((门数−1)/5, 0, 1)。六门齐射 = ×1.9。",
+    "independent_hit_mult": 0.75,
+    "_independent": "各自为战：每门炮按自己的装填节奏打，修正落点慢一拍 —— 命中 ×0.75。与陆地的散兵同源（同一套判据：齐射 ≥ 各自为战 1.8 倍）。",
+    "guns_per_side": { "culverin": 2, "falconet": 2, "swivel": 2 },
+    "start_gap_m": 900.0,
+    "closing_ms": 1.2,
+    "relative_motion_penalty": 0.35,
+    "_relative": "相对运动：两边都在动的时候，命中按 relative_motion_penalty 打折（0.35 = 打到标定值的 65%）。",
+    "hull_points": 12.0,
+    "_hull": "一条船有多结实：结构伤害 ÷ hull_points = 船壳掉多少（0..1）。十二点 = 挨满十二点结构伤害就废了 —— 一门长炮一轮齐射大约打出两三点，所以是七八轮的事，不是一轮定胜负。",
+    "damage_split": {
+      "_comment": "一发打中之后，伤害落到船的哪几处。七处损伤的口径在 docs/22 第 5.4 节；权重只有这一份。",
+      "round_shot": { "hull": 0.60, "mast": 0.15, "rudder": 0.10, "hold": 0.10, "magazine": 0.05 },
+      "chain_shot": { "rigging": 0.70, "mast": 0.30 },
+      "scatter": { "hull": 0.20, "personnel": 0.80 }
+    },
+    "boarding": {
+      "_comment": "接舷：钩住之后在两条甲板上打一场（复用陆战的近战循环）。",
+      "grapple_range_m": 60.0,
+      "boarders_per_grapple": 8,
+      "defender_bonus": 1.15,
+      "firearm_volley_mult": 0.5,
+      "_firearm": "跳帮那一下能放一轮火器，但只有半效 —— 甲板上挤成一团，装填那一分钟里近战才是决定性的（硬指标 3）。",
+      "melee_cycle_s": 3.6
+    }
+  },
   "local_warriors": {
     "_comment": "当地人的战斗力（M6 的对手）。他们的武器不占船上的弹药。",
     "count_default": 10,

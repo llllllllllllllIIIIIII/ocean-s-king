@@ -110,6 +110,73 @@ def damage_to_structure(d, wid, aid):
     return w["damage"] * ammo(d, aid)["vs_structure"]
 
 
+def damage_to_rigging(d, wid, aid):
+    """打帆索（M10 的链弹）。和砸结构、打人是三条独立的口径。"""
+    w = weapon(d, wid)
+    if w.get("kind") == "melee":
+        return 0.0
+    return w["damage"] * ammo(d, aid).get("vs_rigging", 0.0)
+
+
+# ------------------------------------------------------------ 舷炮（M10）
+
+def naval_hit_chance(d, wid, skill, distance, guns=6, broadside=False, closing=False):
+    """舷炮命中：船炮的命中表 + 舷侧齐射增益 + 相对运动的罚。
+
+    与 scripts/ballistics.gd 的 naval_hit_chance 同源 —— 两份不一致时这个脚本就没意义了。
+    """
+    n = d["naval"]
+    p = hit_chance(d, wid, skill, distance, "ranked", 1, False, target_size=1.0)
+    if broadside:
+        p *= 1.0 + n["broadside_gain"] * max(0.0, min(1.0, (guns - 1) / 5.0))
+    else:
+        p *= n["independent_hit_mult"]
+    if closing:
+        p *= 1.0 - n["relative_motion_penalty"]
+    return max(0.0, min(0.95, p))
+
+
+def broadside_damage(d, skill, distance, aid, guns=6, broadside=True, closing=True):
+    """一轮舷侧齐射的期望伤害（对结构）。"""
+    p = naval_hit_chance(d, "culverin", skill, distance, guns, broadside, closing)
+    return guns * p * damage_to_structure(d, "culverin", aid)
+
+
+def ships_guns(d):
+    """一艘船一侧的炮：从 naval.guns_per_side 推出来（不另写一份表）。"""
+    out = []
+    for wid, count in d["naval"]["guns_per_side"].items():
+        out.append((wid, int(count)))
+    return out
+
+
+def boarding_rates(d, boarders, defenders, boarder_skill=0.6, defender_skill=0.45,
+                   boarder_bonus=True):
+    """接舷的期望值模型：跳帮那一下的一轮火器 + 之后甲板上的近战交换率。
+
+    返回 (跳帮方每秒伤害, 防守方每秒伤害, 火器齐射的一次性伤害)。
+    """
+    b = d["naval"]["boarding"]
+    q = d.get("crew_quality", {})
+    dmg_mult = q.get("melee_damage_mult", 1.0) if boarder_bonus else 1.0
+    hit_mult = q.get("melee_hit_mult", 1.0) if boarder_bonus else 1.0
+    # 跳帮方：长矛（装填那一分钟里挡人的东西）
+    pike = weapon(d, "pike")
+    sword = weapon(d, "sword")
+
+    def rate(weapon_def, skill, dmg, hit, cycle):
+        p = weapon_def["base_hit"] * (1.0 - weapon_def["skill_weight"]
+                                      + weapon_def["skill_weight"] * skill)
+        return p * hit * weapon_def["damage"] * dmg / cycle
+
+    board_rate = boarders * rate(pike, boarder_skill, dmg_mult, hit_mult, b["melee_cycle_s"])
+    defend_rate = defenders * rate(sword, defender_skill, 1.0, b["defender_bonus"],
+                                   b["melee_cycle_s"])
+    volley = boarders * hit_chance(d, "arquebus", boarder_skill, 30.0, "close", 1, False) \
+        * weapon(d, "arquebus")["damage"] * b["firearm_volley_mult"]
+    return board_rate, defend_rate, volley
+
+
 def expected_damage(d, shooters, wid, aid, skill, distance, formation_id, per_volley=1,
                     volley=False):
     p = hit_chance(d, wid, skill, distance, formation_id, per_volley, volley)
@@ -157,6 +224,49 @@ def metrics(d, verbose=True):
           "霰弹只对 80–200 米内的人有杀伤")
     check(damage_to_person(d, "falconet", "round_shot", 300) < 0.1,
           "实心弹打人几乎没用（%.2f）" % damage_to_person(d, "falconet", "round_shot", 300))
+
+    # ---- 舷炮（M10）的四项 ----
+    print("--- 舷炮（M10）---")
+    # 1 装填
+    shots = 0
+    t = 0.0
+    while t < 600.0:
+        t += reload_time(d, "culverin", 0.7)
+        shots += 1
+    check(min(reload_time(d, "culverin", s) for s in (0.0, 0.5, 1.0)) >= 120.0,
+          "寇非林长炮每发 ≥120 秒（最熟练也有 %.0f 秒）"
+          % min(reload_time(d, "culverin", s) for s in (0.0, 0.5, 1.0)))
+    check(shots <= 4, "十分钟一场，一门长炮打不出 %d 发以上（实际 %d 发）" % (shots, shots))
+    # 2 齐射
+    bs = broadside_damage(d, 0.6, 300.0, "round_shot", 6, True, True)
+    ind = broadside_damage(d, 0.6, 300.0, "round_shot", 6, False, True)
+    check(bs >= ind * 1.8, "六门舷侧齐射是各自为战的 %.2f 倍（%.3f vs %.3f）"
+          % (bs / ind, bs, ind))
+    # 3 接舷
+    br, dr, volley = boarding_rates(d, 8, 8)
+    check(br > dr, "人数相等 + 船员质量 → 跳帮方近战占优（%.3f vs %.3f）" % (br, dr))
+    br2, dr2, volley2 = boarding_rates(d, 8, 16, boarder_bonus=True)
+    check(dr2 > br2 + volley2 / 30.0,
+          "人数劣势时，火器那一轮救不回来（跳帮 %.3f + 齐射 %.2f 对 守方 %.3f）"
+          % (br2, volley2, dr2))
+    # 4 弹种
+    check(damage_to_person(d, "culverin", "scatter", 150) >
+          damage_to_person(d, "culverin", "round_shot", 150) * 3.0,
+          "霰弹打人远胜实心弹（%.2f vs %.2f）"
+          % (damage_to_person(d, "culverin", "scatter", 150),
+             damage_to_person(d, "culverin", "round_shot", 150)))
+    check(damage_to_structure(d, "culverin", "scatter")
+          <= damage_to_structure(d, "culverin", "round_shot") * 0.1,
+          "霰弹砸结构只有实心弹的 %.0f%%"
+          % (damage_to_structure(d, "culverin", "scatter")
+             / damage_to_structure(d, "culverin", "round_shot") * 100))
+    check(damage_to_rigging(d, "culverin", "chain_shot")
+          >= damage_to_rigging(d, "culverin", "round_shot") * 3.0,
+          "链弹撕帆索远胜实心弹（%.2f vs %.2f）"
+          % (damage_to_rigging(d, "culverin", "chain_shot"),
+             damage_to_rigging(d, "culverin", "round_shot")))
+    check(damage_to_person(d, "culverin", "chain_shot", 150) < 0.25,
+          "链弹打人不行（%.2f）" % damage_to_person(d, "culverin", "chain_shot", 150))
 
     ok = all(r[0] for r in results)
     print("%s：%d 项检查" % ("全部通过" if ok else "有不过的", len(results)))

@@ -921,21 +921,53 @@ func _key(k: InputEventKey) -> void:
 			else:
 				voyage.say("靠港要先抛锚（X），而且得停在港口的锚地圈里。", true)
 		KEY_G:
-			# M6：齐射 / 各自为战
-			if voyage.battle != null and not voyage.battle.over:
+			# M6：齐射 / 各自为战　M10：海战里是"开火"
+			if voyage.naval != null and not voyage.naval.over:
+				voyage.naval.intent = "fire"
+				voyage.say("（海战）各炮位自行开火。", true)
+			elif voyage.battle != null and not voyage.battle.over:
 				voyage.battle.volley = not voyage.battle.volley
 				voyage.say("（陆战）%s。" % ("密集齐射" if voyage.battle.volley else "各自为战"), true)
 		KEY_B:
 			# M6：岸上的玩家动作 —— 向天开枪示警。两枪就翻脸，之后踏进村子他们会先动手。
 			voyage.say("（岸上）" + voyage.shoot_warning(), true)
 		KEY_H:
-			if voyage.battle != null and not voyage.battle.over:
+			# M10：海战里是"停火，等一轮齐射"（硬指标 2 的那个取舍）
+			if voyage.naval != null and not voyage.naval.over:
+				voyage.naval.intent = "hold"
+				voyage.say("（海战）按住炮组，等舷侧一起打。", true)
+			elif voyage.battle != null and not voyage.battle.over:
 				voyage.battle.intent = "charge"
 				voyage.say("（陆战）冲上去。", true)
 		KEY_J:
-			if voyage.battle != null and not voyage.battle.over:
+			# M10：海战里是"接舷"
+			if voyage.naval != null and not voyage.naval.over:
+				voyage.naval.intent = "board"
+				voyage.say("（海战）靠上去，准备跳帮。", true)
+			elif voyage.battle != null and not voyage.battle.over:
 				voyage.battle.intent = "withdraw"
 				voyage.say("（陆战）慢慢退回海滩。", true)
+		KEY_U:
+			# M10：海战里收手 —— 拉开距离就算脱身
+			if voyage.naval != null and not voyage.naval.over:
+				voyage.naval.intent = "withdraw"
+				voyage.say("（海战）转舵，拉开距离。", true)
+		KEY_Y:
+			# M10：换弹种（实心 → 霰弹 → 链弹）
+			if voyage.naval != null and not voyage.naval.over:
+				var order := ["round_shot", "scatter", "chain_shot"]
+				var i := order.find(voyage.naval.ammo_want)
+				voyage.naval.ammo_want = order[(i + 1) % order.size()]
+				voyage.say("（海战）换弹：%s。" % str(Ballistics.ammo(voyage.naval.ammo_want).get("name", "")), true)
+		KEY_V:
+			# M10：起一场海上遭遇（海盗）。真正的"被截击"是 M11 的 NPC 船；
+			# 这一期先用这个明确的入口把海战接进游戏，能打、能跑、能接舷。
+			if voyage.naval != null and not voyage.naval.over:
+				voyage.say("（海战）已经在打了。", true)
+			else:
+				var r: Dictionary = voyage.begin_naval_battle()
+				voyage.say("（海战）" + ("开始了。" if bool(r.get("ok", false))
+					else str(r.get("reason", ""))), true)
 		KEY_K:
 			# M7：知识与日志页
 			_knowledge_panel.visible = not _knowledge_panel.visible
@@ -1381,6 +1413,32 @@ func _run_shot_timeline() -> void:
 		113:
 			_capture("48_storm")
 		114:
+			# M10：海上遭遇（海盗）—— 起一场、打一轮舷侧，再换成链弹试一发。
+			# 这一期还没有"海盗船"这个 NPC（M11 的活），所以先由这个明确的入口
+			# 把海战接进时间线：能打、能跑、能接舷。
+			if voyage.naval == null:
+				var nr: Dictionary = voyage.begin_naval_battle(30, "dry", 260.0)
+				print("[shot] 海战起点：%s" % str(nr))
+		115:
+			# ⚠️ 时间线是**一帧一步**：截的永远是上一帧画出来的画面，
+			#    所以"改状态"与"截图"必须分在两个步骤里（这是 AGENTS.md 里那条坑）。
+			if voyage.naval != null:
+				voyage.naval.ammo_want = "round_shot"
+				voyage.naval.intent = "fire"
+				_warp(26.0)                       # 第一轮舷侧与对面的还击
+		116:
+			if voyage.naval != null:
+				print("[shot] 海战中：%s" % voyage.naval_report())
+				_capture("63_naval_broadside")
+		117:
+			if voyage.naval != null:
+				voyage.naval.ammo_want = "chain_shot"
+				_warp(22.0)                       # 换成链弹打帆索
+		118:
+			if voyage.naval != null:
+				print("[shot] 海战中（链弹）：%s" % voyage.naval_report())
+				_capture("64_naval_chain_shot")
+
 			get_tree().quit(0)
 
 

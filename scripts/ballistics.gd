@@ -59,6 +59,97 @@ static func formation(id: String) -> Dictionary:
 	return {}
 
 
+# ------------------------------------------------------------ 舷炮（M10）
+
+static func naval() -> Dictionary:
+	return defs().get("naval", {})
+
+
+static func gun(id: String) -> Dictionary:
+	"""一门炮：`kind == "naval"` 的那些（寇非林长炮）。隼炮与回旋炮两用，
+	它们的数值仍在 `weapons[]` 里 —— 只有一份。"""
+	var w := weapon(id)
+	if w.is_empty() or str(w.get("kind", "")) != "naval":
+		return {}
+	return w
+
+
+static func naval_guns() -> Array:
+	"""一艘船一侧的炮：从 `naval.guns_per_side` 推出来，不另写一份表。"""
+	var out := []
+	for wid in (naval().get("guns_per_side", {}) as Dictionary).keys():
+		out.append({"id": str(wid), "count": int(naval()["guns_per_side"][wid])})
+	return out
+
+
+static func damage_to_rigging(weapon_id: String, ammo_id: String) -> float:
+	"""打帆索（链弹）。与砸结构、打人是三条独立的口径。"""
+	var w := weapon(weapon_id)
+	if w.is_empty() or str(w.get("kind", "")) == "melee":
+		return 0.0
+	return float(w.get("damage", 0.0)) * float(ammo(ammo_id).get("vs_rigging", 0.0))
+
+
+static func naval_hit_chance(weapon_id: String, skill: float, distance_m: float,
+		guns := 6, broadside := false, closing := false) -> float:
+	"""舷炮的命中：船炮的命中表（按横队的目标大小算）× 舷侧齐射增益 × 相对运动的罚。
+
+	与 `tools/weapons_prototype.py` 的 `naval_hit_chance` 同源 —— 两份不一致时
+	那个离线脚本就失去意义了（和气动那套一样的规矩）。
+	"""
+	var n := naval()
+	var p := hit_chance(weapon_id, skill, distance_m, "ranked", 1, false, 1.0)
+	if broadside:
+		p *= 1.0 + float(n.get("broadside_gain", 0.9)) \
+			* clampf((float(guns) - 1.0) / 5.0, 0.0, 1.0)
+	else:
+		p *= float(n.get("independent_hit_mult", 0.75))
+	if closing:
+		p *= 1.0 - float(n.get("relative_motion_penalty", 0.35))
+	return clampf(p, 0.0, 0.95)
+
+
+static func broadside_damage(weapon_id: String, ammo_id: String, skill: float,
+		distance_m: float, guns := 6, broadside := true, closing := true) -> float:
+	var p := naval_hit_chance(weapon_id, skill, distance_m, guns, broadside, closing)
+	return float(guns) * p * damage_to_structure(weapon_id, ammo_id)
+
+
+# ------------------------------------------------------------ 接舷（M10）
+
+static func boarding_rates(boarders: int, defenders: int, boarder_skill := 0.6,
+		defender_skill := 0.45, boarder_bonus := true) -> Dictionary:
+	"""接舷的期望值：跳帮那一下的一轮火器 + 之后甲板上的近战交换率。
+
+	返回 {"boarders": 每秒伤害, "defenders": 每秒伤害, "volley": 一次性伤害}。
+	与离线脚本的 `boarding_rates` 同源。
+	"""
+	var b: Dictionary = naval().get("boarding", {})
+	var q: Dictionary = defs().get("crew_quality", {})
+	var dmg_mult := float(q.get("melee_damage_mult", 1.0)) if boarder_bonus else 1.0
+	var hit_mult := float(q.get("melee_hit_mult", 1.0)) if boarder_bonus else 1.0
+	var cycle := maxf(0.1, float(b.get("melee_cycle_s", 3.6)))
+	var pike := weapon("pike")
+	var sword := weapon("sword")
+	var p_pike := float(pike.get("base_hit", 0.55)) \
+		* (1.0 - float(pike.get("skill_weight", 0.45)) + float(pike.get("skill_weight", 0.45)) * boarder_skill)
+	var p_sword := float(sword.get("base_hit", 0.62)) \
+		* (1.0 - float(sword.get("skill_weight", 0.4)) + float(sword.get("skill_weight", 0.4)) * defender_skill)
+	var board_rate := float(boarders) * p_pike * hit_mult * float(pike.get("damage", 0.38)) \
+		* dmg_mult / cycle
+	var defend_rate := float(defenders) * p_sword * float(b.get("defender_bonus", 1.15)) \
+		* float(sword.get("damage", 0.3)) / cycle
+	var volley := float(boarders) * hit_chance("arquebus", boarder_skill, 30.0, "close", 1, false) \
+		* float(weapon("arquebus").get("damage", 0.55)) \
+		* float(b.get("firearm_volley_mult", 0.5))
+	return {"boarders": board_rate, "defenders": defend_rate, "volley": volley}
+
+
+static func melee_weapon_of(skill: float) -> String:
+	"""跳帮时拿什么：长矛（够得着）。留一个口子给以后的武器选择。"""
+	return "pike"
+
+
 # ------------------------------------------------------------ 哑火
 
 static func misfire_chance(weapon_id: String, weather_id: String, powder_wet := false) -> float:
@@ -96,6 +187,11 @@ static func _coin(a: int, b: int) -> float:
 	var h := (a * 73856093) ^ (b * 19349663) ^ 0x9E3779B9
 	h = absi(h)
 	return float(h % 100000) / 100000.0
+
+
+static func roll(key_a: int, key_b: int) -> float:
+	"""给别处用的确定性硬币（舷炮的每一发也要可复现）。"""
+	return _coin(key_a, key_b)
 
 
 # ------------------------------------------------------------ 命中
