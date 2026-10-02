@@ -16,6 +16,14 @@ run_voyage.cmd          # 双击这个就出海
 
 > **从 Release 下载了 zip？** 解压后先看 `PLAY_ME_FIRST.txt`（一页操作说明），
 > 再双击 `ocean-s-king.exe` —— 不用装 Godot。下面这段是给从源码跑的人看的。
+>
+> **系统要求（实测）**：**64 位 Windows 10 或更新**。Windows 7 / 8 / Server 2012 起不来：
+> 引擎的二进制依赖 Win10 才有的系统组件，报错会指名
+> `api-ms-win-core-winrt-error-l1-1-1.dll`（那是 Win8.1/Win10 才有的 API set，
+> 补 DLL 也没用，因为显卡那关还得 OpenGL 3.3）。
+> **虚拟机 / 老显卡**（没有 OpenGL 3.3）时用 **`run_with_angle.cmd`** 启动：
+> 走 ANGLE → Direct3D 11（ANGLE 编译在 exe 里，不用另装；实测日志为
+> `OpenGL ES 3.0 (ANGLE) … Direct3D11`）。
 
 打开就是一页开场：1519 年，圣卢卡尔港，一艘六十吨的拉丁帆船。
 **第一屏是房间**：`1` 单机出海（另外三条船交给 AI）、`2` 开房间当房主、`3` 加入别人的房间

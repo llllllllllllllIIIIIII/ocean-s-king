@@ -128,6 +128,15 @@ if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
 $payload = @(Join-Path $appDir 'ocean-s-king.exe')
 $readmeDst = Join-Path $appDir 'PLAY_ME_FIRST.txt'
 if (Test-Path -LiteralPath $readmeDst) { $payload += $readmeDst }
+$angleSrc = Join-Path $root 'release\run_with_angle.cmd'
+if (Test-Path -LiteralPath $angleSrc) {
+    # Fallback launcher for machines with no OpenGL 3.3 (VMs, old GPUs):
+    # asks Godot for the ANGLE/Direct3D 11 backend instead. Stays pure ASCII.
+    $angleDst = Join-Path $appDir 'run_with_angle.cmd'
+    Copy-Item -LiteralPath $angleSrc -Destination $angleDst -Force
+    $payload += $angleDst
+    Write-Output 'added run_with_angle.cmd'
+}
 Compress-Archive -Path $payload -DestinationPath $zip
 $mb = [math]::Round((Get-Item -LiteralPath $zip).Length / 1MB, 2)
 Write-Output "OK: $zip ($mb MB)"

@@ -4,6 +4,10 @@
 一、开始
   1. 双击 ocean-s-king.exe（不用装任何东西）。
      Windows 可能弹一次 SmartScreen（这个 exe 没有数字签名），点「更多信息 → 仍要运行」。
+     ※ 系统的硬要求：**64 位 Windows 10 或更新**（Windows 7/8、Server 2012 这类老系统起不来 ——
+        引擎的二进制依赖 Win10 才有的系统组件，报错会说少了 api-ms-win-core-winrt-error-l1-1-1.dll）。
+     ※ 画面起不来 / 全黑（虚拟机、老显卡）时：改用 **run_with_angle.cmd** 启动 ——
+        那条路走 ANGLE→Direct3D 11（ANGLE 编译在 exe 里，不用另装东西）。
   2. 第一屏是房间：按 1 单机出海（另外三条船交给 AI）；按 2 开房间当房主；
      按 3 加入别人的房间（填房主 IP，回车；中途加入会接手一条 AI 船）。
   3. 开场标题卡按任意键收起来。
