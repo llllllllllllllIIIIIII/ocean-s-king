@@ -1,0 +1,55 @@
+{
+  "_comment": "第六段：好望角 → 阿森松 → 亚速尔 → 圣卢卡尔。归乡这一段没有新大陆，只有「还剩多少水、多少人、多少货」的账。",
+  "version": 1,
+  "features": [
+    {
+      "id": "ascension",
+      "kind": "land",
+      "role": "island",
+      "name": "阿森松岛",
+      "center_lonlat": [-14.4, -7.9],
+      "radius_m": 700,
+      "beach_width_m": 300,
+      "text": "一块干得发红的石头，中间是海龟。它是横渡大西洋时唯一能看见的东西。"
+    },
+    {
+      "id": "st_helena",
+      "kind": "land",
+      "role": "island",
+      "name": "圣赫勒拿",
+      "center_lonlat": [-5.7, -15.9],
+      "radius_m": 700,
+      "beach_width_m": 300,
+      "text": "陡得像墙的一座岛。风被它挡住，南边有一小片能停船的水。"
+    },
+    {
+      "id": "azores",
+      "kind": "land",
+      "role": "island",
+      "name": "亚速尔群岛",
+      "center_lonlat": [-25.7, 38.5],
+      "radius_m": 1000,
+      "beach_width_m": 300,
+      "text": "回欧洲之前的最后一块陆地。葡萄牙人的船在这里进进出出。"
+    },
+    {
+      "id": "south_atlantic_drift",
+      "kind": "current",
+      "name": "南大西洋洋流",
+      "from_lonlat": [10.0, -35.0],
+      "to_lonlat": [-20.0, -5.0],
+      "width_m": 4000,
+      "speed_ms": 0.9,
+      "text": "从好望角斜着往西北去的一条长流。回家的船靠它省下不少水。"
+    },
+    {
+      "id": "azores_port",
+      "kind": "port",
+      "name": "亚速尔锚地",
+      "pos_lonlat": [-25.7, 36.56],
+      "radius_m": 450,
+      "faction": "葡萄牙",
+      "text": "最后一次补给。从这里到家还有一千多公里，可船上的人已经闻到陆地的味道了。"
+    }
+  ]
+}

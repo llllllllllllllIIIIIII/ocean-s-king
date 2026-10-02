@@ -1,0 +1,158 @@
+{
+  "_comment": "第四段：菲律宾 → 香料群岛 → 马六甲 → 印度洋。这是**有货可买卖**的一段（东方贸易网是 M14 的活，这一期只把港口与航线立起来）。",
+  "version": 1,
+  "features": [
+    {
+      "id": "philippines",
+      "kind": "land",
+      "role": "coast",
+      "name": "菲律宾群岛",
+      "points_lonlat": [[120.5, 18.5], [122.0, 14.0], [124.0, 10.0], [126.0, 7.0], [126.2, 10.5]],
+      "half_width_m": 400,
+      "beach_width_m": 300,
+      "text": "碎成一地的岛。七千个，海图上只画得出几个。"
+    },
+    {
+      "id": "sulawesi",
+      "kind": "land",
+      "role": "coast",
+      "name": "西里伯斯",
+      "points_lonlat": [[119.5, 1.0], [120.5, -2.0], [121.0, -5.0]],
+      "half_width_m": 400,
+      "beach_width_m": 300,
+      "text": "形状古怪的大岛，海湾咬得很深。"
+    },
+    {
+      "id": "borneo",
+      "kind": "land",
+      "role": "coast",
+      "name": "婆罗洲",
+      "points_lonlat": [[109.0, 2.0], [113.0, 3.0], [117.0, 4.0], [117.0, -3.0]],
+      "half_width_m": 400,
+      "beach_width_m": 300,
+      "text": "又大又闷的岛。树一直长到水边，雾从林子里冒出来。"
+    },
+    {
+      "id": "sumatra",
+      "kind": "land",
+      "role": "coast",
+      "name": "苏门答腊",
+      "points_lonlat": [[95.5, 5.5], [100.0, 0.0], [104.0, -4.0], [106.0, -6.0]],
+      "half_width_m": 400,
+      "beach_width_m": 300,
+      "text": "斜着横在航道口上的一条长岛 —— 过了它，就进了马六甲。"
+    },
+    {
+      "id": "java",
+      "kind": "land",
+      "role": "coast",
+      "name": "爪哇",
+      "points_lonlat": [[105.5, -6.2], [110.0, -6.8], [114.0, -8.2]],
+      "half_width_m": 400,
+      "beach_width_m": 300,
+      "text": "一条东西向的窄岛，火山一座接着一座。"
+    },
+    {
+      "id": "malay_peninsula",
+      "kind": "land",
+      "role": "coast",
+      "name": "马来半岛",
+      "points_lonlat": [[98.0, 8.0], [100.5, 3.0], [103.5, 1.4]],
+      "half_width_m": 400,
+      "beach_width_m": 300,
+      "text": "右边的岸。海峡最窄处只有几十公里，风向却一天换两次。"
+    },
+    {
+      "id": "asia_south",
+      "kind": "land",
+      "role": "coast",
+      "name": "南亚海岸",
+      "points_lonlat": [[72.0, 20.0], [73.0, 15.0], [77.0, 8.0], [80.0, 13.0], [85.0, 19.0], [90.0, 21.5], [95.0, 16.0], [98.0, 8.0]],
+      "half_width_m": 400,
+      "beach_width_m": 300,
+      "label_lonlat": [82.0, 15.0],
+      "text": "印度半岛的南端。岸上有人、有市集、有国王的税吏。"
+    },
+    {
+      "id": "new_guinea",
+      "kind": "land",
+      "role": "coast",
+      "name": "新几内亚",
+      "points_lonlat": [[131.0, -1.0], [140.0, -3.0], [147.0, -8.0]],
+      "half_width_m": 400,
+      "beach_width_m": 300,
+      "text": "一片黑绿色的岸。山在云上面，看不见顶。"
+    },
+    {
+      "id": "ternate",
+      "kind": "land",
+      "role": "island",
+      "name": "蒂多雷与特尔纳特",
+      "center_lonlat": [127.4, 0.9],
+      "radius_m": 900,
+      "beach_width_m": 300,
+      "text": "两座火山岛挤在一起 —— 全世界只有这里长出丁香。",
+      "pois": [
+        { "id": "clove_grove", "name": "丁香林", "pos_lonlat": [127.6, 0.9], "radius_m": 300,
+          "text": "整片山坡都是丁香树。叶子揉一揉，手指上一整天都是那个味道。" }
+      ]
+    },
+    {
+      "id": "ambon",
+      "kind": "land",
+      "role": "island",
+      "name": "安汶岛",
+      "center_lonlat": [128.2, -3.7],
+      "radius_m": 700,
+      "beach_width_m": 300,
+      "text": "又一个长香料的岛。肉豆蔻的树要十年才结果。"
+    },
+    {
+      "id": "banda",
+      "kind": "land",
+      "role": "island",
+      "name": "班达群岛",
+      "center_lonlat": [129.9, -4.5],
+      "radius_m": 700,
+      "beach_width_m": 300,
+      "text": "十来个岛围成一圈，中间是水。这里出的肉豆蔻在欧洲值黄金。"
+    },
+    {
+      "id": "south_equatorial_indian",
+      "kind": "current",
+      "name": "南赤道洋流（印度洋）",
+      "from_lonlat": [100.0, -12.0],
+      "to_lonlat": [60.0, -14.0],
+      "width_m": 3000,
+      "speed_ms": 1.0,
+      "text": "往西去的长流，正对着好望角的方向。季风一变，它就换脾气。"
+    },
+    {
+      "id": "cebu",
+      "kind": "port",
+      "name": "宿务",
+      "pos_lonlat": [122.6, 10.9],
+      "radius_m": 450,
+      "faction": "当地",
+      "text": "一个能停船的海湾。岸上的人会来看你们，也会看你们的货。"
+    },
+    {
+      "id": "tidore",
+      "kind": "port",
+      "name": "蒂多雷",
+      "pos_lonlat": [127.4, -0.88],
+      "radius_m": 450,
+      "faction": "当地",
+      "text": "香料群岛的港口。整个远征的账，就是在这里算平算不平的。"
+    },
+    {
+      "id": "malacca",
+      "kind": "port",
+      "name": "马六甲",
+      "pos_lonlat": [100.8, 1.6],
+      "radius_m": 450,
+      "faction": "马来",
+      "text": "海峡里挤满了各国的船。这里的人什么都见过，也什么都不惊讶。"
+    }
+  ]
+}

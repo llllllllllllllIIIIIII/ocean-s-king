@@ -51,7 +51,9 @@ var _started := false              # 标题卡关掉之前，一帧模拟都不�
 var _ending_auto_shown := false
 # ×36 是 M2 加的：海从 8km 变成 48km，只有 ×12 的话横渡一次要二十多分钟真实时间。
 # 物理步长不变（快进永远是多跑几步，不是把 dt 乘大），所以气动不会被快进弄飘。
-var _time_scales: Array[float] = [1.0, 4.0, 12.0, 36.0]
+# ×144 是 M9 加的：全球图是 320km × 160km，一次环球在 ×36 下要六个小时真实时间。
+# 它只用来"过远洋空海"——近岸、遭遇、进港照旧用低档（快进只是多跑几步，物理不飘）。
+var _time_scales: Array[float] = [1.0, 4.0, 12.0, 36.0, 144.0]
 var _time_scale_idx := 0
 var _last_head := -1               # 上一次看到的"演到第几幕"，用来放剧情卡
 var _act_card_timer := 0.0         # 剧情卡的剩余播放时间（真实秒）
@@ -75,12 +77,29 @@ var _panel: SailPanel
 var _show_panel := false
 var _crew_panel: CrewPanel
 var _show_crew_panel := false
+var _dbg_arrows := 0                # 一次性诊断：退化箭头的头几个（见 _arrow）
+
+
+func _region_from_args(args: PackedStringArray) -> String:
+	"""这一局跑哪个世界：默认大西洋（v0.5 的剧情是照着它写的）。
+
+	`-- region=global` 切到 M9 的全球图（320km × 160km、圆柱）；
+	`-- region=<路径>` 可以指向任何一个世界文件 —— 测试与截图都要用。
+	"""
+	for a in args:
+		var s := str(a)
+		if s == "global" or s == "region=global":
+			return Sea.GLOBAL_PATH
+		if s.begins_with("region="):
+			return s.substr("region=".length())
+	return Sea.ATLANTIC_PATH
 
 
 func _ready() -> void:
-	_shot_mode = OS.get_cmdline_user_args().has("shots")
+	var args := OS.get_cmdline_user_args()
+	_shot_mode = args.has("shots")
 	voyage = Voyage.new()
-	voyage.setup(Sea.ATLANTIC_PATH)
+	voyage.setup(_region_from_args(args))
 	# 海图层要先于船加进来：Node2D 的子节点按加入顺序画，
 	# 所以顺序是"地形（本节点的 _draw）→ 海图 → 船"。
 	_chart = ChartView.new()
@@ -691,8 +710,17 @@ func _arrow(a: Vector2, b: Vector2, col: Color, width: float) -> void:
 	var d := (b - a).normalized()
 	var n := Vector2(-d.y, d.x)
 	var mid := a.lerp(b, 0.5)
-	draw_colored_polygon(PackedVector2Array([
-		mid + d * 14.0, mid + n * 8.0, mid - n * 8.0]), col)
+	var tri := PackedVector2Array([mid + d * 14.0, mid + n * 8.0, mid - n * 8.0])
+	# ⚠️ 三角化对**绕向**有要求：洋流有往西的也有往南的，箭头三角形的绕向会跟着翻，
+	#    翻了的那一半会被 Godot 判成 "Invalid polygon data"（全球图上的洋流方向杂，
+	#    这个坑在大西洋（两条同向的流）里看不出来）。统一绕向再画。
+	if d == Vector2.ZERO:
+		return
+	if (tri[1] - tri[0]).cross(tri[2] - tri[0]) < 0.0:
+		tri = PackedVector2Array([tri[0], tri[2], tri[1]])
+	if Geometry2D.triangulate_polygon(tri).is_empty():
+		return                              # 退化（两端在屏幕上重合）时干脆不画
+	draw_colored_polygon(tri, col)
 
 
 func _label(at: Vector2, text: String, col: Color) -> void:

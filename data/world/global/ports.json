@@ -1,0 +1,92 @@
+{
+  "_comment": "全球十三个停靠点的**经济**（M9）。位置与形状在各地理文件里（kind=port 的那些特征）；这里只有库存、服务与地区系数。前四个港与大西洋那份完全一致 —— 它们是同一批港。",
+  "_todo": "香料、丝绸这类**新商品**是 M14（东方贸易网）的活：这一期只把港口立起来，商品清单仍然是 resources.json 里那十三样。",
+  "_price_rule": "价格随库存浮动：price = base × clamp(2 − 库存/基准库存, 0.5, 2)。买光了就贵一倍，堆满了就便宜一半。",
+  "version": 1,
+  "ports": [
+    {
+      "id": "sanlucar",
+      "services": ["supply", "repair", "trade"],
+      "stock": { "food": 900, "water": 90, "wood": 60, "canvas": 30, "powder": 12, "lead": 400,
+                 "match": 40, "medicine": 12, "cloth": 40, "wine": 30, "salt": 40 },
+      "mul": { "ivory": 1.6, "brazilwood": 1.5, "cloth": 0.8, "wine": 0.8 }
+    },
+    {
+      "id": "santa_cruz",
+      "services": ["supply", "repair", "trade"],
+      "stock": { "food": 240, "water": 40, "wood": 25, "canvas": 12, "powder": 6, "lead": 160,
+                 "match": 16, "medicine": 4, "cloth": 8, "wine": 6, "salt": 20 },
+      "mul": { "ivory": 1.3, "brazilwood": 1.3, "cloth": 1.0, "wine": 1.0 }
+    },
+    {
+      "id": "santiago",
+      "services": ["supply", "repair", "trade"],
+      "stock": { "food": 160, "water": 30, "wood": 18, "canvas": 8, "powder": 4, "lead": 90,
+                 "match": 10, "medicine": 3, "cloth": 4, "wine": 3, "salt": 14, "ivory": 60 },
+      "mul": { "ivory": 0.7, "brazilwood": 1.1, "cloth": 2.0, "wine": 2.0, "salt": 0.8 }
+    },
+    {
+      "id": "sao_aleixo",
+      "services": ["supply", "repair", "trade"],
+      "stock": { "food": 120, "water": 24, "wood": 14, "canvas": 6, "powder": 3, "lead": 60,
+                 "match": 8, "medicine": 1, "cloth": 2, "wine": 2, "salt": 10, "brazilwood": 80 },
+      "mul": { "ivory": 1.2, "brazilwood": 0.6, "cloth": 2.2, "wine": 2.2, "salt": 0.9 }
+    },
+    {
+      "id": "rio_plata",
+      "services": ["supply"],
+      "stock": { "food": 90, "water": 26, "wood": 10, "canvas": 3, "medicine": 1 },
+      "mul": { "cloth": 2.4, "wine": 2.2, "salt": 1.2 }
+    },
+    {
+      "id": "sao_julian",
+      "services": ["supply"],
+      "stock": { "food": 60, "water": 30, "wood": 8, "canvas": 2 },
+      "mul": { "cloth": 2.6, "wine": 2.4 }
+    },
+    {
+      "id": "guam_port",
+      "services": ["supply", "trade"],
+      "stock": { "food": 80, "water": 22, "wood": 6, "canvas": 2 },
+      "mul": { "cloth": 2.6, "wine": 2.4, "salt": 1.4 }
+    },
+    {
+      "id": "cebu",
+      "services": ["supply", "trade"],
+      "stock": { "food": 140, "water": 30, "wood": 10, "canvas": 4, "salt": 20 },
+      "mul": { "cloth": 2.2, "wine": 2.0, "lead": 1.6, "salt": 0.9 }
+    },
+    {
+      "id": "tidore",
+      "services": ["supply", "repair", "trade"],
+      "stock": { "food": 120, "water": 28, "wood": 16, "canvas": 8, "salt": 30, "cloth": 6 },
+      "mul": { "cloth": 2.8, "wine": 2.6, "salt": 0.6, "medicine": 1.4 }
+    },
+    {
+      "id": "malacca",
+      "services": ["supply", "repair", "trade"],
+      "stock": { "food": 200, "water": 40, "wood": 24, "canvas": 14, "cloth": 60, "salt": 50,
+                 "ivory": 40, "wine": 10, "medicine": 6, "powder": 4, "lead": 120, "match": 12 },
+      "mul": { "cloth": 0.7, "wine": 0.8, "salt": 0.7, "ivory": 1.5, "brazilwood": 1.6 }
+    },
+    {
+      "id": "mozambique",
+      "services": ["supply", "repair", "trade"],
+      "stock": { "food": 150, "water": 32, "wood": 18, "canvas": 8, "ivory": 50, "cloth": 6, "salt": 24 },
+      "mul": { "ivory": 0.6, "cloth": 2.4, "wine": 2.2, "brazilwood": 1.8 }
+    },
+    {
+      "id": "cape",
+      "services": ["supply"],
+      "stock": { "food": 70, "water": 34, "wood": 8, "canvas": 2 },
+      "mul": { "cloth": 2.6, "wine": 2.4 }
+    },
+    {
+      "id": "azores_port",
+      "services": ["supply", "repair", "trade"],
+      "stock": { "food": 130, "water": 34, "wood": 20, "canvas": 10, "powder": 4, "lead": 80,
+                 "match": 8, "medicine": 4, "cloth": 6, "wine": 8, "salt": 16 },
+      "mul": { "ivory": 1.3, "brazilwood": 1.2, "cloth": 1.1, "wine": 1.0 }
+    }
+  ]
+}

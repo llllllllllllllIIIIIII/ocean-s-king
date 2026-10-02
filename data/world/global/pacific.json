@@ -1,0 +1,99 @@
+{
+  "_comment": "第三段：太平洋。从智利外海到关岛约 17000 真实公里（136 地图公里）—— 这一整段**没有补给点**，是三年远征里最狠的一段（M13 的缺水与坏血病就发生在这里）。",
+  "version": 1,
+  "features": [
+    {
+      "id": "guam",
+      "kind": "land",
+      "role": "island",
+      "name": "关岛",
+      "center_lonlat": [144.8, 13.4],
+      "radius_m": 900,
+      "beach_width_m": 300,
+      "text": "太平洋上第一块能落脚的陆地。独木舟从岸边划出来，帆是三角的。",
+      "pois": [
+        { "id": "guam_beach", "name": "关岛的滩头", "pos_lonlat": [144.6, 13.4], "radius_m": 260,
+          "text": "珊瑚砂白得刺眼。水里有鱼，岸上有椰子 —— 三年来没见过这么新鲜的东西。" }
+      ]
+    },
+    {
+      "id": "marquesas",
+      "kind": "land",
+      "role": "island",
+      "name": "马克萨斯群岛",
+      "center_lonlat": [-139.0, -9.0],
+      "radius_m": 700,
+      "beach_width_m": 300,
+      "text": "尖得像牙齿的岛。要是洋流把你往南推，你才会看见它们。"
+    },
+    {
+      "id": "tuamotu",
+      "kind": "land",
+      "role": "island",
+      "name": "土阿莫土环礁",
+      "center_lonlat": [-145.0, -16.0],
+      "radius_m": 800,
+      "beach_width_m": 300,
+      "text": "低得几乎贴着水面的环礁。夜里看见浪花的时候，已经来不及了。"
+    },
+    {
+      "id": "reef_tuamotu",
+      "kind": "reef",
+      "name": "环礁外的浅滩",
+      "pos_lonlat": [-143.0, -15.0],
+      "radius_m": 900,
+      "text": "水色从深蓝一下变成青绿。测深的人喊了一声，全船都静了。"
+    },
+    {
+      "id": "solomon",
+      "kind": "land",
+      "role": "island",
+      "name": "所罗门群岛",
+      "center_lonlat": [160.0, -9.5],
+      "radius_m": 1200,
+      "beach_width_m": 300,
+      "text": "绿色的岛，山顶一直埋在云里。从这里往西就有人烟了。"
+    },
+    {
+      "id": "south_equatorial_pacific",
+      "kind": "current",
+      "name": "南赤道洋流（太平洋）",
+      "from_lonlat": [-85.0, -5.0],
+      "to_lonlat": [-160.0, -8.0],
+      "width_m": 3000,
+      "speed_ms": 1.0,
+      "text": "顺着赤道往西去的长流。挂上帆，它会替你走掉三分之一的路。"
+    },
+    {
+      "id": "north_equatorial_pacific",
+      "kind": "current",
+      "name": "北赤道洋流（太平洋）",
+      "from_lonlat": [-100.0, 12.0],
+      "to_lonlat": [-170.0, 10.0],
+      "width_m": 3000,
+      "speed_ms": 0.9,
+      "text": "同样是往西的流，在北边一条。偏北走的人靠它。"
+    },
+    {
+      "id": "guam_port",
+      "kind": "port",
+      "name": "关岛锚地",
+      "pos_lonlat": [143.53, 14.67],
+      "radius_m": 450,
+      "faction": "当地",
+      "text": "太平洋上的第一个补给点。水、椰子、鱼 —— 还有不认识的规矩。"
+    },
+    {
+      "id": "pacific_mid",
+      "kind": "misc",
+      "role": "poi_only",
+      "name": "太平洋中部",
+      "center_lonlat": [-150.0, -10.0],
+      "radius_m": 1,
+      "pois": [
+        { "id": "pacific_void", "name": "空旷的海面", "pos_lonlat": [-150.0, -10.0], "radius_m": 4000,
+          "text": "整整三个月，除了水就是水。船上开始有人数日子，也有人不再数了。" }
+      ]
+    }
+  ]
+}

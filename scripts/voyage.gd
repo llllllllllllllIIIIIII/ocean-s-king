@@ -89,7 +89,8 @@ func setup(region := Sea.DATA_PATH, ship_id := "trinidad", inherited := {}) -> v
 	sea.setup(region)
 	# 时间尺度：地图是压缩过的（48km ↔ 6000km），日历与补给按**真实航程**算
 	VoyageJournal.voyage_time_scale = sea.real_time_scale()
-	ports.setup()
+	# 港口经济表跟着海域走（全球图有自己的 ports.json；迷你海域退回大西洋那份）
+	ports.setup(sea.ports_path())
 	fleet.setup()
 	fleet.claim_local(ship_id)
 	fleet.goal = default_destination()   # 抵达判定用（M8：全队抵达才结算）

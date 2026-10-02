@@ -91,6 +91,17 @@ func _draw() -> void:
 			at = Vector2(float(lp[0]), float(lp[1])) * px_per_m
 		_text(at, str(f.get("name", "")), Color(0.36, 0.28, 0.19, 0.95 * a), 14)
 	# ⑦ 雾：没发现的分块整块盖住（含地名与航段）
+	# ⑥.5 分区图幅（M9）：全球图是一张 320×160 的总图，关键海域用细框圈出来 ——
+	#      只有真的走近过（框里有分块被发现了）才画，不然等于提前告诉玩家答案。
+	for rg in world.regions:
+		var rect: Rect2 = rg.get("rect", Rect2())
+		if rect.size == Vector2.ZERO or not _region_seen(rect):
+			continue
+		var r := Rect2(rect.position * px_per_m, rect.size * px_per_m)
+		draw_rect(r, Color(INK, 0.05 * a), true)
+		draw_rect(r, Color(INK, 0.42 * a), false, 1.6 * _s)
+		_text(r.position + Vector2(8.0, -7.0) * _s, str(rg.get("name", "")),
+			Color(0.36, 0.28, 0.19, 0.8 * a), 13)
 	var fog_col := Color(FOG, 0.93 * a)
 	var fog_edge := Color(0.55, 0.65, 0.75, 0.16 * a)
 	for ty in world.tiles.y:
@@ -224,6 +235,17 @@ func _text(at: Vector2, s: String, col: Color, px: int) -> void:
 	# 海图上的字按**屏幕**字号画：拉远拉近都一样大（换算式与 sea_debug._label 同源）
 	var size := maxi(6, int(float(px) / maxf(zoom, 0.001)))
 	draw_string(font, at, s, HORIZONTAL_ALIGNMENT_LEFT, -1, size, col)
+
+
+func _region_seen(rect: Rect2) -> bool:
+	"""这块分区图幅里有没有至少一个分块被发现了？（没走近过就不画框）"""
+	var t0 := world.tile_of(rect.position)
+	var t1 := world.tile_of(rect.position + rect.size)
+	for ty in range(t0.y, t1.y + 1):
+		for tx in range(t0.x, t1.x + 1):
+			if voyage.is_tile_discovered(Vector2i(tx, ty)):
+				return true
+	return false
 
 
 func _route_known(r: Dictionary) -> bool:

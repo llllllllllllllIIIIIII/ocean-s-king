@@ -18,6 +18,12 @@ extends RefCounted
 #   - 老格式（`test_sea.json`）：island / reef / current / port 四个块；
 #   - 新格式（`data/world/atlantic/*.json`）：`world_m` + `tile_m` + `features[]`。
 #   两种都读得进来，出来的都是同一套 features —— 老海域不需要改一个数。
+#
+# **全球图（M9）**：世界数据里多一个 `projection` 块时，特征可以直接写**经纬度**
+#   （`points_lonlat` / `center_lonlat` / `from_lonlat` / `to_lonlat` / `pos_lonlat`
+#   以及 POI 的 `pos_lonlat`），加载时换算成米。地理数据写真实经纬度才**能核**：
+#   「圣卢卡尔在 36.8°N/6.3°W」是可以对着地图查的，「x=154667」不是。
+#   等距圆柱：x = (lon − lon0) × m_per_deg，y = (lat0 − lat) × m_per_deg。
 
 const DEFAULT_TILE_M := 16000.0
 const DEFAULT_LEE := 0.45
@@ -25,6 +31,10 @@ const DEFAULT_LEE := 0.45
 # ⚠️ 这意味着**影响范围比外形大得多** —— 索引必须按影响范围登记，
 #    否则"站在岸外 2 公里、明明在背风区里"的点在跨块时会突然读不到那块陆地的影子。
 const LEE_SPAN := 3.0
+# 环球航行的世界是**圆柱**，不是平面：地球一整圈 360° 压进 320km 之后，
+# 从西往东绕回来必然要跨过一条"接缝"。把 x 轴卷起来（wrap_x）之后，
+# 接缝就不再是一个地方 —— 它只是坐标的数字游戏，地形在缝两边是同一片。
+const WRAP_EPS := 0.001
 
 var name := ""
 var tile_m := DEFAULT_TILE_M
@@ -34,20 +44,22 @@ var wind := {}
 var features: Array = []          # [{id, kind, name, shape, ...}]
 var ready := false
 var force_full_scan := false      # 测试专用：绕开 tile 索引
+var projection := {}              # 有它才认 `*_lonlat` 字段（老海域没有）
+var wrap_x := false               # 圆柱世界（全球图）：x 轴按世界宽度卷起来
+var regions: Array = []           # 海图分区图幅（可选）：[{id, name, rect}]
 
 var _tile_features: Array = []    # 每个 tile -> Array[int]（features 的下标）
+var _m_per_deg := 0.0
+var _lon0 := -180.0
+var _lat0 := 90.0
 
 
 func setup(data: Dictionary) -> bool:
 	name = str(data.get("name", "无名海域"))
 	tile_m = maxf(1.0, float(data.get("tile_m", DEFAULT_TILE_M)))
 	wind = data.get("wind", {})
-	features.clear()
-	if data.has("features"):
-		for raw in data.get("features", []):
-			features.append(_feature(raw))
-	else:
-		_legacy_features(data)
+	wrap_x = bool(data.get("wrap_x", false))
+	# 先把 world_m 定下来：投影的每度米数可以从它推出来（3218.7 那个系数不该手写两遍）
 	var w: Array = data.get("world_m", [])
 	if w.size() >= 2:
 		world_m = Vector2(float(w[0]), float(w[1]))
@@ -55,6 +67,18 @@ func setup(data: Dictionary) -> bool:
 		var s: Array = data["size_m"]
 		world_m = Vector2(float(s[0]), float(s[1]))
 	else:
+		world_m = Vector2.ZERO
+	_setup_projection(data.get("projection", {}))
+	features.clear()
+	if data.has("features"):
+		for raw in data.get("features", []):
+			features.append(_feature(raw))
+	else:
+		_legacy_features(data)
+	regions.clear()
+	for raw in data.get("regions", []):
+		regions.append(_region(raw))
+	if world_m == Vector2.ZERO:
 		world_m = _features_aabb().end
 	tiles = Vector2i(maxi(1, int(ceil(world_m.x / tile_m))), maxi(1, int(ceil(world_m.y / tile_m))))
 	_build_index()
@@ -62,16 +86,161 @@ func setup(data: Dictionary) -> bool:
 	return true
 
 
+# ------------------------------------------------------------ 投影（全球图用）
+
+func _setup_projection(p) -> void:
+	projection = p if typeof(p) == TYPE_DICTIONARY else {}
+	if projection.is_empty():
+		_m_per_deg = 0.0
+		return
+	_lon0 = float(projection.get("lon0", -180.0))
+	_lat0 = float(projection.get("lat0", 90.0))
+	# 默认：整张图横跨 360°，所以每度米数 = 图宽 ÷ 360
+	_m_per_deg = float(projection.get("m_per_deg", world_m.x / 360.0 if world_m.x > 0.0 else 0.0))
+	if projection.has("wrap"):
+		wrap_x = bool(projection["wrap"])
+
+
+func has_projection() -> bool:
+	return _m_per_deg > 0.0
+
+
+func lonlat_to_m(lon: float, lat: float) -> Vector2:
+	"""经纬度 → 地图米。只在世界数据声明了 `projection` 时有意义。"""
+	return Vector2((lon - _lon0) * _m_per_deg, (_lat0 - lat) * _m_per_deg)
+
+
+func m_to_lonlat(p: Vector2) -> Vector2:
+	"""地图米 → 经纬度（海图上的读数、导出用）。返回 (lon, lat)。"""
+	if _m_per_deg <= 0.0:
+		return Vector2.ZERO
+	var lon := _lon0 + wrap_pos(p).x / _m_per_deg
+	if lon > 180.0:
+		lon -= 360.0
+	return Vector2(lon, _lat0 - p.y / _m_per_deg)
+
+
+# ------------------------------------------------------------ 圆柱（wrap_x）
+
+func wraps() -> bool:
+	return wrap_x and world_m.x > 0.0
+
+
+func wrap_pos(p: Vector2) -> Vector2:
+	"""把 x 卷进世界宽度。环球时"越过接缝"不是瞬移，只是坐标回到 0 那一边。"""
+	if not wraps():
+		return p
+	return Vector2(fposmod(p.x, world_m.x), p.y)
+
+
+func dx(a: Vector2, b: Vector2) -> float:
+	"""从 a 到 b 的 x 位移，取**绕地球走最短的那一边**。"""
+	var d := b.x - a.x
+	if wraps():
+		d = fposmod(d + world_m.x * 0.5, world_m.x) - world_m.x * 0.5
+	return d
+
+
+func delta(a: Vector2, b: Vector2) -> Vector2:
+	"""从 a 到 b 的位移（x 走最短的一边，y 照常）。"""
+	return Vector2(dx(a, b), b.y - a.y)
+
+
+func dist(a: Vector2, b: Vector2) -> float:
+	"""两点之间的距离（环球时走最短的一边）。"""
+	return delta(a, b).length()
+
+
+func _projected(raw: Dictionary) -> Dictionary:
+	"""把 `*_lonlat` 字段换算成米。没有投影、或没写 lonlat 的原样返回。"""
+	if not has_projection():
+		return raw
+	var any := raw.has("points_lonlat") or raw.has("center_lonlat") \
+		or raw.has("from_lonlat") or raw.has("to_lonlat") or raw.has("pos_lonlat")
+	if not any:
+		return raw
+	var f := raw.duplicate(true)
+	if raw.has("points_lonlat"):
+		f["points"] = _lonlat_list(raw["points_lonlat"])
+	if raw.has("center_lonlat"):
+		f["center"] = _lonlat_one(raw["center_lonlat"])
+	if raw.has("pos_lonlat"):
+		f["pos"] = _lonlat_one(raw["pos_lonlat"])
+	if raw.has("from_lonlat"):
+		f["from"] = _lonlat_one(raw["from_lonlat"])
+	if raw.has("to_lonlat"):
+		f["to"] = _lonlat_one(raw["to_lonlat"])
+	if raw.has("pois"):
+		var pois := []
+		for p in raw["pois"]:
+			if typeof(p) == TYPE_DICTIONARY and (p as Dictionary).has("pos_lonlat"):
+				var q: Dictionary = (p as Dictionary).duplicate(true)
+				q["pos"] = _lonlat_one(q["pos_lonlat"])
+				pois.append(q)
+			else:
+				pois.append(p)
+		f["pois"] = pois
+	if raw.has("label_lonlat"):
+		f["label_pos"] = _lonlat_one(raw["label_lonlat"])
+	return f
+
+
+func _lonlat_one(v) -> Array:
+	if typeof(v) == TYPE_ARRAY and (v as Array).size() >= 2:
+		var p := lonlat_to_m(float(v[0]), float(v[1]))
+		return [p.x, p.y]
+	return [0.0, 0.0]
+
+
+func _lonlat_list(raw) -> Array:
+	var out := []
+	if typeof(raw) != TYPE_ARRAY:
+		return out
+	for v in raw:
+		out.append(_lonlat_one(v))
+	return out
+
+
+func _region(raw) -> Dictionary:
+	"""海图分区图幅：一块矩形 + 一个名字。**用米写**（`rect`），不用经纬度 ——
+	跨接缝的经纬度矩形会算出一整张图那么大的框。"""
+	var out := {"id": str(raw.get("id", "")), "name": str(raw.get("name", ""))}
+	if raw.has("rect"):
+		var r: Array = raw["rect"]
+		if r.size() >= 4:
+			out["rect"] = Rect2(float(r[0]), float(r[1]), float(r[2]), float(r[3]))
+		else:
+			out["rect"] = Rect2()
+	elif raw.has("center") and raw.has("size"):
+		var c: Array = raw["center"]
+		var s: Array = raw["size"]
+		out["rect"] = Rect2(float(c[0]) - float(s[0]) * 0.5, float(c[1]) - float(s[1]) * 0.5,
+			float(s[0]), float(s[1]))
+	else:
+		out["rect"] = Rect2()
+	return out
+
+
+func region_of_tile(t: Vector2i) -> Dictionary:
+	var p := tile_rect(t).get_center()
+	for rg in regions:
+		if (rg["rect"] as Rect2).has_point(p):
+			return rg
+	return {}
+
+
 # ------------------------------------------------------------ 装载
 
 func _feature(raw: Dictionary) -> Dictionary:
-	var f := raw.duplicate(true)
-	f["id"] = str(raw.get("id", raw.get("name", "?")))
-	f["name"] = str(raw.get("name", f["id"]))
-	f["kind"] = str(raw.get("kind", "land"))
-	f["shape"] = _shape_of(raw)
-	f["beach_width_m"] = float(raw.get("beach_width_m", 0.0))
-	f["pois"] = raw.get("pois", [])
+	var f := _projected(raw)
+	# ⚠️ 一律从**投影之后**的 f 上取：`points_lonlat` 换成 `points` 之后，
+	#    形状与地标都得用换好的那一份，不然它们会全部落在原点。
+	f["id"] = str(f.get("id", f.get("name", "?")))
+	f["name"] = str(f.get("name", f["id"]))
+	f["kind"] = str(f.get("kind", "land"))
+	f["shape"] = _shape_of(f)
+	f["beach_width_m"] = float(f.get("beach_width_m", 0.0))
+	f["pois"] = f.get("pois", [])
 	return f
 
 
@@ -152,6 +321,10 @@ func _build_index() -> void:
 
 
 func tile_of(pos: Vector2) -> Vector2i:
+	if wraps():
+		return Vector2i(
+			int(floor(fposmod(pos.x, world_m.x) / tile_m)) % maxi(1, tiles.x),
+			clampi(int(floor(pos.y / tile_m)), 0, tiles.y - 1))
 	return Vector2i(
 		clampi(int(floor(pos.x / tile_m)), 0, tiles.x - 1),
 		clampi(int(floor(pos.y / tile_m)), 0, tiles.y - 1))
@@ -188,6 +361,22 @@ func tiles_of_feature(f: Dictionary) -> Array:
 
 func _tiles_of_box(box: Rect2) -> Array:
 	var out := []
+	if wraps():
+		# 一个盒子可能横跨接缝（x 从 319km 绕到 0）—— 按**未卷的格子号**枚举，
+		# 再用 tile_of 卷回去，缝上就不会漏掉任何一个格子。
+		var tx0 := int(floor(box.position.x / tile_m))
+		var tx1 := int(floor((box.position.x + box.size.x) / tile_m))
+		var ty0 := clampi(int(floor(box.position.y / tile_m)), 0, tiles.y - 1)
+		var ty1 := clampi(int(floor((box.position.y + box.size.y) / tile_m)), 0, tiles.y - 1)
+		if tx1 - tx0 + 1 >= tiles.x:
+			for ty in range(ty0, ty1 + 1):
+				for tx in range(tiles.x):
+					out.append(Vector2i(tx, ty))
+			return out
+		for ty in range(ty0, ty1 + 1):
+			for tx in range(tx0, tx1 + 1):
+				out.append(Vector2i(posmod(tx, tiles.x), ty))
+		return out
 	var t0 := tile_of(box.position)
 	var t1 := tile_of(box.position + box.size)
 	for ty in range(t0.y, t1.y + 1):
@@ -234,6 +423,8 @@ func size_m() -> Vector2:
 
 
 func in_bounds(pos: Vector2) -> bool:
+	if wraps():
+		return pos.y >= 0.0 and pos.y <= world_m.y
 	return pos.x >= 0.0 and pos.y >= 0.0 and pos.x <= world_m.x and pos.y <= world_m.y
 
 
@@ -266,6 +457,7 @@ func land_containing(pos: Vector2) -> Dictionary:
 	同时踩上两块（海岸压着岛）时取**陷得最深**的那一块 —— 与候选顺序无关，
 	这样索引版和全扫版永远给同一个答案。
 	"""
+	pos = wrap_pos(pos)
 	var best: Dictionary = {}
 	var deepest := 0.0
 	for i in candidates(pos):
@@ -280,6 +472,7 @@ func land_containing(pos: Vector2) -> Dictionary:
 
 
 func is_reef(pos: Vector2) -> bool:
+	pos = wrap_pos(pos)
 	for i in candidates(pos):
 		var f: Dictionary = features[i]
 		if str(f["kind"]) == "reef" and Geom2D.inside(f["shape"], pos):
@@ -288,6 +481,7 @@ func is_reef(pos: Vector2) -> bool:
 
 
 func reef_at(pos: Vector2) -> Dictionary:
+	pos = wrap_pos(pos)
 	for i in candidates(pos):
 		var f: Dictionary = features[i]
 		if str(f["kind"]) == "reef" and Geom2D.inside(f["shape"], pos):
@@ -300,6 +494,7 @@ func is_port(pos: Vector2) -> bool:
 
 
 func port_at(pos: Vector2) -> Dictionary:
+	pos = wrap_pos(pos)
 	var best: Dictionary = {}
 	var best_d := INF
 	for i in candidates(pos):
@@ -318,6 +513,7 @@ func current_at(pos: Vector2) -> Vector2:
 
 	流速按**相对水的速度**作用于受力，所以不挂帆也会被带走 —— Voyage 的事。
 	"""
+	pos = wrap_pos(pos)
 	var v := Vector2.ZERO
 	for i in candidates(pos):
 		var f: Dictionary = features[i]
@@ -333,6 +529,7 @@ func current_at(pos: Vector2) -> Vector2:
 
 func lee_factor(pos: Vector2) -> float:
 	"""背风区：被陆地挡住的那一面，风是软的。取所有陆地里最"软"的那个。"""
+	pos = wrap_pos(pos)
 	var base := float(wind.get("lee_factor", DEFAULT_LEE))
 	var best := 1.0
 	for i in candidates(pos):
@@ -372,6 +569,7 @@ func _downwind() -> Vector2:
 
 func poi_at(pos: Vector2) -> Dictionary:
 	"""走到哪个地标上了？取最近的那个（与候选顺序无关）。"""
+	pos = wrap_pos(pos)
 	var best: Dictionary = {}
 	var best_d := INF
 	for i in candidates(pos):
@@ -472,12 +670,13 @@ func land_shapes(dry := true) -> Array:
 
 func nearest_shore(pos: Vector2) -> Dictionary:
 	"""离船最近的那段岸（沙滩环上的一点）。登陆点就是它，不是固定航标。"""
+	pos = wrap_pos(pos)
 	var best := Vector2.ZERO
 	var best_d := INF
 	var which: Dictionary = {}
 	for f in lands():
 		var q := Geom2D.ring_point(f["shape"], pos, float(f.get("beach_width_m", 0.0)) * 0.5)
-		var d := pos.distance_to(q)
+		var d := dist(pos, q)
 		if d < best_d:
 			best_d = d
 			best = q

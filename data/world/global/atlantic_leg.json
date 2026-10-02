@@ -1,0 +1,194 @@
+{
+  "_comment": "第一段：伊比利亚 → 加那利 → 佛得角 → 巴西，外加西非海岸与加勒比。这一段的四个港与 v0.5 完全一致（同样的相对方位、同样的经济）。",
+  "version": 1,
+  "features": [
+    {
+      "id": "iberia",
+      "kind": "land",
+      "role": "coast",
+      "name": "伊比利亚半岛",
+      "points_lonlat": [[-9.5, 43.5], [-9.0, 38.7], [-6.9, 37.2], [-6.35, 36.78], [-5.35, 36.0], [-2.2, 36.9]],
+      "half_width_m": 400,
+      "beach_width_m": 300,
+      "label_lonlat": [-6.9, 38.4],
+      "text": "半岛的南岸。塞维利亚的河口就在这一线，退潮时桅杆像一片林子。"
+    },
+    {
+      "id": "europe_biscay",
+      "kind": "land",
+      "role": "coast",
+      "name": "比斯开湾北岸",
+      "points_lonlat": [[-1.6, 43.4], [-4.2, 47.5], [-1.2, 49.4]],
+      "half_width_m": 400,
+      "beach_width_m": 300,
+      "text": "法国与布列塔尼的海岸。北头多风暴，出海前看一眼船体。"
+    },
+    {
+      "id": "africa_north",
+      "kind": "land",
+      "role": "coast",
+      "name": "北非海岸",
+      "points_lonlat": [[-5.9, 35.8], [-9.8, 32.5], [-13.0, 27.0], [-17.0, 21.0], [-17.5, 15.0]],
+      "half_width_m": 400,
+      "beach_width_m": 300,
+      "label_lonlat": [-14.0, 25.0],
+      "text": "摩洛哥往南，一路是干得发白的岸。这一条岸把大西洋和撒哈拉隔开。"
+    },
+    {
+      "id": "canarias",
+      "kind": "land",
+      "role": "island",
+      "name": "加那利群岛",
+      "center_lonlat": [-16.2, 28.2],
+      "radius_m": 1500,
+      "beach_width_m": 300,
+      "text": "七座火山岛。风在这里被岛挡住，背风处软得像换了片海。"
+    },
+    {
+      "id": "green_cape",
+      "kind": "land",
+      "role": "island",
+      "name": "绿岬岛",
+      "primary": true,
+      "center_lonlat": [-23.6, 15.0],
+      "radius_m": 1400,
+      "beach_width_m": 300,
+      "text": "佛得角外海的一座岛。滩头在西侧，内陆有水、有旧石墙、有草屋。",
+      "pois": [
+        { "id": "beach", "name": "登陆滩头", "pos_lonlat": [-24.5, 15.0], "radius_m": 260,
+          "text": "细沙，一脚踩下去陷到脚踝。岸上有前人留下的营火灰烬。" },
+        { "id": "ruins", "name": "内陆遗迹", "pos_lonlat": [-23.3, 15.9], "radius_m": 220,
+          "text": "半塌的石墙，像是很久以前的礼拜堂。墙角刻着看不懂的字。" },
+        { "id": "stream", "name": "淡水溪流", "pos_lonlat": [-23.2, 14.7], "radius_m": 220,
+          "text": "溪水清得能看见底。桶匠说这水够装二十桶。" },
+        { "id": "village", "name": "部落村落", "pos_lonlat": [-23.8, 14.0], "radius_m": 240,
+          "text": "十几间草屋，晾着鱼干。有人从屋里走出来，手里没有武器。" }
+      ]
+    },
+    {
+      "id": "africa_west",
+      "kind": "land",
+      "role": "coast",
+      "name": "西非海岸",
+      "points_lonlat": [[-17.5, 15.0], [-16.0, 12.0], [-13.5, 9.0], [-8.0, 5.5], [-2.0, 5.0], [4.0, 5.5],
+                         [9.0, 4.0], [9.5, 0.0], [12.0, -5.0], [13.0, -12.0], [12.0, -18.0], [15.0, -27.0], [18.4, -34.4]],
+      "half_width_m": 400,
+      "beach_width_m": 300,
+      "label_lonlat": [5.0, 1.0],
+      "text": "从佛得角一路向南，再绕过赤道 —— 这一条岸把大西洋和非洲隔开。"
+    },
+    {
+      "id": "brazil_coast",
+      "kind": "land",
+      "role": "coast",
+      "name": "巴西海岸",
+      "points_lonlat": [[-35.5, -5.5], [-38.5, -13.0], [-39.0, -17.0], [-42.0, -23.0], [-48.0, -25.5]],
+      "half_width_m": 400,
+      "beach_width_m": 300,
+      "label_lonlat": [-40.0, -19.0],
+      "text": "新大陆的海岸线。红木、淡水、以及不知道会不会欢迎你们的当地人。"
+    },
+    {
+      "id": "caribbean_america",
+      "kind": "land",
+      "role": "coast",
+      "name": "加勒比与中美地峡",
+      "points_lonlat": [[-61.0, 11.0], [-70.0, 11.5], [-79.0, 9.5], [-83.0, 9.0], [-88.0, 16.0], [-95.0, 16.5], [-105.0, 20.0]],
+      "half_width_m": 400,
+      "beach_width_m": 300,
+      "text": "一条狭长的地峡把两个大洋隔开 —— 麦哲伦要找的是绕过它的水路。"
+    },
+    {
+      "id": "north_america_east",
+      "kind": "land",
+      "role": "coast",
+      "name": "北美东岸",
+      "points_lonlat": [[-80.0, 25.0], [-81.0, 31.0], [-76.0, 36.0], [-70.0, 42.0]],
+      "half_width_m": 400,
+      "beach_width_m": 300,
+      "text": "佛罗里达往北的一线。这一带不在这趟远征的账上。"
+    },
+    {
+      "id": "reef_canary",
+      "kind": "reef",
+      "name": "加那利暗礁",
+      "pos_lonlat": [-15.5, 27.5],
+      "radius_m": 600,
+      "text": "火山岩没入水面，浪在礁石上碎成白花。"
+    },
+    {
+      "id": "reef_verde",
+      "kind": "reef",
+      "name": "绿岬暗礁",
+      "pos_lonlat": [-24.5, 16.2],
+      "radius_m": 500,
+      "text": "水色突然变浅。船底要是蹭上去，木板就得换。"
+    },
+    {
+      "id": "canary_current",
+      "kind": "current",
+      "name": "加那利寒流",
+      "from_lonlat": [-11.0, 32.0],
+      "to_lonlat": [-21.0, 17.0],
+      "width_m": 2500,
+      "speed_ms": 0.9,
+      "text": "沿着西非海岸往西南去的冷流。顺它走快，逆它走慢。"
+    },
+    {
+      "id": "guinea_current",
+      "kind": "current",
+      "name": "几内亚洋流",
+      "from_lonlat": [-10.0, 2.0],
+      "to_lonlat": [-33.0, 7.0],
+      "width_m": 3500,
+      "speed_ms": 1.1,
+      "text": "赤道一侧往西去的暖流，正对着巴西的方向。"
+    },
+    {
+      "id": "brazil_current",
+      "kind": "current",
+      "name": "巴西洋流",
+      "from_lonlat": [-35.0, -8.0],
+      "to_lonlat": [-52.0, -32.0],
+      "width_m": 2500,
+      "speed_ms": 0.8,
+      "text": "贴着南美东岸往南去的暖流。往拉普拉塔去这一段可以借它。"
+    },
+    {
+      "id": "sanlucar",
+      "kind": "port",
+      "name": "圣卢卡尔",
+      "pos_lonlat": [-7.5, 36.4],
+      "radius_m": 500,
+      "faction": "卡斯蒂利亚",
+      "text": "出发港。瓜达尔基维尔河的河口，五艘船从这里出海。"
+    },
+    {
+      "id": "santa_cruz",
+      "kind": "port",
+      "name": "圣克鲁斯（加那利）",
+      "pos_lonlat": [-16.66, 30.7],
+      "radius_m": 450,
+      "faction": "卡斯蒂利亚",
+      "text": "加那利群岛的锚地。最后一次能买到西班牙的东西。"
+    },
+    {
+      "id": "santiago",
+      "kind": "port",
+      "name": "圣地亚哥（佛得角）",
+      "pos_lonlat": [-21.88, 13.28],
+      "radius_m": 450,
+      "faction": "葡萄牙",
+      "text": "佛得角的锚地。淡水、山羊、以及葡萄牙人的关税。"
+    },
+    {
+      "id": "sao_aleixo",
+      "kind": "port",
+      "name": "圣阿莱克索（巴西）",
+      "pos_lonlat": [-37.0, -14.96],
+      "radius_m": 500,
+      "faction": "葡萄牙",
+      "text": "红木的岸。从这里往南，就没人画过海图了。"
+    }
+  ]
+}

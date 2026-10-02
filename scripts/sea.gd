@@ -11,10 +11,16 @@ extends RefCounted
 #
 # 两种数据都读得进来：
 #   `data/world/test_sea.json`    —— v0.1 的 8km 迷你海域（回归用）
-#   `data/world/atlantic/*.json`  —— M2 的大西洋（主图，3×3 个 16km tile）
+#   `data/world/atlantic/*.json`  —— M2 的大西洋（3×3 个 16km tile）
+#   `data/world/global/*.json`    —— M9 的全球图（20×10 个 16km tile = 320km × 160km）
+#
+# 全球图分成几个地区文件写（大西洋 / 南美 / 太平洋 / 香料群岛 / 非洲 / 归乡），
+# 主文件用 `"include": ["a.json", …]` 把它们**按顺序拼起来** —— 一个地区一个文件，
+# 改一个地区不会碰到别的地区的数。
 
 const DATA_PATH := "res://data/world/test_sea.json"
 const ATLANTIC_PATH := "res://data/world/atlantic/geography.json"
+const GLOBAL_PATH := "res://data/world/global/geography.json"
 
 var data := {}
 var world := WorldMap.new()
@@ -29,10 +35,34 @@ func setup(p := DATA_PATH) -> void:
 	if typeof(d) != TYPE_DICTIONARY:
 		push_error("海域数据读不出来：" + p)
 		return
+	if d.has("include"):
+		d = _merged(d, p)
 	data = d
 	world.setup(d)
 	route_list = _load_routes(p)
 	ready = true
+
+
+func _merged(d: Dictionary, p: String) -> Dictionary:
+	"""把 `include` 里的地区文件的 features 拼进主文件（按 include 的顺序）。"""
+	var merged := d.duplicate(true)
+	var feats: Array = merged.get("features", []).duplicate(true)
+	var dir := p.get_base_dir()
+	for rel in d.get("include", []):
+		var sub = JSON.parse_string(FileAccess.get_file_as_string(dir.path_join(str(rel))))
+		if typeof(sub) != TYPE_DICTIONARY:
+			push_error("地区数据读不出来：" + dir.path_join(str(rel)))
+			continue
+		for f in (sub as Dictionary).get("features", []):
+			feats.append(f)
+	merged["features"] = feats
+	return merged
+
+
+func ports_path() -> String:
+	"""这个海域的港口经济表：同目录下的 `ports.json`；没有就退回大西洋那份。"""
+	var pp := path.get_base_dir().path_join("ports.json")
+	return pp if FileAccess.file_exists(pp) else Ports.DATA_PATH
 
 
 func setup_data(d: Dictionary) -> void:
@@ -71,6 +101,32 @@ func real_time_scale() -> float:
 
 func size_m() -> Vector2:
 	return world.size_m()
+
+
+# ------------------------------------------------------------ 圆柱（全球图）
+
+func wraps() -> bool:
+	return world.wraps()
+
+
+func wrap_pos(p: Vector2) -> Vector2:
+	return world.wrap_pos(p)
+
+
+func delta(a: Vector2, b: Vector2) -> Vector2:
+	return world.delta(a, b)
+
+
+func dist(a: Vector2, b: Vector2) -> float:
+	return world.dist(a, b)
+
+
+func lonlat_to_m(lon: float, lat: float) -> Vector2:
+	return world.lonlat_to_m(lon, lat)
+
+
+func m_to_lonlat(p: Vector2) -> Vector2:
+	return world.m_to_lonlat(p)
 
 
 func tile_m() -> float:
@@ -208,6 +264,9 @@ func route_points(r: Dictionary) -> PackedVector2Array:
 	"""一段航线的折线：起点港 → （可选 via 绕行点）→ 终点港。"""
 	var out := PackedVector2Array()
 	out.append(_port_pos(str(r.get("from", ""))))
+	for v in r.get("via_lonlat", []):
+		if typeof(v) == TYPE_ARRAY and (v as Array).size() >= 2:
+			out.append(world.lonlat_to_m(float(v[0]), float(v[1])))
 	for v in r.get("via", []):
 		if typeof(v) == TYPE_ARRAY and (v as Array).size() >= 2:
 			out.append(Vector2(float(v[0]), float(v[1])))
