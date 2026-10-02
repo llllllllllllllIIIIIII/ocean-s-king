@@ -20,6 +20,10 @@ const FULL := "full"          # 房主 → 客户端：船位满了（v0.5 最�
 const SHIP := "ship"          # 拥有者 → 房主 → 其他人：20Hz 的 ShipState 摘要
 const WORLD := "world"        # 房主 → 全部：世界状态（时钟/风/剧情/日志/已发现的图）
 const INPUT := "input"        # 客户端 → 房主：一件会影响"世界"的事（比如记一条决定）
+# M10：海战的"受击方权威" —— 开火方只广播**谁向谁开火**，
+# 命中与伤亡由**受击方所属的权威**判定并广播结果（docs/22 第 4.4 节）。
+const FIRE := "fire"          # 开火方 → 房主 → 受击方的拥有者：这一轮舷侧的输入
+const NAVAL := "naval"        # 受击方权威 → 房主 → 全部：这一轮的结果
 
 # --- 心跳 ---
 const PING := "ping"

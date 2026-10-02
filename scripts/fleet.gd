@@ -71,6 +71,14 @@ func slot_of_peer(peer: int) -> Dictionary:
 	return {}
 
 
+func peer_of(id: String) -> int:
+	"""这条船归哪个 peer（0 = 没人开 / AI）。联机转"这一炮打给谁"要用它。"""
+	for s in slots:
+		if str(s["id"]) == id:
+			return int(s["owner_peer"])
+	return 0
+
+
 func ids() -> Array:
 	var out := []
 	for s in slots:

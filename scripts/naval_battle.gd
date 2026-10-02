@@ -17,6 +17,8 @@ extends RefCounted
 
 const STEP := 0.5
 
+var own_id := "trinidad"             # 我这条船的 id（联机时用来认"这一炮是打给我的"）
+var foe_id := ""                     # 对面那条船的 id（对面是另一个玩家时用）
 var guns_own: Guns = Guns.new()
 var guns_foe: Guns = Guns.new()
 var gap_m := 900.0
@@ -48,6 +50,13 @@ var _round := 0
 var _foe_split_hint := 0
 var _our_frac := 0.0
 var _their_frac := 0.0
+var foe_rounds := 0                 # 对面朝我打了几轮（对账与面板要看的数）
+var volleys_sent := 0               # 我朝对面打了几轮（联机时记在"等回执"上）
+var last_incoming: Dictionary = {}   # 最近一次挨打的结果（受击方权威那一份）
+var last_outgoing: Dictionary = {}   # 最近一次打出去的结果（对面权威广播回来的那一份）
+# 联机时挂上它：开火不再本机判命中，而是把 `volley_request()` 交给受击方的拥有者
+# （谁挨打谁说了算 —— docs/22 第 10.4 节）。单机时它是空的，走本机解析那条路。
+var fire_delegate := Callable()
 
 
 func setup(own_crew_count := 40, foe_crew_count := 40, weather := "dry",
@@ -116,17 +125,111 @@ func tick(delta: float, cargo: Cargo, ship: ShipDynamics = null) -> void:
 func _player_fire(cargo: Cargo) -> void:
 	if intent == "hold":
 		return
+	if fire_delegate.is_valid():
+		fire_delegate.call()
+		return
 	var res := guns_own.fire_broadside(gap_m, ammo_want, cargo, skill_own,
 		true, closing, not powder_wet)
 	if int(res["shots"]) == 0:
 		return
 	_round += 1
-	foe_apply(res, ammo_want)
+	apply_outgoing(res)
 	if int(res["hits"]) > 0:
 		_say("第 %d 轮：%d 门炮打出 %d 发，命中 %d 发。"
 			% [_round, int(res["shots"]), int(res["shots"]), int(res["hits"])])
 	elif int(res["misfires"]) > 0:
 		_say("第 %d 轮：%d 发里有 %d 发哑火。" % [_round, int(res["shots"]), int(res["misfires"])])
+
+
+# ------------------------------------------------------------ 联机：受击方权威（M10 剩下那半）
+
+func volley_request() -> Dictionary:
+	"""把"这一轮舷侧"的**全部输入**打成一包，交给受击方权威去算。
+
+	包里每一样都是"开火那一刻的事实"：装好的炮位、炮组技能、距离、弹种、
+	以及确定性硬币的起点（`shot_base`）。所以同一包请求在**任何一台机器上**
+	算出来的结果都一样 —— 这是"受击方权威判命中"能成立的前提（docs/22 第 10.4 节）。
+	"""
+	var guns := []
+	for g in guns_own.ready_guns():
+		guns.append({"slot": int(g["slot"]), "id": str(g["id"])})
+	return {
+		"shooter": own_id,
+		"target": foe_id,
+		"guns": guns,
+		"skill": skill_own,
+		"distance_m": gap_m,
+		"ammo": ammo_want,
+		"broadside": true,
+		"closing": closing,
+		"weather": weather_id,
+		"powder_wet": powder_wet,
+		"shot_base": guns_own.shots_fired,
+		"round": _round,
+	}
+
+
+static func resolve(req: Dictionary) -> Dictionary:
+	"""**纯函数**：同样的请求必得同样的结果（不碰任何状态）。
+
+	受击方权威用它算"我挨了什么"；开火方拿同一份返回核对 ——
+	两边的伤亡名单因此不可能对不上（`tests/test_net_naval` 就是盯这条）。
+	"""
+	var out := {
+		"shots": 0, "hits": 0, "misfires": 0,
+		"structure": 0.0, "rigging": 0.0, "personnel": 0.0,
+		"personnel_losses": 0, "ammo": str(req.get("ammo", "round_shot")),
+		"shooter": str(req.get("shooter", "")), "target": str(req.get("target", "")),
+	}
+	var guns: Array = req.get("guns", [])
+	if guns.is_empty():
+		return out
+	var n := guns.size()
+	var skill := float(req.get("skill", 0.5))
+	var dist := float(req.get("distance_m", 900.0))
+	var ammo_id := str(req.get("ammo", "round_shot"))
+	var broadside := bool(req.get("broadside", true))
+	var closing := bool(req.get("closing", true))
+	var weather_id := str(req.get("weather", "dry"))
+	var wet := bool(req.get("powder_wet", false))
+	var idx := int(req.get("shot_base", 0))
+	for g in guns:
+		var wid := str((g as Dictionary).get("id", "culverin"))
+		var slot := int((g as Dictionary).get("slot", 0))
+		var p := Ballistics.naval_hit_chance(wid, skill, dist, n, broadside, closing)
+		out["shots"] = int(out["shots"]) + 1
+		if Ballistics.misfires(slot * 97 + 7, idx, wid, weather_id, wet):
+			out["misfires"] = int(out["misfires"]) + 1
+			idx += 1
+			continue
+		var hit := Ballistics.roll(slot * 31 + 3, idx) < p
+		idx += 1
+		if not hit:
+			continue
+		out["hits"] = int(out["hits"]) + 1
+		out["structure"] = float(out["structure"]) + Ballistics.damage_to_structure(wid, ammo_id)
+		out["rigging"] = float(out["rigging"]) + Ballistics.damage_to_rigging(wid, ammo_id)
+		out["personnel"] = float(out["personnel"]) + Ballistics.damage_to_person(wid, ammo_id, dist)
+	out["personnel_losses"] = int(floor(float(out["personnel"]) / 0.55 + 0.5))
+	return out
+
+
+func apply_incoming(res: Dictionary, ship: ShipDynamics = null) -> void:
+	"""别人算好的结果落到**我**身上（受击方权威广播回来的那一份）。"""
+	_take_hits(res, ship)
+	foe_rounds = int(foe_rounds) + 1
+	last_incoming = res.duplicate()
+
+
+func apply_outgoing(res: Dictionary) -> void:
+	"""开火方把**受击方权威广播回来**的结果记到自己账上（"对面挨了什么"）。
+
+	单机时它紧跟在 `fire_broadside` 后面（本机既是开火方也是受击方权威）；
+	联机时它由收到 `naval` 回执那一下调用。
+	"""
+	foe_apply(res, str(res.get("ammo", ammo_want)))
+	volleys_sent = int(volleys_sent) + 1
+	last_outgoing = res.duplicate()
 
 
 func foe_apply(res: Dictionary, ammo_id: String) -> void:

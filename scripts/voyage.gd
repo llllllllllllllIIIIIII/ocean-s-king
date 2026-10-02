@@ -760,7 +760,11 @@ func begin_naval_battle(foe_crew := 40, foe_weather := "", gap := 0.0) -> Dictio
 	_naval_start_crew = crew_now
 	naval = NavalBattle.new()
 	naval.setup(crew_now, foe_crew, w, g)
+	naval.own_id = fleet.local_id
 	naval.guns_own.powder_wet = weather.misfire_weather() == "rain"
+	# 联机：开火改成"把这一轮交给受击方的拥有者"（谁挨打谁判）
+	if link != null and link.session != null and link.session.is_online():
+		naval.fire_delegate = Callable(self, "naval_send_volley")
 	_say("【海战】一条船从雾里冲出来（%d 人对 %d 人）。炮组就位。" % [crew_now, foe_crew], true)
 	journal.record(t, "naval", "海上遭遇：%d 名船员对 %d 名敌人。" % [crew_now, foe_crew])
 	return {"ok": true, "crew": crew_now, "foe": foe_crew, "gap_m": g, "weather": w}
@@ -773,6 +777,38 @@ func naval_report() -> String:
 	return "距离 %d 米　我方 %d 人　对面 %d 人　船壳 %.0f%%" % [
 		int(st["gap_m"]), int(st["own_crew"]), int(st["foe_crew"]),
 		(1.0 - float(st["own_hull"])) * 100.0]
+
+
+func naval_send_volley() -> Dictionary:
+	"""联机：把这一轮舷侧**交给受击方的拥有者**去判。
+
+	弹药是开火方自己的账（本机先付掉、炮位进入装填），命中和伤亡不在这里算 ——
+	算完由受击方权威广播回来（`NetProtocol.NAVAL`），本机记到"对面挨了什么"那本账上。
+	"""
+	if naval == null or naval.over:
+		return {}
+	naval.own_id = fleet.local_id
+	var req := naval.volley_request()
+	var guns: Array = req.get("guns", [])
+	if guns.is_empty():
+		return {}
+	for g in naval.guns_own.ready_guns():
+		Weapons.pay_ammo(cargo, str(g["id"]))
+		g["reload_t"] = 0.0
+		g["loaded"] = false
+	naval.guns_own.shots_fired = int(naval.guns_own.shots_fired) + guns.size()
+	if link != null:
+		link.send_fire(req)
+	return req
+
+
+func naval_start_vs(foe_ship_id: String, foe_crew := 40, gap := 300.0) -> Dictionary:
+	"""起一场**对着某条具体船**的海战（联机对账用：对手是另一个玩家那条船）。"""
+	var r := begin_naval_battle(foe_crew, "", gap)
+	if bool(r.get("ok", false)) and naval != null:
+		naval.foe_id = foe_ship_id
+		r["foe_id"] = foe_ship_id
+	return r
 
 
 func _alive_crew_count() -> int:

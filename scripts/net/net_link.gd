@@ -112,11 +112,73 @@ func _on_message(peer: int, kind: String, payload: Dictionary) -> void:
 		NetProtocol.INPUT:
 			if session.is_host():
 				_apply_input(payload)
+		NetProtocol.FIRE:
+			# 谁向谁开火。房主：如果被打的是**我这条船**，我就是受击方权威 —— 自己算，
+			# 再把结果广播出去；否则转给那条船的拥有者（他才是权威）。
+			var target := str(payload.get("target", ""))
+			if session.is_host():
+				if target == voyage.fleet.local_id:
+					_host_resolve_fire(payload)
+				else:
+					var p := voyage.fleet.peer_of(target)
+					if p > 0:
+						session.send_to(p, NetProtocol.FIRE, payload, true)
+			elif target == voyage.fleet.local_id:
+				_client_resolve_fire(payload)
+		NetProtocol.NAVAL:
+			# 受击方权威的结果：房主广播给所有人；客户端把它记到"对面挨了什么"的账上。
+			if session.is_host():
+				session.relay(peer, kind, payload, true)
+				_apply_naval(payload)
+			else:
+				_apply_naval(payload)
 		NetProtocol.BYE:
 			if session.is_host():
 				var id := str(payload.get("ship_id", ""))
 				if id != "":
 					voyage.fleet.detach_player(id, voyage.default_destination())
+
+
+func send_fire(req: Dictionary) -> void:
+	"""开火方：把这一轮舷侧的输入发给**受击方的拥有者**（自己不判命中）。"""
+	if session == null or not session.is_online():
+		return
+	var target := str(req.get("target", ""))
+	if session.is_host():
+		if target == voyage.fleet.local_id:
+			_host_resolve_fire(req)          # 打的是我 —— 我就是受击方权威
+		else:
+			var p := voyage.fleet.peer_of(target)
+			if p > 0:
+				session.send_to(p, NetProtocol.FIRE, req, true)
+	else:
+		session.send_to_host(NetProtocol.FIRE, req, true)
+
+
+func _host_resolve_fire(req: Dictionary) -> void:
+	"""受击方权威：算这一轮 → 落到自己身上 → 把结果广播给所有人。"""
+	var res := NavalBattle.resolve(req)
+	if voyage.naval != null:
+		voyage.naval.apply_incoming(res, voyage.ship)
+	session.broadcast(NetProtocol.NAVAL, {"result": res}, true)
+	_apply_naval({"result": res})            # broadcast 只发给别人，房主自己也要记账
+
+
+func _apply_naval(payload: Dictionary) -> void:
+	var res: Dictionary = payload.get("result", {})
+	if res.is_empty():
+		return
+	# 只有"我开的炮"才记到"对面挨了什么"那本账上；被打的那一方已经在自己身上算过了
+	if str(res.get("shooter", "")) == voyage.fleet.local_id and voyage.naval != null:
+		voyage.naval.apply_outgoing(res)
+
+
+func _client_resolve_fire(req: Dictionary) -> void:
+	"""客户端当受击方权威的那一半：算完这一轮 → 落到自己身上 → 发回房主。"""
+	var res := NavalBattle.resolve(req)
+	if voyage.naval != null:
+		voyage.naval.apply_incoming(res, voyage.ship)
+	session.send_to_host(NetProtocol.NAVAL, {"result": res}, true)
 
 
 func _host_accept(peer: int, payload: Dictionary) -> void:

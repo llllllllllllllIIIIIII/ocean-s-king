@@ -31,6 +31,8 @@ var _pids: Array[int] = []
 var _report_path := "user://net_client_report.json"
 var _report2_path := "user://net_client_report_b.json"
 var _m11_pushed := false           # M11：房主只推一次势力/追捕，用来验它铺到了客户端
+var _naval_started := false        # M10：双进程海战对账（房主朝客户端那条船开一轮）
+var _naval_foe := ""               # 打的是哪条船（用来对上客户端的报告）
 var _started_at := 0
 var _snapshot := {}
 var _phase := "run"
@@ -71,18 +73,19 @@ func _boot() -> void:
 	var r := session.host_game(NetSession.PORT, "房主")
 	_check(bool(r.get("ok", false)), "开房间成功（%s）" % str(r))
 	link.attach(voyage, session)
-	_spawn_client(_report_path, 0.0, "水手甲")
+	_spawn_client(_report_path, 0.0, "水手甲", true)
 	_booted = true
 
 
 var _booted := false
 
 
-func _spawn_client(report: String, late: float, pname: String) -> void:
+func _spawn_client(report: String, late: float, pname: String, naval := false) -> void:
+	# 参数位置固定：ip / port / 名字 / 报告 / 延迟秒 / naval 标记
+	# （位置固定是有意的：探针按位置读，别让"有没有延迟"把后面的参数挤位）
 	var args := ["--headless", "--path", _headless_path, "--script", PROBE, "--",
-		"127.0.0.1", str(NetSession.PORT), pname, report]
-	if late > 0.0:
-		args.append(str(late))
+		"127.0.0.1", str(NetSession.PORT), pname, report, str(late),
+		("naval" if naval else "")]
 	var pid := OS.create_process(OS.get_executable_path(), args)
 	_pids.append(pid)
 	print("[host] 拉起客户端进程 pid=%d（%s）" % [pid, pname])
@@ -113,7 +116,7 @@ func _process(delta: float) -> bool:
 	# 中途加入：第三个人
 	if _phase == "run" and voyage.t >= MID_JOIN_AT:
 		_phase = "mid"
-		_spawn_client(_report2_path, 0.0, "水手乙")
+		_spawn_client(_report2_path, 0.0, "水手乙", true)
 
 	# M8 收尾：在客户端写报告**之前**，房主这边把结局立起来。
 	# 验的是"**拿到船队级结算页**这句话对每个玩家都成立"：`ending_ready` 在 WorldState 的
@@ -129,6 +132,23 @@ func _process(delta: float) -> bool:
 		voyage.pursuit.tick(2.5, true)
 		print("[host] t=%.1f 房主推进势力与追捕（态度/环 = %.2f / %d）"
 			% [voyage.t, voyage.factions.value("castile"), voyage.pursuit.ring])
+	# M10：**双进程海战对账** —— 房主朝客户端那条船开一轮；
+	# 命中与伤亡由**挨打那一方的机器**判（受击方权威），再把结果广播回来。
+	if _phase == "mid" and voyage.t >= MID_JOIN_AT + 120.0 and not _naval_started \
+			and _first_remote_id() != "":
+		_naval_started = true
+		_naval_foe = _first_remote_id()
+		voyage.encounters_enabled = false      # 这一节验的是权威归属，不是随机遭遇
+		# 距离放进霰弹的杀伤区间（80–200 米）、弹种选霰弹 ——
+		# 这样这一轮**真的会倒人**，对账才是"比一个非零的数"，
+		# 而不是"两个 0 相等"（那样的断言什么都证明不了）。
+		var r := voyage.naval_start_vs(_naval_foe, 40, 150.0)
+		if bool(r.get("ok", false)) and voyage.naval != null:
+			voyage.naval.intent = "fire"
+			voyage.naval.ammo_want = "scatter"
+			print("[host] 对 %s 开了一轮舷侧（受击方权威会算并广播回来）" % _naval_foe)
+		else:
+			print("[host] 海战没起得来：%s" % str(r))
 	# 到了 10 分钟：给两边各拍一张快照，然后等客户端的报告
 	if _phase == "mid" and voyage.t >= GAME_SECONDS:
 		_phase = "wait"
@@ -161,6 +181,14 @@ func _process(delta: float) -> bool:
 
 # ------------------------------------------------------------ 对账
 
+func _first_remote_id() -> String:
+	"""房主眼里"某个人在开"的那条船（用来选一个海战对手）。"""
+	for id in voyage.fleet.ids():
+		if voyage.fleet.kind_of(id) == Fleet.KIND_REMOTE:
+			return str(id)
+	return ""
+
+
 func _snapshot_of(v: Voyage) -> Dictionary:
 	var fleet := {}
 	var kinds := {}
@@ -179,6 +207,12 @@ func _snapshot_of(v: Voyage) -> Dictionary:
 		# M11：势力态度与追捕环（房主权威）—— 客户端手里的值必须与房主一致
 		"factions": v.factions.attitude.duplicate(),
 		"pursuit_ring": v.pursuit.ring,
+		# M10：海战的双进程对账（开火方这一侧看到的"对面伤亡"）
+		"naval_started": _naval_started,
+		"naval_foe_id": _naval_foe,
+		"naval_foe_losses": int(v.naval.last_outgoing.get("personnel_losses", -1)) \
+			if v.naval != null else -1,
+		"naval_foe_crew": int(v.naval.foe_crew) if v.naval != null else -1,
 		"mine": {"pos": [v.ship.position_m().x, v.ship.position_m().y],
 			"hull_pct": 1.0 - v.ship.damage_of("hull")},
 	}
@@ -262,6 +296,29 @@ func _compare() -> void:
 		"客户端拿到同一个追捕环（第 %d 环）" % int(_snapshot["pursuit_ring"]))
 	_check(str(c2.get("factions", {})) == str(_snapshot["factions"]),
 		"第二个客户端也是同一份势力态度")
+	# M10：**海战的双进程对账** —— 受击方权威（客户端）算出来的伤亡，
+	# 与开火方（房主）账上"对面挨了什么"必须一致。
+	var foe_losses := int(_snapshot.get("naval_foe_losses", -1))
+	var foe_crew := int(_snapshot.get("naval_foe_crew", -1))
+	if bool(_snapshot.get("naval_started", false)):
+		# 挨打的那个客户端可能是甲也可能是乙：按船 id 找它
+		var defender := c1
+		if str(c1.get("ship_id", "")) != str(_snapshot.get("naval_foe_id", "")):
+			defender = c2
+		_check(int(defender.get("naval_incoming_losses", -2)) == foe_losses,
+			"海战伤亡两边一致（受击方权威算出 %d，开火方账上 %d）"
+			% [int(defender.get("naval_incoming_losses", -2)), foe_losses])
+		_check(int(defender.get("naval_own_crew", -1)) == foe_crew,
+			"对面剩下的人数也对得上（客户机 %d / 房主 %d）"
+			% [int(defender.get("naval_own_crew", -1)), foe_crew])
+		_check(int(defender.get("naval_foe_rounds", 0)) >= 1,
+			"客户端确实以受击方权威的身份处理了这一轮（%d）"
+			% int(defender.get("naval_foe_rounds", 0)))
+		# 这一轮打的是霰弹、距离在杀伤区间里：伤亡必须是**真的数**，
+		# 不然"两边一致"只是因为两边都是 0（那条断言什么都证明不了）
+		_check(foe_losses > 0, "这一轮真的打倒了人（%d 个）—— 对账比的是非零的数" % foe_losses)
+	else:
+		_check(false, "海战没起得来（没有可对账的东西）")
 
 	# ⑤ 对账那一刻的四条船：2 个人在开（房主 + 客户端），2 条是 AI
 	#    （用"客户端还没走之前"的分布：它们到点就退出，晚一帧看就只剩 AI 了）
@@ -277,6 +334,7 @@ func _compare() -> void:
 
 
 func _drop_checks() -> void:
+	"""拆线：kill 掉一个客户端，房主应该把它那条船转 AI（船不消失）。"""
 	"""客户端走了之后：那条船必须还在走（转 AI），不是从世界里消失。"""
 	_check(_client_ships.size() == 2, "两个客户端各自接手过一条船（%s）" % ", ".join(_client_ships))
 	for id in _client_ships:

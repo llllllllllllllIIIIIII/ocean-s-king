@@ -24,6 +24,8 @@ var _out := "user://net_client_report.json"
 var _late_real := 0.0
 var _idle := 0.0
 var _recv: Dictionary = {}          # 收到过哪些消息（诊断用，进报告）
+var _naval_mode := false            # M10 的双进程对账：这个客户端"当受击方权威"
+var _naval_started := false
 
 
 func _initialize() -> void:
@@ -43,6 +45,8 @@ func _boot() -> void:
 		_out = str(a[3])
 	if a.size() > 4:
 		_late_real = float(a[4])
+	if a.size() > 5:
+		_naval_mode = str(a[5]) == "naval"
 	session = NetSession.new()
 	session.name = "NetSession"
 	root.add_child(session)
@@ -100,6 +104,13 @@ func _process(delta: float) -> bool:
 			print("[client] 中途加入 %s:%d -> %s" % [ip, port, str(session.join_game(ip, port, pname))])
 	if _started and voyage != null:
 		_acc += delta * TIME_SCALE
+		# M10：起一场海战，**只挨打不还手** —— 这一条验的是"谁判命中、谁广播结果"
+		if _naval_mode and not _naval_started and _real > 1.5:
+			var r := voyage.begin_naval_battle(40, "", 300.0)
+			if bool(r.get("ok", false)):
+				voyage.naval.intent = "hold"
+				_naval_started = true
+				print("[client] 海战：等着挨打（本机是受击方权威）")
 		var steps := 0
 		while _acc >= SIM_DT and steps < 240:
 			voyage.tick(SIM_DT)
@@ -148,6 +159,13 @@ func _write_report(status: String) -> void:
 		# M11：势力态度与追捕环（房主权威）—— 客户端手里拿到的应该是房主推过来的那一份
 		"factions": voyage.factions.attitude.duplicate() if voyage != null else {},
 		"pursuit_ring": voyage.pursuit.ring if voyage != null else -1,
+		# M10：海战的双进程对账 —— 我这个（受击方权威）算出来的伤亡
+		"naval_started": _naval_started,
+		"naval_own_crew": voyage.naval.own_crew if (voyage != null and voyage.naval != null) else -1,
+		"naval_incoming_losses": int(voyage.naval.last_incoming.get("personnel_losses", -1)) \
+			if (voyage != null and voyage.naval != null) else -1,
+		"naval_foe_rounds": int(voyage.naval.foe_rounds) \
+			if (voyage != null and voyage.naval != null) else -1,
 		"recv": _recv,
 	}
 	var f := FileAccess.open(_out, FileAccess.WRITE)

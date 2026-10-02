@@ -27,6 +27,7 @@ func _initialize() -> void:
 	_test_ammo()
 	_test_boarding()
 	_test_voyage_wiring()
+	_test_authority_paths_agree()
 	_finish()
 
 
@@ -254,6 +255,32 @@ func _test_voyage_wiring() -> void:
 
 
 # ---------------------------------------------------------------- 收尾
+
+# ---------------------------------------------------------------- 8 两条路算同一件事
+
+func _test_authority_paths_agree() -> void:
+	"""单机那一路（`fire_broadside`）与联机那一路（`volley_request` → `resolve`）
+	必须算出**同一个结果** —— 否则"受击方权威"判的就是另一件事，
+	两边的伤亡名单从根上就对不上（docs/22 第 10.4 节）。"""
+	var local := _battle()
+	var remote := _battle()
+	var cargo := _cargo()
+	var res_local := local.guns_own.fire_broadside(local.gap_m, local.ammo_want, cargo,
+		local.skill_own, true, local.closing, true)
+	var req := remote.volley_request()
+	var res_net := NavalBattle.resolve(req)
+	for key in ["shots", "hits", "misfires", "structure", "rigging", "personnel"]:
+		var a := float(res_local.get(key, -1.0))
+		var b := float(res_net.get(key, -2.0))
+		_check(is_equal_approx(a, b), "两条路的 %s 一样（%.3f vs %.3f）" % [key, a, b])
+	_check((req.get("guns", []) as Array).size() == 6, "请求里带着六个装好的炮位（%d）"
+		% (req.get("guns", []) as Array).size())
+	# 伤亡数人：请求里也给了"倒了几个人"，两边照它记账
+	var losses := int(res_net.get("personnel_losses", -1))
+	var counted := int(floor(float(res_net["personnel"]) / 0.55 + 0.5))
+	_check(losses == counted, "伤亡人数是从伤害里推出来的（%d）" % losses)
+	# 同一包请求算两遍，结果逐字相同（受击方权威可复现）
+	_check(str(NavalBattle.resolve(req)) == str(res_net), "同一包请求算两遍结果相同")
 
 func _check(ok: bool, msg: String) -> void:
 	_checks += 1
