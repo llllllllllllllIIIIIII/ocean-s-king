@@ -14,6 +14,7 @@ const DEFS_PATH := "res://data/defs/dilemmas.json"
 const MIN_ABOARD := 12
 
 var defs: Dictionary = {}          # 静态
+var dynamic: Array = []            # M17：临时塞进来的卡（叛乱处置）
 var resolved: Dictionary = {}      # dilemma_id -> option_id（**会变的值**）
 var pending: Array = []            # 已经弹出、等玩家回答的
 
@@ -39,6 +40,9 @@ func def_of(id: String) -> Dictionary:
 	for d in defs.get("dilemmas", []):
 		if str(d.get("id", "")) == id:
 			return d
+	for d in dynamic:
+		if str((d as Dictionary).get("id", "")) == id:
+			return d
 	return {}
 
 
@@ -53,6 +57,29 @@ func is_resolved(id: String) -> bool:
 	return resolved.has(id)
 
 
+func inject(def: Dictionary) -> void:
+	"""临时塞一张卡进来（M17 的叛乱处置卡就是这么做出来的：它的后果不写在
+	`dilemmas.json` 里，而是由 `Voyage.respond_to_mutiny()` 按真源结算）。"""
+	var id := str(def.get("id", ""))
+	if id == "":
+		return
+	var known := false
+	for d in dynamic:
+		if str(d.get("id", "")) == id:
+			d.clear()
+			d.merge(def, true)
+			known = true
+	if not known:
+		dynamic.append(def.duplicate(true))
+	if not pending.has(id):
+		pending.append(id)
+
+
+func clear_injected(id: String) -> void:
+	resolved[id] = true
+	dynamic = dynamic.filter(func(d): return str((d as Dictionary).get("id", "")) != id)
+
+
 # ------------------------------------------------------------ 触发
 
 func check(v: Voyage) -> void:
@@ -63,6 +90,11 @@ func check(v: Voyage) -> void:
 			continue
 		if _met(d.get("trigger", {}), v):
 			pending.append(id)
+	# M17：临时卡（叛乱处置）也要能被 `check()` 之后取到
+	for d in dynamic:
+		var did := str(d.get("id", ""))
+		if not is_resolved(did) and not _is_pending(did):
+			pending.append(did)
 
 
 func _is_pending(id: String) -> bool:
@@ -78,6 +110,12 @@ func _met(tr: Dictionary, v: Voyage) -> bool:
 		"tribal":
 			# 已经打起来了就别再摆"要不要谈"的卡 —— 子弹在飞的时候没人谈判
 			return v.fired.has("village") and v.battle == null
+		# M17：按**航程长度**与**紧张度**开卡 —— 四个阶段各至少两张
+		# （出航 / 海峡 / 太平洋 / 归乡），条件只写在这里，代码里不重复一份。
+		"days_min":
+			return VoyageJournal.day_index(v.t) >= int(tr.get("days", 0))
+		"tension_min":
+			return v.society.tension >= float(tr.get("tension", 1.0))
 	return false
 
 
@@ -225,4 +263,5 @@ func apply_state(d: Dictionary) -> void:
 	if d.is_empty():
 		return
 	resolved = (d.get("resolved", {}) as Dictionary).duplicate()
+	dynamic.clear()                      # 临时卡不进存档：读档后由叛乱状态重新摆
 	pending = (d.get("pending", []) as Array).duplicate()

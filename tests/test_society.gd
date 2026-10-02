@@ -29,6 +29,11 @@ func _initialize() -> void:
 	_test_dilemma_options()
 	_test_why_unhappy()
 	_test_save()
+	_test_ten_rules_each_change_a_number()
+	_test_faith_and_captain()
+	_test_mutiny_ladder()
+	_test_mutiny_responses_differ()
+	_test_death_order()
 	_finish()
 
 
@@ -61,8 +66,9 @@ func _avg(values: Array) -> float:
 func _test_rules_table() -> void:
 	var r := Rules.new()
 	r.setup()
-	_check(r.rule_ids().size() == 6, "六条规矩都在（%s）" % ", ".join(r.rule_ids()))
-	for want in ["ration", "water", "watch", "liquor", "curfew", "punish"]:
+	_check(r.rule_ids().size() == 10, "十条规矩都在（%s）" % ", ".join(r.rule_ids()))
+	for want in ["ration", "water", "watch", "liquor", "curfew", "punish",
+			"spoils", "trade_share", "discovery_share", "gambling"]:
 		var d := r.rule_def(want)
 		_check(not d.is_empty() and (d.get("options", []) as Array).size() >= 2,
 			"%s 至少有两个档位（%d）" % [str(d.get("name", want)),
@@ -221,7 +227,13 @@ func _hours_to_first_event(v: Voyage) -> float:
 func _test_dilemma_options() -> void:
 	var d := Dilemma.new()
 	d.setup()
-	_check(d.ids().size() == 3, "三个高压抉择（%s）" % ", ".join(d.ids()))
+	# M17：三个高压抉择扩到**八条**，覆盖四个阶段（出航 / 海峡 / 太平洋 / 归乡）各至少两条
+	_check(d.ids().size() >= 8, "四个阶段各至少两条高压抉择（%d 条：%s）"
+		% [d.ids().size(), ", ".join(d.ids())])
+	var kinds := {}
+	for id in d.ids():
+		kinds[str(d.def_of(id).get("trigger", {}).get("kind", ""))] = true
+	_check(kinds.size() >= 4, "抉择的触发条件不止一类（%s）" % ", ".join(kinds.keys()))
 	for id in d.ids():
 		var def := d.def_of(id)
 		var opts: Array = def.get("options", [])
@@ -334,6 +346,174 @@ func _test_save() -> void:
 
 
 # ---------------------------------------------------------------- 断言框架
+
+# ---------------------------------------------------------------- M17：十条规矩 / 信仰 / 叛乱
+
+func _rule_numbers(r: Rules) -> Array:
+	"""一张规矩表当前给出的**所有**数值（改一条规矩，至少要在里面看到一处变化）。"""
+	var out := []
+	out.append(r.food_mult())
+	out.append(r.water_mult())
+	out.append(r.fatigue_mult())
+	out.append(r.mood_bias())
+	out.append(r.tension_mult())
+	out.append(r.discipline_bonus())
+	out.append(r.efficiency())
+	out.append(1.0 if r.gambling_allowed() else 0.0)
+	for rid in ["spoils", "trade_share", "discovery_share"]:
+		out.append(r.crew_share_of(rid))
+	return out
+
+
+func _test_ten_rules_each_change_a_number() -> void:
+	"""验收第 1 条：十条规矩，每条至少有一个**可断言的数值变化**。"""
+	var r := Rules.new()
+	r.setup()
+	_check(r.rule_ids().size() == 10, "十条规矩都在（%d）" % r.rule_ids().size())
+	for rid in r.rule_ids():
+		var base := _rule_numbers(r)
+		var moved := false
+		for o in r.rule_def(rid).get("options", []):
+			r.setup()                                       # 回到默认
+			r.set_rule(rid, str(o.get("id", "")))
+			if str(_rule_numbers(r)) != str(base):
+				moved = true
+		r.setup()
+		_check(moved, "规矩「%s」改了之后数值真的变" % r.rule_def(rid).get("name", rid))
+	# 四条新规矩的专属字段
+	_check(r.crew_share_of("spoils") == 1.0, "战利品默认平分（船员拿 %.2f 成）" % r.crew_share_of("spoils"))
+	r.set_rule("spoils", "captain_double")
+	_check(r.crew_share_of("spoils") < 0.8, "船长双份之后船员拿得少了（%.2f）" % r.crew_share_of("spoils"))
+	r.setup()
+	_check(not r.gambling_allowed(), "默认是「限时」——不准赌")
+	r.set_rule("gambling", "allowed")
+	_check(r.gambling_allowed(), "改成「不禁」之后准赌")
+
+
+func _test_faith_and_captain() -> void:
+	"""验收第 2 条：信仰与对船长的态度真的存在、能算、能影响结果。"""
+	var v := _v()
+	var faith := 0.0
+	var captain := 0.0
+	for m in v.roster.members:
+		faith += m.faith
+		captain += m.captain
+	_check(faith > 0.0 and captain != 0.0, "四十个人都有信仰与态度（平均 %.2f / %.2f）"
+		% [v.roster.avg_faith(), v.roster.avg_captain()])
+	var lead := v.roster.lowest_captain()
+	_check(lead != null, "找得到意见最大的那个人（%s，态度 %.2f）"
+		% [lead.label() if lead != null else "-", lead.captain if lead != null else 0.0])
+	# 信仰压紧张度：同一段时间，虔敬的一船人涨得慢
+	var a := _v()
+	var b := _v()
+	for m in a.roster.members:
+		m.faith = 0.05
+	for m in b.roster.members:
+		m.faith = 0.95
+	a.society.tick(3600.0, a.roster, a.rules, a.cargo, false)
+	b.society.tick(3600.0, b.roster, b.rules, b.cargo, false)
+	_check(b.society.tension < a.society.tension,
+		"信仰高的一船人紧张度涨得慢（%.4f vs %.4f）" % [b.society.tension, a.society.tension])
+	# 对船长的态度顶在事件阈值上：同一个紧张度，态度差的那条船更早闹
+	var c := _v()
+	var d := _v()
+	c.society.tension = 0.84
+	d.society.tension = 0.84
+	c.society.discipline = 0.2
+	d.society.discipline = 0.2
+	var ev_bad := c.society.pick_event(c.rules, c.cargo, false, -0.4)
+	var ev_good := d.society.pick_event(d.rules, d.cargo, false, 0.6)
+	var sev_bad := int(ev_bad.get("severity", 1))
+	var sev_good := int(ev_good.get("severity", 1))
+	_check(sev_bad > sev_good, "态度差的一船人先闹到更重的一档（%s %d vs %s %d）"
+		% [str(ev_bad.get("name", "—")), sev_bad, str(ev_good.get("name", "—")), sev_good])
+
+
+func _test_mutiny_ladder() -> void:
+	"""验收第 3 条：叛乱链**可复现** —— 同一份名册必得同一个带头的、同一条阶梯。"""
+	var a := _mutiny_setup()
+	var b := _mutiny_setup()
+	_check(a.society.mutiny_open and b.society.mutiny_open, "两条同样的船都闹起来了")
+	_check(a.society.mutiny_leader == b.society.mutiny_leader,
+		"带头人是可复现的（%s = %s）" % [a.society.mutiny_leader, b.society.mutiny_leader])
+	_check(a.society.mutiny_stage >= 2, "阶梯走到「逼宫」这一档（%d）" % a.society.mutiny_stage)
+	_check(a.dilemmas.current() == "mutiny_card", "处置卡摊开了（%s）" % a.dilemmas.current())
+	_check(a.mutiny_responses().size() == 5, "五种处置手段都在（%d）" % a.mutiny_responses().size())
+
+
+func _mutiny_setup() -> Voyage:
+	"""把一条船推到"叛乱"那一档（确定性的：紧张度 + 纪律 + 态度都摆好）。"""
+	var v := _v()
+	v.society.tension = 0.95
+	v.society.discipline = 0.2
+	for m in v.roster.members:
+		m.captain = -0.4
+	v.society._fire({"id": "mutiny", "name": "叛乱", "severity": 7,
+		"mood": -0.2, "discipline": -0.3, "tension": -0.25, "affinity": 0.0,
+		"text": "有人把船长堵在艉楼里。"}, v.roster, v.rules)
+	v._society_tick(60.0)                 # 让它把处置卡摆出来
+	return v
+
+
+func _test_mutiny_responses_differ() -> void:
+	"""验收第 3 条的后半：不同处置 → 不同的数、不同的结局（沿用 M5 的口径）。"""
+	var results := {}
+	for action in ["negotiate", "punish", "suppress"]:
+		var v := _mutiny_setup()
+		var before_tension := v.society.tension
+		var before_crew := v._alive_crew_count()
+		var r := v.respond_to_mutiny(action)
+		_check(bool(r.get("ok", false)), "「%s」执行得下去" % action)
+		results[action] = {
+			"stage": int(r.get("stage", -1)),
+			"tension": v.society.tension - before_tension,
+			"discipline": v.society.discipline,
+			"crew_lost": before_crew - v._alive_crew_count(),
+			"captain": v.roster.avg_captain(),
+			"happy": bool(r.get("ok", false)) and v.society.mutiny_open == false,
+		}
+		_check(not v.society.mutiny_open, "处置之后卡收起来了（%s）" % action)
+	var neg: Dictionary = results["negotiate"]
+	var pun: Dictionary = results["punish"]
+	var sup: Dictionary = results["suppress"]
+	_check(int(neg["stage"]) == 0 and int(pun["stage"]) == 1 and int(sup["stage"]) == 3,
+		"三种处置把阶梯带到不同的地方（%d / %d / %d）"
+		% [int(neg["stage"]), int(pun["stage"]), int(sup["stage"])])
+	_check(float(neg["tension"]) < float(pun["tension"]), "谈判比处罚更压得住火（%.3f vs %.3f）"
+		% [float(neg["tension"]), float(pun["tension"])])
+	_check(int(sup["crew_lost"]) > int(neg["crew_lost"]), "镇压真的会少人（%d vs %d）"
+		% [int(sup["crew_lost"]), int(neg["crew_lost"])])
+	_check(float(sup["discipline"]) > float(neg["discipline"]), "镇压之后纪律最高（%.2f vs %.2f）"
+		% [float(sup["discipline"]), float(neg["discipline"])])
+	_check(float(neg["captain"]) > float(sup["captain"]), "谈判让全船对船长的态度变好（%.2f vs %.2f）"
+		% [float(neg["captain"]), float(sup["captain"])])
+
+
+func _test_death_order() -> void:
+	"""验收第 4 条：缺粮会死人，而且**顺序可解释**（先弱后强、按岗位权重）。"""
+	var v := _v()
+	# 挑三个人：一个侍童（最弱的一档）、一个普通水手、一个关键船员 —— 健康都摆到同一档
+	var boy: CrewMember = null
+	var hand: CrewMember = null
+	var key: CrewMember = null
+	for m in v.roster.members:
+		if m.post == "侍童" and boy == null:
+			boy = m
+		elif not m.is_key and m.post == "水手" and hand == null:
+			hand = m
+		elif m.is_key and key == null:
+			key = m
+	_check(boy != null and hand != null and key != null, "三个层次的人都找得到")
+	for m in [boy, hand, key]:
+		m.health = 0.12
+	v.days_short = 30.0                   # 早就过了宽限期
+	v.cargo.starving = true
+	for i in 6:
+		v._climate_health_tick(1.0, true, false)
+	_check(boy.dead, "最弱的那一档（侍童）先死")
+	_check(not key.dead or hand.dead, "关键船员不会比普通水手先死（侍童 %s / 水手 %s / 关键 %s）"
+		% ["死" if boy.dead else "活", "死" if hand.dead else "活", "死" if key.dead else "活"])
+
 
 func _check(ok: bool, msg: String) -> void:
 	_checks += 1

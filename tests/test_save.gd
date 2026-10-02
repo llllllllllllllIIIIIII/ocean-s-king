@@ -111,7 +111,9 @@ func _test_field_coverage() -> void:
 		["Society", v.society, v.society.capture_state(),
 			# pending 是"这一帧要弹的事件"，每帧被取走，属于瞬时量
 			["pending"]],
-		["Dilemma", v.dilemmas, v.dilemmas.capture_state(), ["defs"]],
+		# dynamic 是 M17 的**临时卡**（叛乱处置，回答完就清）：它不进存档，
+		# 读档后由 `society.mutiny_open` 重新摆一张。
+		["Dilemma", v.dilemmas, v.dilemmas.capture_state(), ["defs", "dynamic"]],
 		["Culture", v.culture, v.culture.capture_state(), []],
 	]
 	for p in pairs:

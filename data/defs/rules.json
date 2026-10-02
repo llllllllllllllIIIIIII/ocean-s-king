@@ -81,6 +81,94 @@
         { "id": "brutal", "name": "严刑", "mood_bias": -0.1, "tension_mult": 1.3, "discipline_bonus": 0.18,
           "text": "鞭子挂在上舱口。秩序好，怨气也重。" }
       ]
+    },
+    {
+      "id": "spoils",
+      "name": "战利品分配",
+      "default": "equal",
+      "_share": "crew_share = 船员拿到几成（剩下的归远征队/王室）。分配时按它改心情与紧张度，见 `Society.distribute()`。",
+      "options": [
+        { "id": "equal", "name": "平分", "crew_share": 1.0, "mood_bias": 0.02,
+          "text": "缴获的东西按人头摊在甲板上。" },
+        { "id": "by_merit", "name": "论功", "crew_share": 0.9, "mood_bias": 0.01, "discipline_bonus": 0.05,
+          "text": "先上船的先挑。能打的人爱这一条。" },
+        { "id": "captain_double", "name": "船长双份", "crew_share": 0.75, "mood_bias": -0.03, "discipline_bonus": 0.04,
+          "text": "老规矩：船长拿两份。人不说什么，心里记账。" }
+      ]
+    },
+    {
+      "id": "trade_share",
+      "name": "贸易收益分配",
+      "default": "ship_first",
+      "options": [
+        { "id": "equal", "name": "按人头分", "crew_share": 1.0, "mood_bias": 0.03,
+          "text": "卖货的钱当天就分，人人有份。" },
+        { "id": "by_rank", "name": "按职级分", "crew_share": 0.85, "mood_bias": -0.01, "discipline_bonus": 0.04,
+          "text": "官拿官的那份，水手拿水手的。" },
+        { "id": "ship_first", "name": "先补船与远征队", "crew_share": 0.6, "mood_bias": -0.05, "discipline_bonus": 0.06,
+          "text": "钱先落到远征队的账上 —— 修船、买给养。船员只拿零头。" }
+      ]
+    },
+    {
+      "id": "discovery_share",
+      "name": "探险所得分配",
+      "default": "equal",
+      "options": [
+        { "id": "equal", "name": "发现归全队", "crew_share": 1.0, "mood_bias": 0.02,
+          "text": "谁先看见的不重要 —— 是大家的运气。" },
+        { "id": "finder_keeps", "name": "谁先看见谁得", "crew_share": 0.8, "mood_bias": 0.04, "discipline_bonus": -0.03,
+          "text": "瞭望手最积极。抢着值夜班的人也多了。" },
+        { "id": "crown_first", "name": "先交王室", "crew_share": 0.55, "mood_bias": -0.04, "tension_mult": 1.05,
+          "text": "按敕令办：先登记、先上交。船员只剩一句「记在账上」。" }
+      ]
+    },
+    {
+      "id": "gambling",
+      "name": "赌博规定",
+      "default": "rationed",
+      "_gamble": "allowed = 准赌（`Society.pick_event()` 会放行「赌博」那一档）。",
+      "options": [
+        { "id": "allowed", "name": "不禁", "gambling_allowed": true, "mood_bias": 0.03, "tension_mult": 1.05,
+          "text": "甲板上掷骰子的人挤成一圈。赢的笑，输的红眼。" },
+        { "id": "rationed", "name": "限时", "gambling_allowed": false, "mood_bias": 0.0, "tension_mult": 1.0,
+          "text": "只准在晚饭后那半个时辰玩。" },
+        { "id": "forbidden", "name": "禁止", "gambling_allowed": false, "mood_bias": -0.04, "tension_mult": 1.2,
+          "discipline_bonus": 0.05,
+          "text": "骰子收上来烧了。秩序好，夜里舱里话少。" }
+      ]
+    }
+  ],
+  "_mutiny_responses": "叛乱（M17）的**玩家手段**：处罚档位 / 配给安抚 / 带他上岸 / 谈判 / 镇压。每条的后果都是数（心情/纪律/紧张度/对船长的态度/减员/分数），不同手段得到不同结局 —— test_society 逐条断言「选 A 与选 B 确实不同」。",
+  "mutiny_responses": [
+    {
+      "id": "punish", "name": "按规矩罚（档位）", "severity": 1,
+      "mood": -0.08, "tension": 0.04, "discipline": 0.15, "captain": 0.05, "leaders_out": 0,
+      "score": { "crew": -1, "history": 0 },
+      "text": "按船上的规矩办：点名、当众、按档位。"
+    },
+    {
+      "id": "ration", "name": "加一份口粮安抚", "severity": 2,
+      "mood": 0.06, "tension": -0.12, "discipline": -0.04, "captain": 0.10, "leaders_out": 0,
+      "score": { "crew": 0, "history": 0 },
+      "text": "把压舱的最后几桶酒抬出来，先让大家吃饱。"
+    },
+    {
+      "id": "ashore", "name": "带他上岸（赶下船）", "severity": 3,
+      "mood": -0.02, "tension": -0.18, "discipline": 0.08, "captain": 0.06, "leaders_out": 1,
+      "score": { "crew": -1, "history": 0 },
+      "text": "下一个能靠岸的地方，让他带着自己那份下船。"
+    },
+    {
+      "id": "negotiate", "name": "当众谈判", "severity": 4,
+      "mood": 0.08, "tension": -0.22, "discipline": -0.08, "captain": 0.22, "leaders_out": 0,
+      "score": { "crew": 1, "history": 1 },
+      "text": "把话摊在甲板上说：他们要什么，我能给什么。"
+    },
+    {
+      "id": "suppress", "name": "镇压", "severity": 5,
+      "mood": -0.22, "tension": 0.10, "discipline": 0.28, "captain": -0.10, "leaders_out": 2,
+      "score": { "crew": -2, "history": -1 },
+      "text": "带枪的人先站到舱口 —— 谁再喊，谁就是下一个。"
     }
   ]
 }

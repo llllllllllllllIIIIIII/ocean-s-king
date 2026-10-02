@@ -56,6 +56,8 @@ var _aground_t := 0.0
 # M16：轻编队指令（共享约定，进 WorldState）与沉船记录
 var formation := "free"
 var lost_ships: Array = []
+# M17：叛乱处置卡（临时塞进抉择队列；后果在 `rules.json` 的 `mutiny_responses`）
+const MUTINY_CARD := "mutiny_card"
 var culture := Culture.new()        # 当地文明的三档态度（M6）
 var locals := LocalGroup.new()      # 岛上那伙人（M6 收尾：他们是常驻实体，不是打起来才刷出来的）
 var weather := Weather.new()        # 自然环境（M7）
@@ -866,9 +868,20 @@ func _climate_health_tick(days: float, short_food: bool, short_water: bool) -> v
 			heal = Climate.recovery_health_per_day(m.mood) * days
 		m.health = clampf(m.health - (scurvy_h + att_h) * days + heal, 0.0, 1.0)
 		m.mood = clampf(m.mood - scurvy_m * days, 0.0, 1.0)
-		if m.health <= threshold:
-			_kill_of_the_sea(m)
-			deaths += 1
+	# M17：**减员的顺序要能解释**（先弱后强、按岗位权重）——
+	# 一次结算只带走**最靠前的那一个**，而不是"这一帧谁低于阈值就一起死"。
+	var victim: CrewMember = null
+	var worst := INF
+	for m in roster.members:
+		if m.dead or m.health > threshold:
+			continue
+		var score: float = float(m.health) + _death_weight(m)
+		if score < worst:
+			worst = score
+			victim = m
+	if victim != null:
+		_kill_of_the_sea(victim)
+		deaths += 1
 	if deaths > 0:
 		fired["attrition_deaths"] = int(fired.get("attrition_deaths", 0)) + deaths
 		if not fired.has("attrition_first"):
@@ -886,6 +899,21 @@ func _kill_of_the_sea(m: CrewMember) -> void:
 	_say("【讣告】%s 没能撑到下一个港。" % m.label(), true)
 	journal.record(t, "death", "讣告：%s 死于长期的咸肉与坏血病。" % m.label())
 	fired["lost_" + m.id] = true
+
+
+func _death_weight(m: CrewMember) -> float:
+	"""谁先撑不住（M17）：侍童/见习最靠前，水手居中，关键岗位撑得久一点。
+
+	同一档健康下，这个权重决定谁先进讣告 —— 所以减员顺序是**可解释、可复现**的。
+	"""
+	match m.post:
+		"侍童":
+			return -0.06
+		"见习":
+			return -0.04
+		"水手":
+			return 0.0
+	return 0.06
 
 
 func _wear_tick(step_days: float) -> void:
@@ -961,6 +989,20 @@ func _society_tick(delta: float) -> void:
 		if m.job == "deserted" and not fired.has("deserted_" + m.id):
 			fired["deserted_" + m.id] = true
 	dilemmas.check(self)
+	# M17：叛乱 —— 把处置卡摊开（一次；回答走 `respond_to_mutiny()`）
+	if society.mutiny_open and dilemmas.current() != MUTINY_CARD:
+		var opts := []
+		for r in rules.mutiny_responses():
+			opts.append({
+				"id": str(r.get("id", "")), "name": str(r.get("name", "")),
+				"text": str(r.get("text", "")), "effects": {},
+			})
+		dilemmas.inject({
+			"id": MUTINY_CARD, "name": "叛乱",
+			"text": "有人把船长堵在艉楼里，要求掉头回西班牙。甲板上的人都在看你怎么答。",
+			"options": opts,
+		})
+		_say(mutiny_report(), true)
 
 
 func _weather_wear(delta: float) -> void:
@@ -1130,7 +1172,96 @@ func answer_dilemma(option_id: String) -> Dictionary:
 	var id := dilemmas.current()
 	if id == "":
 		return {"ok": false, "reason": "现在没有要你拿主意的事"}
+	# M17：叛乱处置卡走自己的结算（后果在 `rules.json` 的 `mutiny_responses`）
+	if id == MUTINY_CARD:
+		var r := respond_to_mutiny(option_id)
+		if bool(r.get("ok", false)):
+			dilemmas.clear_injected(MUTINY_CARD)
+			journal.decide("叛乱处置：%s。" % str(r.get("name", option_id)))
+		return r
 	return dilemmas.resolve(self, id, option_id)
+
+
+# ------------------------------------------------------------ 分配与叛乱（M17）
+
+func distribute_gain(kind: String, amount: float) -> Dictionary:
+	"""一笔收益按规矩分下去（战利品 / 贸易 / 探险所得）—— 见 `Society.distribute()`。"""
+	var r := society.distribute(kind, amount, rules, roster)
+	if bool(r.get("ok", false)):
+		var line := str(society.log_lines[society.log_lines.size() - 1])
+		_say(line, true)
+		journal.decide(line)
+	return r
+
+
+func mutiny_responses() -> Array:
+	return rules.mutiny_responses()
+
+
+func respond_to_mutiny(action: String) -> Dictionary:
+	"""处置叛乱（M17）：处罚 / 配给 / 上岸 / 谈判 / 镇压。
+
+	每条手段的后果都是数，而且**结局不同**：谈判把阶梯清零，处罚只压住一回，
+	镇压把人打散（阶梯走到 3 + 掉人 + 纪律最高）。
+	"""
+	var r := rules.mutiny_response(action)
+	if r.is_empty():
+		return {"ok": false, "reason": "没有这个处置"}
+	if not society.mutiny_open:
+		return {"ok": false, "reason": "现在没人闹"}
+	var before := {"tension": society.tension, "discipline": society.discipline,
+		"mood": 0.0, "captain": 0.0, "crew": _alive_crew_count()}
+	for m in roster.members:
+		if m.dead:
+			continue
+		m.mood = clampf(m.mood + float(r.get("mood", 0.0)), 0.0, 1.0)
+		m.captain = clampf(m.captain + float(r.get("captain", 0.0)), -1.0, 1.0)
+	society.tension = clampf(society.tension + float(r.get("tension", 0.0)), 0.0, 1.0)
+	society.discipline = clampf(society.discipline + float(r.get("discipline", 0.0)), 0.0, 1.0)
+	# 带头的几个人：赶下船 / 镇压会真的少人（船上留够 12 个，别把船走空）
+	var out := int(r.get("leaders_out", 0))
+	var removed := []
+	for i in out:
+		var m := roster.lowest_captain()
+		if m == null or _alive_crew_count() - removed.size() <= Dilemma.MIN_ABOARD:
+			break
+		m.ashore = true
+		m.job = "left_behind"
+		removed.append(m.id)
+		if society.mutiny_leader == "":
+			society.mutiny_leader = m.id
+	# 阶梯：谈判/配给把火压回去（清零）；处罚/上岸只压住这一回（退到 1）；
+	# 镇压是打散（3 —— 后面还会再闹，而且这次是血账）
+	match action:
+		"negotiate", "ration":
+			society.mutiny_stage = 0
+		"punish", "ashore":
+			society.mutiny_stage = 1
+		_:
+			society.mutiny_stage = 3
+	society.mutiny_open = false
+	for k in (r.get("score", {}) as Dictionary).keys():
+		ending_score[str(k)] = int(ending_score.get(str(k), 0)) + int(r["score"][k])
+	memory["mutiny_response"] = str(r.get("id", action))
+	var line := "叛乱处置：%s —— %s" % [str(r.get("name", action)), str(r.get("text", ""))]
+	_say("（叛乱）" + line, true)
+	journal.record(t, "mutiny", line)
+	return {
+		"ok": true, "action": action, "name": str(r.get("name", action)),
+		"stage": society.mutiny_stage, "removed": removed,
+		"before": before,
+		"after": {"tension": society.tension, "discipline": society.discipline,
+			"crew": _alive_crew_count()},
+		"effects": r,
+	}
+
+
+func mutiny_report() -> String:
+	if not society.mutiny_open:
+		return ""
+	var who := _member_by_id(society.mutiny_leader)
+	return "【叛乱】%s 带头要个说法（态度 %.2f）—— 处罚 / 配给 / 上岸 / 谈判 / 镇压" % [
+		who.label() if who != null else "有人", who.captain if who != null else 0.0]
 
 
 # ------------------------------------------------------------ 陆战（M6）

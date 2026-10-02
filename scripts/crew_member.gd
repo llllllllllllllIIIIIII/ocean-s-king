@@ -27,6 +27,10 @@ var hunger := 0.20
 var fatigue := 0.15
 var health := 1.0
 var mood := 0.75
+# M17：十项属性补两个 —— **信仰**（0..1，虔敬的人更稳、也更认命）与
+# **对船长的态度**（−1 恨 .. +1 服）。前者压紧张度，后者决定"会不会抗命/反"。
+var faith := 0.5
+var captain := 0.0
 var job := "idle"               # job id / "eat" / "sleep" / "idle"
 var working := false            # 到岗位了吗（没到就不出力）
 var at := Vector3i.ZERO         # (x, y, layer)
@@ -116,6 +120,7 @@ func capture_state() -> Dictionary:
 		# 存下来对关键船员只是冗余，对招来的人是必需。
 		"is_key": is_key, "display_name": display_name,
 		"post": post, "post_es": post_es, "skills": skills.duplicate(),
+		"faith": faith, "captain": captain,
 		"hunger": hunger, "fatigue": fatigue, "health": health, "mood": mood,
 		"job": job, "working": working,
 		"at": StateIO.v3i(at),
@@ -138,6 +143,8 @@ func apply_state(d: Dictionary) -> void:
 	post_es = str(d.get("post_es", post_es))
 	if d.has("skills"):
 		skills = (d.get("skills", {}) as Dictionary).duplicate()
+	faith = clampf(float(d.get("faith", faith)), 0.0, 1.0)
+	captain = clampf(float(d.get("captain", captain)), -1.0, 1.0)
 	hunger = float(d.get("hunger", 0.2))
 	fatigue = float(d.get("fatigue", 0.15))
 	health = float(d.get("health", 1.0))

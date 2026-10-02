@@ -129,6 +129,126 @@
           "journal": "部落接触：抓了一个当地人当向导。"
         }
       ]
+    },
+    {
+      "id": "first_storm",
+      "name": "第一次风暴",
+      "trigger": { "kind": "days_min", "days": 35 },
+      "text": "桅杆响了一整夜。天快亮的时候，有人小声问：要不要回头的路？",
+      "options": [
+        { "id": "hold_course", "name": "继续走",
+          "text": "按航线走。风会过去。",
+          "effects": { "mood_all": -0.03, "tension": 0.04, "discipline": 0.06,
+            "score": { "voyage": 2 } }, "journal": "风暴里没有改线。" },
+        { "id": "heave_to", "name": "顶风停船，等它过去",
+          "text": "收帆、顶住 —— 这一夜就耗在这儿。",
+          "effects": { "mood_all": 0.02, "tension": -0.06, "discipline": 0.02,
+            "score": { "crew": 1 } }, "journal": "风暴里收帆顶住。" },
+        { "id": "turn_back", "name": "掉头避一避",
+          "text": "退几十海里，等风头过了再走。",
+          "effects": { "mood_all": 0.05, "tension": -0.08, "discipline": -0.06,
+            "score": { "voyage": -2, "crew": 1 } }, "journal": "风暴里掉头避风。" },
+        { "id": "punish_fear", "name": "压住说回头的人",
+          "text": "当众把话说死：谁再提回头，谁就下去。",
+          "effects": { "mood_all": -0.09, "tension": 0.10, "discipline": 0.16,
+            "score": { "history": -1 } }, "journal": "风暴里压住了「回头」这句话。" }
+      ]
+    },
+    {
+      "id": "strait_choice",
+      "name": "水道还是外海",
+      "trigger": { "kind": "days_min", "days": 90 },
+      "text": "前方是一道窄水道，两边都是黑石头；绕外海要多走半个月，还得顶着西风。",
+      "options": [
+        { "id": "take_strait", "name": "走水道",
+          "text": "探深、测岸、贴着中线走。",
+          "effects": { "mood_all": -0.02, "tension": 0.03, "discipline": 0.05,
+            "score": { "voyage": 3, "knowledge": 1 } }, "journal": "走了窄水道。" },
+        { "id": "go_around", "name": "绕外海",
+          "text": "多半个月，但不用赌。",
+          "effects": { "mood_all": -0.04, "tension": 0.05, "discipline": 0.0,
+            "score": { "voyage": -1, "crew": 1 } }, "journal": "绕了外海。" },
+        { "id": "send_boat", "name": "先放小艇测水深",
+          "text": "花半天时间，换一个准数。",
+          "effects": { "mood_all": -0.01, "fatigue_all": 0.06, "tension": -0.04,
+            "score": { "voyage": 2, "knowledge": 1 } }, "journal": "放艇测深之后才走的水道。" },
+        { "id": "trust_lookout", "name": "听瞭望手的",
+          "text": "他说能过，就过。",
+          "effects": { "mood_all": 0.03, "tension": 0.02, "discipline": -0.03,
+            "score": { "crew": 1, "voyage": 1 } }, "journal": "照瞭望手的话走。" }
+      ]
+    },
+    {
+      "id": "pacific_thirst",
+      "name": "太平洋里的水",
+      "trigger": { "kind": "days_min", "days": 150 },
+      "text": "淡水只剩几桶，而地图上最近的一块陆地在两千里外。木桶敲上去都是空的回声。",
+      "options": [
+        { "id": "strict_all", "name": "全船限量，一视同仁",
+          "text": "每人每天两勺，官也一样。",
+          "effects": { "mood_all": -0.06, "tension": 0.05, "discipline": 0.08,
+            "score": { "crew": 2 } }, "journal": "缺水的日子：全船限量。" },
+        { "id": "key_water", "name": "先保操船的人",
+          "text": "舵手、帆手先喝 —— 船停了谁都活不了。",
+          "effects": { "mood_all": -0.12, "mood_key": 0.06, "tension": 0.10, "discipline": 0.04,
+            "score": { "voyage": 2, "crew": -1 } }, "journal": "缺水：水先给操船的人。" },
+        { "id": "look_for_land", "name": "改向找鸟和鲸",
+          "text": "跟着鸟走 —— 它们不回空海的深处。",
+          "effects": { "mood_all": 0.04, "tension": -0.06,
+            "score": { "voyage": 1, "knowledge": 1 } }, "journal": "跟着鸟群改向。" },
+        { "id": "kill_livestock", "name": "把带来的牲口全宰了",
+          "text": "先喝血，再腌肉。",
+          "effects": { "mood_all": 0.05, "health_all": 0.05, "tension": -0.05,
+            "score": { "crew": 1, "wealth": -1 } }, "journal": "宰了牲口取水取肉。" }
+      ]
+    },
+    {
+      "id": "island_trade",
+      "name": "岛上的交换",
+      "trigger": { "kind": "days_min", "days": 200 },
+      "text": "岛上的人划着独木舟过来，手里是椰子和鱼；他们盯着你们船上的铁器看。",
+      "options": [
+        { "id": "fair_trade", "name": "公平换",
+          "text": "铁钉换椰子，两边都算得清。",
+          "effects": { "mood_all": 0.05, "tension": -0.06, "culture": "trade",
+            "score": { "crew": 1, "wealth": 1 } }, "journal": "和岛上的人公平交易。" },
+        { "id": "cheat_them", "name": "用假珠子骗他们",
+          "text": "他们没见过玻璃。",
+          "effects": { "mood_all": -0.04, "tension": 0.04, "culture": "cheat",
+            "score": { "wealth": 3, "history": -3 } }, "journal": "用假珠子换了东西。" },
+        { "id": "no_contact", "name": "不上岸，也不交易",
+          "text": "补水就走，别惹事。",
+          "effects": { "mood_all": -0.03, "tension": 0.03,
+            "score": { "crew": -1, "voyage": 1 } }, "journal": "没有和岛上的人接触。" },
+        { "id": "take_hostage", "name": "扣一个人换补给",
+          "text": "他家人会把水和食物送过来。",
+          "effects": { "mood_all": -0.12, "tension": 0.12, "discipline": 0.08, "culture": "kidnap",
+            "score": { "wealth": 2, "history": -4 } }, "journal": "扣了岛上的人质换补给。" }
+      ]
+    },
+    {
+      "id": "mutiny_choice",
+      "name": "甲板上的低语",
+      "trigger": { "kind": "tension_min", "tension": 0.78 },
+      "text": "夜里有人聚在艏楼下面说话。你走近的时候，他们散开了。",
+      "options": [
+        { "id": "call_it_out", "name": "当面问清楚",
+          "text": "把所有人叫到甲板上：有话现在说。",
+          "effects": { "mood_all": 0.06, "tension": -0.12, "discipline": -0.05,
+            "score": { "crew": 1, "history": 1 } }, "journal": "把话摊开说了一次。" },
+        { "id": "tighten_watch", "name": "加双岗、收紧宵禁",
+          "text": "先把秩序摁住。",
+          "effects": { "mood_all": -0.08, "tension": 0.06, "discipline": 0.18,
+            "score": { "crew": -1 } }, "journal": "加双岗压住夜里的低语。" },
+        { "id": "better_food", "name": "想办法让大家吃好一顿",
+          "text": "把留着的那点好东西拿出来。",
+          "effects": { "mood_all": 0.10, "tension": -0.16, "health_all": 0.03,
+            "use_item": { "food": 20 }, "score": { "crew": 2 } }, "journal": "为了一顿好饭动用了存粮。" },
+        { "id": "single_out", "name": "盯住带头的那个人",
+          "text": "不用全部人，只要压住一个。",
+          "effects": { "mood_all": -0.05, "tension": -0.04, "discipline": 0.12,
+            "affinity_pair": -0.2, "score": { "history": -1 } }, "journal": "盯住了带头的人。" }
+      ]
     }
   ]
 }

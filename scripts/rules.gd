@@ -131,6 +131,41 @@ func key_first() -> bool:
 	return bool(option_of("ration").get("key_bonus", false))
 
 
+# --- M17：四条新规矩（战利品 / 贸易 / 探险所得 / 赌博）---
+
+func crew_share_of(rule_id: String) -> float:
+	"""这一项收益里**船员拿几成**（分配时用；剩下的归远征队/王室）。"""
+	return clampf(_f(rule_id, "crew_share", 1.0), 0.0, 1.0)
+
+
+func share_rule_for(kind: String) -> String:
+	match kind:
+		"prize", "spoils":
+			return "spoils"
+		"trade":
+			return "trade_share"
+		"discovery", "explore":
+			return "discovery_share"
+	return ""
+
+
+func gambling_allowed() -> bool:
+	return bool(option_of("gambling").get("gambling_allowed", false))
+
+
+# --- M17：叛乱的玩家手段（处罚 / 配给 / 上岸 / 谈判 / 镇压）---
+
+func mutiny_responses() -> Array:
+	return defs.get("mutiny_responses", [])
+
+
+func mutiny_response(id: String) -> Dictionary:
+	for r in mutiny_responses():
+		if str(r.get("id", "")) == id:
+			return r
+	return {}
+
+
 # ------------------------------------------------------------ 给界面用
 
 func lines() -> Array:

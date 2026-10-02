@@ -67,6 +67,9 @@ func setup() -> void:
 		m.post = str(raw["post"])
 		m.post_es = str(raw.get("post_es", ""))
 		m.skills = raw.get("skills", {})
+		# M17：信仰与对船长的态度（关键船员写在数据里；普通船员按中心值摊开）
+		m.faith = clampf(float(raw.get("faith", 0.5)), 0.0, 1.0)
+		m.captain = clampf(float(raw.get("captain", 0.1)), -1.0, 1.0)
 		m.prio = (raw.get("prio", {}) as Dictionary).duplicate()
 		m.relations = raw.get("relations", [])
 		for tr in raw.get("traits", []):
@@ -80,6 +83,9 @@ func setup() -> void:
 	var spread := float(hands.get("skill_spread", 0.15))
 	var hand_prio: Dictionary = hands.get("prio", {})
 	_hand_prio = hand_prio.duplicate()
+	var faith_center := float(hands.get("faith_center", 0.5))
+	var faith_spread := float(hands.get("faith_spread", 0.25))
+	var captain_center := float(hands.get("captain_center", 0.05))
 	for i in count:
 		var m := CrewMember.new()
 		m.id = "hand_%02d" % (i + 1)
@@ -97,6 +103,9 @@ func setup() -> void:
 			"medicine": 0.05,
 			"repair": maxf(0.05, s - 0.20),
 		}
+		# M17：普通船员的信仰也是摊开的（用同一个 wobble，可复现）
+		m.faith = clampf(faith_center + wobble * faith_spread, 0.05, 0.95)
+		m.captain = clampf(captain_center + wobble * 0.2, -1.0, 1.0)
 		m.prio = hand_prio.duplicate()
 		members.append(m)
 
@@ -137,6 +146,47 @@ func reseed(h: int) -> void:
 		m.skills["seamanship"] = clampf(float(m.skills.get("seamanship", 0.45)) + wobble * 0.10, 0.10, 0.90)
 		m.skills["repair"] = clampf(float(m.skills.get("repair", 0.30)) + wobble * 0.08, 0.05, 0.90)
 		m.skills["helm"] = clampf(float(m.skills.get("helm", 0.30)) + wobble * 0.06, 0.05, 0.90)
+		m.faith = clampf(m.faith + wobble * 0.10, 0.05, 0.95)
+
+
+func avg_faith() -> float:
+	"""全船的信仰（M17）：压紧张度用。只算活着的人。"""
+	var n := 0
+	var total := 0.0
+	for m in members:
+		if m.dead:
+			continue
+		total += m.faith
+		n += 1
+	return total / float(maxi(1, n))
+
+
+func avg_captain() -> float:
+	"""全船**对船长的态度**（M17）：低到一定程度就会抗命、反。"""
+	var n := 0
+	var total := 0.0
+	for m in members:
+		if m.dead:
+			continue
+		total += m.captain
+		n += 1
+	return total / float(maxi(1, n))
+
+
+func lowest_captain() -> CrewMember:
+	"""意见最大的那个人（M17 的"带头的"）：先按态度，再按心情挑 —— 可复现。"""
+	var worst: CrewMember = null
+	for m in members:
+		if m.dead or m.ashore:
+			continue
+		if worst == null:
+			worst = m
+			continue
+		if m.captain < worst.captain - 1e-6:
+			worst = m
+		elif is_equal_approx(m.captain, worst.captain) and m.mood < worst.mood:
+			worst = m
+	return worst
 
 
 func recruit(count := 1, skill_center := 0.45, origin := "") -> Array:
@@ -166,6 +216,9 @@ func recruit(count := 1, skill_center := 0.45, origin := "") -> Array:
 			"medicine": maxf(0.05, s - 0.35),
 			"repair": maxf(0.05, s - 0.20),
 		}
+		# M17：招来的人也有信仰与态度（按来源地给个中心值）
+		m.faith = clampf(0.5 + wobble * 0.15, 0.05, 0.95)
+		m.captain = clampf(0.05 + wobble * 0.15, -1.0, 1.0)
 		m.prio = _hand_prio.duplicate()
 		if not deck.is_empty():
 			m.at = deck[(recruited * 5) % deck.size()]

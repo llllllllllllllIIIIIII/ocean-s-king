@@ -37,7 +37,7 @@ const EVENTS := [
 	},
 	{
 		"id": "gambling", "name": "赌博", "severity": 2, "min_tension": 0.50,
-		"needs": {"liquor_not": "forbidden"},
+		"needs": {"gambling_allowed": true, "liquor_not": "forbidden"},
 		"mood": 0.02, "discipline": -0.07, "tension": -0.04, "affinity": -0.03,
 		"text": "底舱有人用骰子赢走了一个月的工钱 —— 输的那个不肯认。",
 	},
@@ -91,6 +91,10 @@ var _acc := 0.0                      # 社会结算的累加器（游戏秒）
 var _cooldown := 0.0                 # 下一次事件之前要等多少个航程日
 var _last_severity := 1
 var pending: Array = []              # 这一帧要弹给玩家的事件（Voyage 取走）
+# M17：叛乱的**阶梯**与"带头的那个"。stage 0 = 没闹；1 = 抗命；2 = 逼宫；3 = 已经反了。
+var mutiny_stage := 0
+var mutiny_leader := ""              # 带头人的 id（可复现：态度最差的那个）
+var mutiny_open := false             # 有没有一张"怎么处置"的卡等着玩家回答
 
 
 func setup(roster: CrewRoster, seed_hash := 20261001) -> void:
@@ -198,6 +202,8 @@ func _update(days: float, roster: CrewRoster, rules: Rules, cargo: Cargo,
 	var rise := 0.02 + (1.0 - avg_mood) * 0.06 + (0.08 if starving else 0.0)
 	if near_land:
 		rise += 0.03                            # 看得见陆地而靠不了岸，最磨人
+	# M17：**信仰**压一点紧张度（虔敬的人更稳），但最多压两成 —— 它不是免死金牌
+	rise *= clampf(1.0 - roster.avg_faith() * 0.2, 0.8, 1.0)
 	tension = clampf(tension + rise * days * rules.tension_mult(), 0.0, 1.0)
 	# ④ 纪律：往"规矩 + 平均心情"决定的目标靠
 	var d_target := clampf(0.5 + rules.discipline_bonus() + (avg_mood - 0.5) * 0.4, 0.0, 1.0)
@@ -206,19 +212,22 @@ func _update(days: float, roster: CrewRoster, rules: Rules, cargo: Cargo,
 	# ⑤ 事件：紧张度够高、冷却过了，就挑一条**最重的**能触发的事件
 	_cooldown = maxf(0.0, _cooldown - days)
 	if _cooldown <= 0.0:
-		var ev := pick_event(rules, cargo, near_land)
+		var ev := pick_event(rules, cargo, near_land, roster.avg_captain())
 		if not ev.is_empty():
 			_fire(ev, roster, rules)
 
 
-func pick_event(rules: Rules, cargo: Cargo, near_land: bool) -> Dictionary:
+func pick_event(rules: Rules, cargo: Cargo, near_land: bool, avg_captain := 0.0) -> Dictionary:
 	"""挑一条**最重的、能触发的**事件（表是按严重度排的，所以最后一个命中的就是它）。
 
 	它是公开的：面板要用它显示"下一个可能的麻烦"，测试也要直接断言"紧张度越高越重"。
 	"""
 	var best: Dictionary = {}
+	# M17：**对船长的态度**直接顶在阈值上 —— 全船越不服，"违抗/叛乱"这一档来得越早
+	# （0.35 的态度差 ≈ 0.05 的紧张度差；它是可断言的：同一个 tension 下换态度就换结果）
+	var tension_here := clampf(tension + (0.15 - avg_captain) * 0.15, 0.0, 1.0)
 	for ev in EVENTS:
-		if tension < float(ev["min_tension"]):
+		if tension_here < float(ev["min_tension"]):
 			continue
 		var needs: Dictionary = ev.get("needs", {})
 		if needs.has("max_discipline") and discipline > float(needs["max_discipline"]):
@@ -230,6 +239,10 @@ func pick_event(rules: Rules, cargo: Cargo, near_land: bool) -> Dictionary:
 		if needs.has("liquor_is") and str(rules.choice.get("liquor", "")) != str(needs["liquor_is"]):
 			continue
 		if needs.has("liquor_not") and str(rules.choice.get("liquor", "")) == str(needs["liquor_not"]):
+			continue
+		# M17：赌博那一档要看玩家定的"赌博规定"（准赌才放行）
+		if needs.has("gambling_allowed") \
+				and bool(needs["gambling_allowed"]) != rules.gambling_allowed():
 			continue
 		best = ev                         # 表是按严重度排的：最后一个能触发的就是最重的
 	return best
@@ -287,6 +300,20 @@ func _fire(ev: Dictionary, roster: CrewRoster, rules: Rules) -> void:
 		log_lines.pop_front()
 	pending.append({"id": str(ev["id"]), "name": str(ev["name"]),
 		"text": str(ev["text"]), "severity": int(ev["severity"])})
+	# M17：**叛乱的阶梯** —— 走到"违抗"就记账，"叛乱"这一档把卡摊开等玩家处置。
+	# 带头人是 `lowest_captain()` 挑的（态度最差、态度一样时心情最差的那个），
+	# 所以同一份名册必得同一个人：链子可复现。
+	if str(ev["id"]) == "defiance":
+		mutiny_stage = maxi(mutiny_stage, 1)
+		if mutiny_leader == "":
+			var l1 := roster.lowest_captain()
+			mutiny_leader = l1.id if l1 != null else ""
+	elif str(ev["id"]) == "mutiny":
+		mutiny_stage = maxi(mutiny_stage, 2)
+		if mutiny_leader == "":
+			var l2 := roster.lowest_captain()
+			mutiny_leader = l2.id if l2 != null else ""
+		mutiny_open = true
 
 
 func take_events() -> Array:
@@ -374,6 +401,39 @@ func describe() -> String:
 		tension * 100.0, discipline * 100.0, event_count]
 
 
+# ------------------------------------------------------------ 分配（M17 的四条新规矩）
+
+func distribute(kind: String, amount: float, rules: Rules, roster: CrewRoster) -> Dictionary:
+	"""一笔收益（战利品 / 贸易 / 探险所得）按规矩分下去。
+
+	`crew_share` 是船员拿几成：拿得多 → 心情好、紧张度降；拿得少 → 心情差、纪律靠罚顶着。
+	返回值是一份"这一笔改了什么"的清单（测试与面板都用它）。
+	"""
+	var rid := rules.share_rule_for(kind)
+	if rid == "" or amount <= 0.0 or roster == null:
+		return {"ok": false, "reason": "没有这一类的分配规矩"}
+	var share := rules.crew_share_of(rid)
+	var per_crew := amount * share / float(maxi(1, roster.members.size()))
+	# 心情：0.5 成以下开始扣，留得越多越高兴（上限 ±0.08）
+	var mood := clampf((share - 0.75) * 0.16, -0.05, 0.06)
+	var tension_delta := clampf((share - 0.75) * 0.2, -0.06, 0.04)
+	for m in roster.members:
+		if m.dead:
+			continue
+		m.mood = clampf(m.mood + mood, 0.0, 1.0)
+	tension = clampf(tension - tension_delta, 0.0, 1.0)
+	var line := "【%s】按「%s」分下去：船员共得 %.0f（每人约 %.1f 枚）。" % [
+		kind, rules.option_name(rid), amount * share, per_crew]
+	log_lines.append(line)
+	if log_lines.size() > LOG_MAX:
+		log_lines.pop_front()
+	return {
+		"ok": true, "kind": kind, "rule": rid, "rule_name": rules.option_name(rid),
+		"total": amount, "share": share, "crew_total": amount * share, "per_crew": per_crew,
+		"mood": mood, "tension": tension_delta,
+	}
+
+
 # ------------------------------------------------------------ 存档（ShipState，docs/14 第 3 节）
 
 func capture_state() -> Dictionary:
@@ -385,6 +445,9 @@ func capture_state() -> Dictionary:
 		"log_lines": log_lines.duplicate(),
 		"event_count": event_count,
 		"last_event": last_event,
+		"mutiny_stage": mutiny_stage,
+		"mutiny_leader": mutiny_leader,
+		"mutiny_open": mutiny_open,
 		"_acc": _acc,
 		"_cooldown": _cooldown,
 		"_last_severity": _last_severity,
@@ -401,6 +464,9 @@ func apply_state(d: Dictionary) -> void:
 	log_lines = (d.get("log_lines", []) as Array).duplicate()
 	event_count = int(d.get("event_count", 0))
 	last_event = str(d.get("last_event", ""))
+	mutiny_stage = int(d.get("mutiny_stage", 0))
+	mutiny_leader = str(d.get("mutiny_leader", ""))
+	mutiny_open = bool(d.get("mutiny_open", false))
 	_acc = float(d.get("_acc", 0.0))
 	_cooldown = float(d.get("_cooldown", 0.0))
 	_last_severity = int(d.get("_last_severity", 1))

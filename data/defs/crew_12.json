@@ -9,6 +9,7 @@
       "id": "piloto", "post": "领航员", "post_es": "Piloto", "name": "努诺·瓦斯",
       "age": 41, "origin": "里斯本",
       "skills": { "seamanship": 0.72, "navigation": 0.95, "helm": 0.55, "cooking": 0.05, "medicine": 0.05, "repair": 0.10 },
+      "faith": 0.70, "captain": 0.60,
       "traits": ["沉得住气", "认死理"],
       "prio": { "sail": 2, "helm": 3, "lookout": 2, "cook": 0, "repair": 3, "chores": 3 },
       "relations": [ { "to": "maestre", "kind": "老搭档", "value": 0.7 },
@@ -18,6 +19,7 @@
       "id": "maestre", "post": "大副", "post_es": "Maestre", "name": "迭戈·罗尔丹",
       "age": 38, "origin": "塞维利亚",
       "skills": { "seamanship": 0.90, "navigation": 0.55, "helm": 0.70, "cooking": 0.10, "medicine": 0.10, "repair": 0.35 },
+      "faith": 0.50, "captain": 0.50,
       "traits": ["嗓门大", "护短"],
       "prio": { "sail": 1, "helm": 2, "lookout": 3, "cook": 0, "repair": 2, "chores": 2 },
       "relations": [ { "to": "contramaestre", "kind": "同乡", "value": 0.6 },
@@ -27,6 +29,7 @@
       "id": "timonel", "post": "舵手", "post_es": "Timonel", "name": "佩德罗·卡斯科",
       "age": 33, "origin": "波尔图",
       "skills": { "seamanship": 0.70, "navigation": 0.60, "helm": 0.92, "cooking": 0.05, "medicine": 0.05, "repair": 0.15 },
+      "faith": 0.30, "captain": 0.20,
       "traits": ["手稳", "话少"],
       "prio": { "sail": 2, "helm": 1, "lookout": 2, "cook": 0, "repair": 3, "chores": 3 },
       "relations": [ { "to": "piloto", "kind": "师徒", "value": 0.6 } ]
@@ -35,6 +38,7 @@
       "id": "contramaestre", "post": "水手长", "post_es": "Contramaestre", "name": "若昂·费雷拉",
       "age": 36, "origin": "拉各斯",
       "skills": { "seamanship": 0.95, "navigation": 0.25, "helm": 0.45, "cooking": 0.05, "medicine": 0.10, "repair": 0.55 },
+      "faith": 0.80, "captain": 0.50,
       "traits": ["嘴臭", "干活不含糊"],
       "prio": { "sail": 1, "helm": 3, "lookout": 3, "cook": 0, "repair": 2, "chores": 1 },
       "relations": [ { "to": "marinero_1", "kind": "盯着他", "value": -0.2 } ]
@@ -43,6 +47,7 @@
       "id": "carpintero", "post": "木匠", "post_es": "Carpintero", "name": "马丁·奥尔特加",
       "age": 44, "origin": "毕尔巴鄂",
       "skills": { "seamanship": 0.50, "navigation": 0.10, "helm": 0.15, "cooking": 0.05, "medicine": 0.15, "repair": 0.95 },
+      "faith": 0.60, "captain": 0.30,
       "traits": ["手艺人脾气", "沉默"],
       "prio": { "sail": 3, "helm": 0, "lookout": 3, "cook": 0, "repair": 1, "chores": 2 },
       "relations": [ { "to": "calafate", "kind": "常年搭档", "value": 0.8 } ]
@@ -51,6 +56,7 @@
       "id": "calafate", "post": "捻缝工", "post_es": "Calafate", "name": "巴托洛梅·鲁伊斯",
       "age": 39, "origin": "加的斯",
       "skills": { "seamanship": 0.55, "navigation": 0.05, "helm": 0.10, "cooking": 0.05, "medicine": 0.10, "repair": 0.88 },
+      "faith": 0.50, "captain": 0.10,
       "traits": ["怕水", "手快"],
       "prio": { "sail": 3, "helm": 0, "lookout": 3, "cook": 0, "repair": 1, "chores": 2 },
       "relations": [ { "to": "carpintero", "kind": "常年搭档", "value": 0.8 } ]
@@ -59,6 +65,7 @@
       "id": "tonelero", "post": "桶匠", "post_es": "Tonelero", "name": "吉列尔莫·塞拉",
       "age": 35, "origin": "马略卡",
       "skills": { "seamanship": 0.45, "navigation": 0.05, "helm": 0.10, "cooking": 0.10, "medicine": 0.05, "repair": 0.75 },
+      "faith": 0.40, "captain": -0.10,
       "traits": ["爱惜工具", "话多"],
       "prio": { "sail": 3, "helm": 0, "lookout": 3, "cook": 1, "repair": 2, "chores": 2 },
       "relations": [ { "to": "despensero", "kind": "天天吵架", "value": -0.5 } ]
@@ -67,6 +74,7 @@
       "id": "cirujano", "post": "外科医生", "post_es": "Cirujano", "name": "阿隆索·德·梅萨",
       "age": 47, "origin": "萨拉曼卡",
       "skills": { "seamanship": 0.20, "navigation": 0.15, "helm": 0.05, "cooking": 0.15, "medicine": 0.90, "repair": 0.10 },
+      "faith": 0.50, "captain": 0.20,
       "traits": ["看书多", "手抖"],
       "prio": { "sail": 3, "helm": 0, "lookout": 3, "cook": 3, "repair": 3, "chores": 3 },
       "relations": [ { "to": "escribano", "kind": "聊得来", "value": 0.5 } ]
@@ -75,6 +83,7 @@
       "id": "condestable", "post": "炮长", "post_es": "Condestable", "name": "罗德里戈·皮内达",
       "age": 40, "origin": "马拉加",
       "skills": { "seamanship": 0.60, "navigation": 0.10, "helm": 0.20, "cooking": 0.05, "medicine": 0.08, "repair": 0.50 },
+      "faith": 0.30, "captain": -0.20,
       "traits": ["好战", "守规矩"],
       "prio": { "sail": 2, "helm": 3, "lookout": 2, "cook": 0, "repair": 2, "chores": 3 },
       "relations": [ { "to": "maestre", "kind": "听他调遣", "value": 0.4 } ]
@@ -83,6 +92,7 @@
       "id": "despensero", "post": "事务长", "post_es": "Despensero", "name": "费尔南·科埃略",
       "age": 45, "origin": "塞图巴尔",
       "skills": { "seamanship": 0.30, "navigation": 0.10, "helm": 0.05, "cooking": 0.60, "medicine": 0.05, "repair": 0.15 },
+      "faith": 0.60, "captain": 0.00,
       "traits": ["抠门", "记账清楚"],
       "prio": { "sail": 3, "helm": 0, "lookout": 3, "cook": 1, "repair": 3, "chores": 2 },
       "relations": [ { "to": "tonelero", "kind": "天天吵架", "value": -0.5 },
@@ -92,6 +102,7 @@
       "id": "escribano", "post": "文书", "post_es": "Escribano", "name": "马丁·德·阿亚拉",
       "age": 29, "origin": "托莱多",
       "skills": { "seamanship": 0.25, "navigation": 0.35, "helm": 0.10, "cooking": 0.05, "medicine": 0.25, "repair": 0.10 },
+      "faith": 0.70, "captain": 0.40,
       "traits": ["文弱", "记性好"],
       "prio": { "sail": 3, "helm": 0, "lookout": 2, "cook": 0, "repair": 3, "chores": 3 },
       "relations": [ { "to": "cirujano", "kind": "聊得来", "value": 0.5 },
@@ -101,6 +112,7 @@
       "id": "cocinero", "post": "厨师", "post_es": "Cocinero", "name": "若尔热·阿尔瓦雷斯",
       "age": 50, "origin": "维塞乌",
       "skills": { "seamanship": 0.35, "navigation": 0.05, "helm": 0.05, "cooking": 0.88, "medicine": 0.10, "repair": 0.20 },
+      "faith": 0.50, "captain": 0.10,
       "traits": ["一只眼", "爱哼歌"],
       "prio": { "sail": 3, "helm": 0, "lookout": 3, "cook": 1, "repair": 3, "chores": 2 },
       "relations": [ { "to": "despensero", "kind": "听他念", "value": -0.2 } ]
@@ -111,6 +123,9 @@
     "count": 28,
     "skill_center": 0.45,
     "skill_spread": 0.16,
+    "faith_center": 0.5,
+    "faith_spread": 0.25,
+    "captain_center": 0.05,
     "posts": { "marinero": 16, "grumete": 8, "paje": 4 },
     "prio": { "sail": 1, "helm": 3, "lookout": 2, "cook": 3, "repair": 2, "chores": 1 }
   },
