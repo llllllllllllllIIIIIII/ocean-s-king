@@ -85,6 +85,8 @@ func _tick_boarding(delta: float) -> void:
 	for e in entries:
 		if e["state"] == "onboard":
 			continue
+		if e["state"] == "dead":
+			continue          # 阵亡的留在岸上：不能让他自己走回小船（详见 count_lost）
 		remaining.append(e)
 	remaining.sort_custom(func(a, b):
 		return (a["pos"] as Vector2).distance_to(shore) < (b["pos"] as Vector2).distance_to(shore))
@@ -159,6 +161,15 @@ func count_ashore() -> int:
 	return n
 
 
+func count_lost() -> int:
+	"""阵亡、留在岸上的人（M6 收尾：战斗结果写回队形之后，他们不该再挡着"收工上船"）。"""
+	var n := 0
+	for e in entries:
+		if e["state"] == "dead":
+			n += 1
+	return n
+
+
 func count_onboard() -> int:
 	var n := 0
 	for e in entries:
@@ -168,7 +179,7 @@ func count_onboard() -> int:
 
 
 func boarded_all() -> bool:
-	return entries.is_empty() or count_onboard() == entries.size()
+	return entries.is_empty() or count_onboard() + count_lost() == entries.size()
 
 
 func all_ashore() -> bool:
@@ -185,8 +196,9 @@ func size() -> int:
 
 
 func describe() -> String:
-	return "队伍 %d 人（岸上 %d、还在船上 %d）" % [
-		size(), count_ashore(), count_onboard()]
+	var lost := count_lost()
+	var base := "队伍 %d 人（岸上 %d、还在船上 %d" % [size(), count_ashore(), count_onboard()]
+	return base + ("、阵亡 %d）" % lost if lost > 0 else "）")
 
 
 # ------------------------------------------------------------ 存档（docs/14）

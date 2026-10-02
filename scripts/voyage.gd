@@ -28,6 +28,7 @@ var society := Society.new()       # 船上社会（M5，本船）
 var dilemmas := Dilemma.new()      # 三个高压抉择（M5，本船）
 var battle: LandBattle = null      # 上岸打起来的那一场（M6，null = 没在打）
 var culture := Culture.new()        # 当地文明的三档态度（M6）
+var locals := LocalGroup.new()      # 岛上那伙人（M6 收尾：他们是常驻实体，不是打起来才刷出来的）
 var weather := Weather.new()        # 自然环境（M7）
 var events := EventPool.new()       # 三类事件池（M7）
 var knowledge := Knowledge.new()    # 知识：发现即记录（M7）
@@ -80,6 +81,7 @@ var last_message := ""             # 最新一条重要消息（HUD 上显示十
 var message_timer := 0.0
 var _shore_cooldown := 0.0         # 蹭滩提示的冷却
 var _prev_pos := Vector2.ZERO      # 上一帧的船位：只用来算航程
+var _battle_entry_of: Dictionary = {}   # 战斗单位的序号 -> 队形里的下标（打完把状态写回队伍）
 
 
 func setup(region := Sea.DATA_PATH, ship_id := "trinidad", inherited := {}) -> void:
@@ -108,6 +110,10 @@ func setup(region := Sea.DATA_PATH, ship_id := "trinidad", inherited := {}) -> v
 	society.setup(roster)
 	dilemmas.setup()
 	culture.setup()
+	# 岛上的当地人：**从一开始就住在村子里**（站位确定性）。打了才少人，不会重新刷满。
+	# （老海域没有 village 这个地标就让他们空着 —— 那种世界里也打不起来。）
+	if sea.poi_pos("village") != Vector2.ZERO:
+		locals.setup(sea.poi_pos("village"), 12)
 	weather.setup()
 	events.setup()
 	memory = {}
@@ -167,9 +173,13 @@ func tick(delta: float) -> void:
 			# 演出的弹窗只给玩家看，不进"文书最后写下的一条"（否则第三幕的收尾句会被顶掉）
 			_say(str(msg), true, false)
 	if ashore:
-		party.tick(delta)
+		# 打起来的时候队伍不动：他们在打，不是在走路（队形与战场是同一批人，
+		# 队伍要是还在走，画面上就会出现"人一边打仗一边列队前进"）。
+		if battle == null or battle.over:
+			party.tick(delta)
 		captain_pos = party.captain
 		_walk_ashore(delta)
+		_locals_tick(delta)
 		if party.boarding and party.boarded_all():
 			_finish_boarding()
 	_weather_wear(delta)
@@ -569,8 +579,15 @@ func begin_land_battle(locals_count := 10, weather := "") -> Dictionary:
 		return {"ok": false, "reason": "岸上没有人"}
 	var w := weather if weather != "" else "dry"
 	battle = LandBattle.new()
-	# 打起来的地方就是队伍站的地方（不然画面上的两支队在世界的另一个角落）
-	battle.setup(squad, locals_count, w, captain_pos)
+	# **不凭空造人**：船员侧用岸上队形里每个人真正站的位置，当地人侧直接把岛上
+	# 那批 Unit 交过去（同一个对象，不是复制品）—— 所以画面上不会有"新刷出来的人"，
+	# 打完少的人也是真的少了。`locals_count` 只在岛上那批人为空时兜底。
+	# 岛上的那批人离得近才用他们（真实玩法里就是"他们围上来"那一下，最近的人已在 120 米内）；
+	# 离得远（脚本或测试直接在这儿开一场仗）就退回老的兜底布置 —— 否则一仗要先走几十公里碰面。
+	var use_locals: Array = []
+	if not locals.units.is_empty() and locals.nearest_distance(captain_pos) <= 600.0:
+		use_locals = locals.units
+	battle.setup(squad, locals_count, w, captain_pos, _crew_positions(squad), use_locals)
 	var load := Weapons.describe_loadout(Weapons.loadout_for(squad))
 	_say("【遭遇】当地人围了上来（%d 人对 %d 人）。你们带着：%s。" % [
 		locals_count, squad.size(), load], true)
@@ -582,6 +599,56 @@ func begin_land_battle(locals_count := 10, weather := "") -> Dictionary:
 
 func battle_report() -> String:
 	return battle.describe() if battle != null else ""
+
+
+func _crew_positions(squad: Array) -> Array:
+	"""岸上这些人**现在站在哪儿** —— 战斗就用这些站位起手，不许凭空排队。
+
+	队伍（`party.entries`）里关键船员带着 `crew` 引用，普通水手是匿名的（`crew == null`），
+	所以先按引用配，配不上的（水手）按顺序认领一个还没用过的匿名位。
+	"""
+	var out := []
+	var claimed := {}
+	_battle_entry_of.clear()
+	for m in squad:
+		var at := Vector2.ZERO
+		var found := false
+		var idx := -1
+		for i in party.entries.size():
+			if party.entries[i].get("crew") == m:
+				at = party.entries[i]["pos"]
+				idx = i
+				found = true
+				break
+		if not found:
+			for i in party.entries.size():
+				if party.entries[i].get("crew") != null or claimed.has(i):
+					continue
+				claimed[i] = true
+				at = party.entries[i]["pos"]
+				idx = i
+				found = true
+				break
+		out.append(at if found else captain_pos)
+		_battle_entry_of[out.size() - 1] = idx
+	return out
+
+
+func _sync_party_casualties() -> void:
+	"""把战斗结果写回岸上的队形：倒下/阵亡的人那几个点也要跟着变灰、不再站着。
+
+	不然会出现"名字已经在讣告里、人却还站在队列里"的怪画面（队伍的点是玩家一直看着的那批）。
+	**站位也要写回**：战斗结束之后画面从"战场"切回"队形"，位置接着战斗结束那一刻，
+	不会跳回开打前站的地方（那样又是一次瞬移）。
+	"""
+	var crew := battle.crew_units()
+	for i in crew.size():
+		var u = crew[i]
+		var idx: int = int(_battle_entry_of.get(i, -1))
+		if idx >= 0 and idx < party.entries.size():
+			party.entries[idx]["pos"] = u.pos
+			if u.state == "down" or u.state == "dead":
+				party.entries[idx]["state"] = str(u.state)
 
 
 func _resolve_battle() -> void:
@@ -621,6 +688,8 @@ func _resolve_battle() -> void:
 		_say("【讣告】%s 没能从岸上回来。" % m2.label(), true)
 		journal.record(t, "death", "讣告：%s 在岸上阵亡。" % m2.label())
 		fired["lost_" + m2.id] = true
+	# 岸上那几个点跟着伤亡变（谁倒下了、谁没回来）
+	_sync_party_casualties()
 	var locals_lost := int(battle.stats()["locals_dead"]) + int(battle.stats()["locals_down"])
 	var head := "打完了：%s。" % battle.outcome
 	if saved > 0:
@@ -1057,12 +1126,6 @@ func _walk_ashore(delta: float) -> void:
 	if poi.is_empty():
 		return
 	var id := str(poi["id"])
-	# M8 收尾：**翻了脸的部落会先动手**（docs/19 第 4 节"只有敌对的才会主动打你"）。
-	# 这一条过去一直没接线 —— `begin_land_battle()` 只在截图脚本里被调用过，
-	# 于是"上岸遇上敌对的人会打起来"在游戏里永远发生不了（连 M7 那条因果链的第一环都开不了头）。
-	if id == "village" and culture.will_fight("green_cape") and not fired.has("village_ambush"):
-		_village_ambush()
-		return
 	if visited.has(id):
 		return
 	visited[id] = true
@@ -1120,12 +1183,30 @@ func shoot_warning() -> String:
 	return line
 
 
+func _locals_tick(delta: float) -> void:
+	"""岛上那伙人怎么动、什么时候动手。
+
+	他们是**常驻实体**（`LocalGroup`）：平时在村子周围溜达，翻了脸就朝你走过来；
+	走到临战距离（`LandBattle.START_GAP_M`）才开打 —— 所以画面上不会"凭空刷出一批人"，
+	你甚至能看着他们一路走过来。
+	"""
+	if locals.units.is_empty():
+		return
+	var hostile := culture.will_fight("green_cape")
+	locals.advance(delta, captain_pos, hostile)
+	if not hostile or battle != null or fired.has("village_ambush"):
+		return
+	if locals.alive() > 0 and locals.nearest_distance(captain_pos) <= LandBattle.START_GAP_M:
+		_village_ambush()
+
+
 func _village_ambush() -> void:
-	"""翻脸之后踏进村子：他们先动手（一次登陆只伏击一次）。"""
+	"""他们围上来了：用**双方现在真正站的位置**开打（一次登陆只打一场）。"""
 	fired["village_ambush"] = true
-	_say("草屋里喊了一声，几个人抄起矛围上来 —— 他们记得你。", true)
+	_say("几个人抄起矛围上来 —— %s（%d 人）。他们记得你。" % [
+		culture.describe("green_cape"), locals.alive()], true)
 	journal.decide("上岸被部落围住：他们先动手。")
-	var r := begin_land_battle(12, weather.misfire_weather())
+	var r := begin_land_battle(locals.alive(), weather.misfire_weather())
 	if bool(r.get("ok", false)):
 		report("在村子外被当地人围住，打起来了。")
 
@@ -1384,6 +1465,8 @@ func capture_ship_state() -> Dictionary:
 		"dilemmas": dilemmas.capture_state(),
 		"ending_score": ending_score.duplicate(),
 		"culture": culture.capture_state(),
+		# M6 收尾：岛上那伙人是常驻实体（站位、谁倒下了），读档回来不能又满血站回村里
+		"locals": locals.capture_state(),
 		# M8 收尾：按 `N` 沿航线走的状态。它是"这条船现在怎么开"，算本船状态；
 		# 不存的话，存档时正在跟航线、读档回来就跟丢了（航点没了，船开到下一段就停）。
 		"following_route": following_route,
@@ -1420,6 +1503,7 @@ func apply_ship_state(d: Dictionary) -> void:
 	dilemmas.apply_state(d.get("dilemmas", {}))
 	ending_score = (d.get("ending_score", {}) as Dictionary).duplicate()
 	culture.apply_state(d.get("culture", {}))
+	locals.apply_state(d.get("locals", {}))
 	following_route = bool(d.get("following_route", false))
 	route_waypoints = StateIO.to_v2_list(d.get("route_waypoints", []))
 	if following_route and route_waypoints.is_empty():

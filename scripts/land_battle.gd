@@ -70,7 +70,18 @@ var _misfires := 0
 var _round := 0
 
 
-func setup(crew_members: Array, locals_count := 10, weather := "dry", origin := Vector2.ZERO) -> void:
+func setup(crew_members: Array, locals_count := 10, weather := "dry", origin := Vector2.ZERO,
+		crew_positions: Array = [], local_units: Array = []) -> void:
+	"""排兵。
+
+	`crew_positions` / `local_units` 是 M6 收尾加的两个口子：**战斗要用"本来就在场上的
+	那批人"起手**，而不是打起来那一刻凭空造两队。传进来就照用：
+	  · `crew_positions[i]` = 船上第 i 个人**现在站在哪儿**（岸上的队形）；
+	  · `local_units` = 岛上的当地人**本身就是这些 Unit 对象**（`LocalGroup.units`），
+	    位置、谁受过伤、谁已经倒下都带着 —— 打完少的人就是真少了。
+	两个都不传时保持老行为（把 origin 当中心、两边各排开 60 米）—— 测试里的
+	"同样初始状态 → 同样伤亡名单"靠的就是这套确定性布置。
+	"""
 	units.clear()
 	weather_id = weather
 	t = 0.0
@@ -97,23 +108,28 @@ func setup(crew_members: Array, locals_count := 10, weather := "dry", origin := 
 		u.weapon = str(lo["weapon"])
 		u.ammo = str(lo["ammo"])
 		u.skill = float(lo["skill"])
-		u.pos = origin + Vector2(-8.0 + float(i % 5) * 3.0, -6.0 + float(i / 5) * 4.0)
+		u.pos = (crew_positions[i] as Vector2) if i < crew_positions.size() \
+			else origin + Vector2(-8.0 + float(i % 5) * 3.0, -6.0 + float(i / 5) * 4.0)
 		u.morale = 0.80
 		units.append(u)
 		i += 1
 	# 当地人一侧：木矛与棍棒，人多、士气不稳
-	var cfg: Dictionary = Ballistics.defs().get("local_warriors", {})
-	var lw: Array = cfg.get("weapons", ["spear_local"])
-	for j in locals_count:
-		var v := Unit.new()
-		v.id = "local_%d" % j
-		v.side = "locals"
-		v.name = "当地人 %d" % (j + 1)
-		v.weapon = str(lw[j % lw.size()])
-		v.skill = float(cfg.get("skill", 0.45))
-		v.morale = float(cfg.get("morale", 0.6))
-		v.pos = origin + Vector2(START_GAP_M + float(j % 5) * 3.0, -6.0 + float(j / 5) * 4.0)
-		units.append(v)
+	if not local_units.is_empty():
+		for u in local_units:
+			units.append(u)          # 就是岛上那批人，不另造
+	else:
+		var cfg: Dictionary = Ballistics.defs().get("local_warriors", {})
+		var lw: Array = cfg.get("weapons", ["spear_local"])
+		for j in locals_count:
+			var v := Unit.new()
+			v.id = "local_%d" % j
+			v.side = "locals"
+			v.name = "当地人 %d" % (j + 1)
+			v.weapon = str(lw[j % lw.size()])
+			v.skill = float(cfg.get("skill", 0.45))
+			v.morale = float(cfg.get("morale", 0.6))
+			v.pos = origin + Vector2(START_GAP_M + float(j % 5) * 3.0, -6.0 + float(j / 5) * 4.0)
+			units.append(v)
 
 
 func weather_name() -> String:

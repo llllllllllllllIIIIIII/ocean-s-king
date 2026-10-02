@@ -74,7 +74,8 @@ func _met(tr: Dictionary, v: Voyage) -> bool:
 		"wounded":
 			return _injured(v) >= int(tr.get("min_injured", 2))
 		"tribal":
-			return v.fired.has("village")
+			# 已经打起来了就别再摆"要不要谈"的卡 —— 子弹在飞的时候没人谈判
+			return v.fired.has("village") and v.battle == null
 	return false
 
 
@@ -151,6 +152,11 @@ func resolve(v: Voyage, id: String, option_id: String) -> Dictionary:
 	# ⑤ 花掉的东西（药、火药…）
 	for item in (eff.get("use_item", {}) as Dictionary).keys():
 		v.cargo.remove(str(item), int(eff["use_item"][item]))
+	# ⑤.5 当地人的态度（M6 收尾）：选了"开火/抓人"就该真的翻脸 ——
+	#     这一格原来没接，所以卡片上写着"开火吓退他们"，选完 culture 一点没变，
+	#     下一段上岸也不会有人动手（陆战那一整层因此摸不到）。
+	if eff.has("culture"):
+		v.culture.react("green_cape", str(eff["culture"]), "抉择：%s" % str(o.get("name", id)))
 	# ⑥ 结局分数与旗标
 	for k in (eff.get("score", {}) as Dictionary).keys():
 		var key := str(k)

@@ -88,13 +88,15 @@
       "id": "tribal_clash",
       "name": "部落冲突",
       "trigger": { "kind": "tribal" },
-      "text": "草屋前围了三十几个人。他们的矛尖朝下，但站得很开 ——\n像是随时能合上来。你们手里的火绳枪只有两支装了弹药。",
+      "_culture": "这一张卡是玩家**唯一**用剧情动作改当地人态度的地方（M6 收尾补上）：选了它就真的改 culture.gd 里那张表的值，所以他们下一段会不会打你，取决于你在这里选了什么。",
+      "text": "草屋前站着十几个人。他们的矛尖朝下，但站得很开 ——\n像是随时能合上来。你们手里的火绳枪只有两支装了弹药。",
       "options": [
         {
           "id": "trade",
           "name": "交换",
           "text": "把铁器、玻璃珠摊在沙地上，先伸出手。",
           "effects": { "mood_all": 0.05, "tension": -0.08, "discipline": 0.03,
+            "culture": "trade",
             "score": { "knowledge": 2, "history": 2, "wealth": 1 },
             "flag": "traded_with_locals" },
           "journal": "部落接触：选择交换。"
@@ -103,7 +105,8 @@
           "id": "withdraw",
           "name": "慢慢退回海滩",
           "text": "不碰他们的东西，也不让他们靠近船。",
-          "effects": { "mood_all": -0.02, "fatigue_all": 0.05, "score": { "crew": 1, "knowledge": 1 } },
+          "effects": { "mood_all": -0.02, "fatigue_all": 0.05, "culture": "leave_alone",
+            "score": { "crew": 1, "knowledge": 1 } },
           "journal": "部落接触：保持距离，退回海滩。"
         },
         {
@@ -111,6 +114,7 @@
           "name": "开火吓退他们",
           "text": "两支枪、一轮齐射。十六世纪最响的声音。",
           "effects": { "mood_all": -0.10, "tension": 0.12, "discipline": 0.06,
+            "culture": "fire",
             "score": { "history": -2, "crew": -1 }, "flag": "shot_at_locals",
             "use_item": { "powder": 1, "lead": 10 } },
           "journal": "部落接触：下令开火。"
@@ -120,6 +124,7 @@
           "name": "抓一个人当向导",
           "text": "他知道这一带的水和路。绑走他。",
           "effects": { "mood_all": -0.14, "tension": 0.16, "discipline": 0.10,
+            "culture": "kidnap",
             "score": { "voyage": 2, "knowledge": 1, "history": -3 }, "flag": "kidnapped_guide" },
           "journal": "部落接触：抓了一个当地人当向导。"
         }

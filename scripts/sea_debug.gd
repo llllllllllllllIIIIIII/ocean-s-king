@@ -408,23 +408,32 @@ func _draw() -> void:
 	if voyage.ashore:
 		# 登陆队：每人一个点（船上还没下来的画在船边，下来的在岸上排成队形）
 		var k := _marker_scale()
-		for e in voyage.party.entries:
-			var st: String = e["state"]
-			if st == "onboard":
-				continue
-			var at: Vector2 = (e["pos"] as Vector2) * PPM
-			var is_key: bool = e["key"]
-			var col := Color(0.98, 0.86, 0.45, 0.95) if is_key else Color(0.85, 0.88, 0.92, 0.95)
-			if is_key:
-				draw_circle(at, 7.0 * k, Color(0.08, 0.09, 0.12, 0.9))
-				draw_circle(at, 5.0 * k, col)
-			else:
-				draw_circle(at, 4.0 * k, col)
+		# 打着的时候不画队形：这些人由 `_draw_battle` 画（**同一批人**，画的是他们在战场上的位置）。
+		# 两边都画就会出现"队形里的人还在往前走、战场上另有一批人在打"—— 那正是要修掉的东西。
+		if voyage.battle == null or voyage.battle.over:
+			for e in voyage.party.entries:
+				var st: String = e["state"]
+				if st == "onboard":
+					continue
+				var at: Vector2 = (e["pos"] as Vector2) * PPM
+				var is_key: bool = e["key"]
+				var col := Color(0.98, 0.86, 0.45, 0.95) if is_key else Color(0.85, 0.88, 0.92, 0.95)
+				# 打完之后：倒下/阵亡的人不能再画成站着的样子（他们是玩家一直看着的那批点）
+				if st == "down":
+					col = Color(0.62, 0.55, 0.48, 0.9)
+				elif st == "dead":
+					col = Color(0.34, 0.32, 0.31, 0.85)
+				if is_key:
+					draw_circle(at, 7.0 * k, Color(0.08, 0.09, 0.12, 0.9))
+					draw_circle(at, 5.0 * k, col)
+				else:
+					draw_circle(at, 4.0 * k, col)
 		# 队长（船长本人）
 		var c := voyage.party.captain * PPM
 		draw_circle(c, 8.0 * k, Color(1.0, 0.85, 0.35))
 		draw_arc(c, 13.0 * k, 0, TAU, 20, Color(1.0, 0.9, 0.5, 0.6), 2.0 * k * 2.0)
 	_draw_battle()
+	_draw_locals()
 	# 航线：从船到目标点
 	if voyage.orders.has_target_point:
 		draw_dashed_line(voyage.ship.position_m() * PPM, voyage.orders.target_point * PPM,
@@ -521,13 +530,32 @@ func _draw_weather_tint() -> void:
 			draw_rect(Rect2(Vector2.ZERO, size_px), Color(0.6, 0.66, 0.7, 0.12), true)
 
 
+func _draw_locals() -> void:
+	"""岛上的当地人（M6 收尾）：他们**本来就站在村子里**，翻了脸会一路走过来。
+
+	战斗还没开始时也要画 —— 这正是"不是凭空刷出来"的可见证据：你能看着他们从村子那边
+	走过来。打起来之后就交给 `_draw_battle`（画的是同一批 Unit 对象）。
+	"""
+	if not voyage.ashore or (voyage.battle != null and not voyage.battle.over):
+		return
+	var k := _marker_scale()
+	for u in voyage.locals.units:
+		var at: Vector2 = (u.pos as Vector2) * PPM
+		var col := Color(0.95, 0.4, 0.35, 0.9)
+		if not u.alive():
+			col = Color(0.45, 0.3, 0.28, 0.7)
+		draw_circle(at, 4.2 * k, col)
+
+
 func _draw_battle() -> void:
 	"""陆战的表现（M6）：每个单位一个点 —— 船员金/蓝、当地人红，倒下的变灰。
 
 	硝烟起来的时候糊一层灰白：那是 visibility 掉下去的样子。
 	"""
 	var b := voyage.battle
-	if b == null or b.units.is_empty():
+	if b == null or b.units.is_empty() or b.over:
+		# 打完了就不画了：岸上那批点（`party`）接手 —— 位置在 _resolve_battle 里同步过，
+		# 所以画面从"战场"切回"队形"不会跳。
 		return
 	var k := _marker_scale()
 	for u in b.units:
@@ -1208,11 +1236,14 @@ func _run_shot_timeline() -> void:
 		80:
 			_capture("33_stream")
 		81:
-			# M6：上岸遇袭 —— 打完这一仗再回船（截图脚本里让当地人先动手）
+			# M6：上岸遇袭 —— 走**真实的那条路**：先把他们惹毛，再往村子走。
+			# （不直接调 begin_land_battle：那条路会绕过"当地人从村子里走过来"这一段，
+			#   而这一段正是这一期要让人看见的东西。）
 			if voyage.battle == null:
 				voyage.culture.react("green_cape", "fire", "截图脚本：敌对")
-				voyage.begin_land_battle(12)
-			_warp(13.0)                      # 两队还在拉开距离对射的时候截一张
+				voyage.move_party_to(voyage.sea.poi_pos("village"))
+			_warp_until_battle(220.0)        # 一直走到他们咬上来（这一段本身就是证据）
+			_warp(3.0)                       # 再打三秒：两队刚在临战距离拉开，齐射才开头
 		83:
 			_capture("46_land_battle")
 		84:
@@ -1318,6 +1349,22 @@ func _warp(seconds: float) -> void:
 	var steps := int(seconds / SIM_DT)
 	for _i in steps:
 		voyage.tick(SIM_DT)
+	_update_camera()
+	_update_hud()
+	queue_redraw()
+
+
+func _warp_until_battle(max_seconds: float) -> void:
+	"""一直走到"打起来那一刻"为止（截图时间线要的是这个瞬间，不是固定秒数）。
+
+	当地人从村子里走过来是个过程 —— 这一期最该让人看见的就是这个过程，
+	所以截图脚本也得走真实那条路（它会自己停）。
+	"""
+	var steps := int(max_seconds / SIM_DT)
+	for _i in steps:
+		voyage.tick(SIM_DT)
+		if voyage.battle != null:
+			break
 	_update_camera()
 	_update_hud()
 	queue_redraw()

@@ -248,18 +248,60 @@ func _test_village_encounter_is_wired() -> void:
 	_check(v.culture.will_fight("green_cape"),
 		"两枪之后他们翻脸（%s）" % v.culture.describe("green_cape"))
 
-	# 走进村子 → 他们先动手
+	# 走进村子 → 他们**走过来**动手（不是刷出来的）
 	v.move_party_to(v.sea.poi_pos("village"))
+	var prev := []
+	for u in v.locals.units:
+		prev.append(u.pos)
+	var max_step := 0.0
 	var guard := 0
-	while v.battle == null and guard < 2000:
+	while v.battle == null and guard < 4000:
 		v.tick(STEP)
 		guard += 1
-	_check(v.battle != null, "踏进村子就被围上来（第 %d 步）" % guard)
+		if v.battle == null:
+			for i in v.locals.units.size():
+				max_step = maxf(max_step, (v.locals.units[i].pos as Vector2).distance_to(prev[i]))
+				prev[i] = v.locals.units[i].pos
+	_check(v.battle != null, "他们会围上来（第 %d 步，约 %.0f 米/秒）" % [
+		guard, LocalGroup.SPEED])
 	if v.battle == null:
 		return
-	_check(v.battle.units.size() > 0, "场上真的有两队人（%d 个单位）" % v.battle.units.size())
+
+	# ① 他们是一步步走过来的：没有瞬移
+	_check(max_step <= LocalGroup.SPEED * STEP + 0.01,
+		"当地人是一步步走过来的（单步最大 %.3f 米 ≤ %.3f）" % [
+			max_step, LocalGroup.SPEED * STEP])
+	# ② 船员侧：就是岸上那批人，站在队形里他们自己那些点上（不是另排一队）
+	var crew := v.battle.crew_units()
+	var squad := v.ashore_squad()
+	_check(crew.size() == squad.size(),
+		"战斗里的船员就是岸上那批人（%d 个，队形里 %d 个）" % [crew.size(), squad.size()])
+	var misplaced := 0
+	for u in crew:
+		var best := INF
+		for e in v.party.entries:
+			best = minf(best, (u.pos as Vector2).distance_to(e["pos"]))
+		# 开打那一帧战斗已经走过一步（当地人 3.4 米/秒 × 0.5 秒 = 1.7 米），
+		# 所以容差要盖得住这一步，而不是要求"零位移"
+		if best > 2.5:
+			misplaced += 1
+	_check(misplaced == 0, "每个船员都站在队形里他自己那个点上（错位 %d 个）" % misplaced)
+	# ③ 当地人侧：就是岛上那批 Unit 对象本身（同一个对象，不是照位置复制一份）
+	var same := 0
+	for u in v.battle.locals_units():
+		if v.locals.units.has(u):
+			same += 1
+	_check(same == v.battle.locals_units().size(),
+		"战斗里的当地人就是岛上那批人本人（%d/%d 是同一个对象）" % [
+			same, v.battle.locals_units().size()])
 	_check(str(v.journal.decisions[-1]).find("先动手") >= 0 or
 		str(v.log_lines[-1]).find("围上来") >= 0, "航海日志/消息条记了这件事")
+	# ⑤ 打着的时候队伍不许继续列队前进（不然画面上一批人在走、另一批人在打）
+	var cap0 := v.party.captain
+	for _i in 20:
+		v.tick(STEP)
+	_check((v.party.captain as Vector2).distance_to(cap0) < 0.001,
+		"打起来之后队伍原地不动（只在打）")
 	# 只伏击一次：打完还站在村里也不会凭空再开一场
 	var first := v.battle
 	guard = 0
@@ -267,6 +309,24 @@ func _test_village_encounter_is_wired() -> void:
 		v.tick(STEP)
 		guard += 1
 	_check(v.battle.over, "这一仗打完了（%s）" % v.battle.outcome)
+	# ④ 打完之后岛上那批人**真的少了**（不是下一场又满血站回村里）
+	var hurt := 0
+	for u in v.locals.units:
+		if u.state == "down" or u.state == "dead":
+			hurt += 1
+	var reported := int(v.battle.stats()["locals_down"]) + int(v.battle.stats()["locals_dead"])
+	_check(hurt == reported, "岛上少的人数对得上（%d 个倒地/阵亡）" % hurt)
+	_check(hurt > 0, "打完是真的少了人（剩 %d 个能动的）" % v.locals.alive())
+	# ⑥ 打完把站位交还给队形：画面从"战场"切回"队形"时不跳
+	var drifted := 0
+	for i in v.battle.crew_units().size():
+		var idx: int = int(v._battle_entry_of.get(i, -1))
+		if idx < 0:
+			continue
+		if (v.party.entries[idx]["pos"] as Vector2).distance_to(
+				v.battle.crew_units()[i].pos) > 0.01:
+			drifted += 1
+	_check(drifted == 0, "打完队形从战场原地接手（%d 个对不上）" % drifted)
 	for _i in 60:
 		v.tick(STEP)
 	_check(v.battle == first, "打完不会被反复伏击（还是同一场）")
@@ -283,6 +343,32 @@ func _test_village_encounter_is_wired() -> void:
 	_check(w.battle == null, "中立时走到村子不会开打")
 	_check(w.culture.attitude("green_cape") > before,
 		"和平接触让态度涨一点（%+.2f → %+.2f）" % [before, w.culture.attitude("green_cape")])
+
+	# 卡片那条路（设计里的正门）：走到村子 → 「部落冲突」抉择卡 → 选"开火吓退他们"
+	# → 真的翻脸 → 他们（就在十几米外）立刻围上来。这条线以前也是断的：
+	# 卡片的选项只改心情/分数/旗标，**一点没碰 culture**，所以选完还是"中立"。
+	var c := _voyage()
+	c.ship.set_pose(c.sea.poi_pos("beach") + Vector2(-200.0, 0.0), 0.0)
+	c.orders.anchored = true
+	c.land(ids, 6)
+	c.move_party_to(c.sea.poi_pos("village"))
+	for _i in 400:
+		c.tick(STEP)
+	_check(c.fired.has("village"), "走到村子了（记下了 first contact）")
+	c.dilemmas.check(c)
+	_check(c.dilemmas.current() == "tribal_clash",
+		"摊开了「部落冲突」抉择卡（%s）" % c.dilemmas.current())
+	var st := c.culture.stance("green_cape")
+	var r := c.answer_dilemma("fire")
+	_check(bool(r.get("ok", false)), "选了「开火吓退他们」")
+	_check(c.culture.stance("green_cape") == Culture.HOSTILE,
+		"选完真的翻脸了（%s：%s → %s）" % [c.culture.describe("green_cape"), st,
+			c.culture.stance("green_cape")])
+	var gg := 0
+	while c.battle == null and gg < 200:
+		c.tick(STEP)
+		gg += 1
+	_check(c.battle != null, "他们就在十几米外，立刻就围上来（第 %d 步）" % gg)
 
 
 # ---------------------------------------------------------------- 7 存档
