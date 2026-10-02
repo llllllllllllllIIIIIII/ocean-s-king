@@ -97,8 +97,8 @@ func _test_data_selfcheck() -> void:
 			var raw = poi.get("pos", [])
 			if typeof(raw) == TYPE_ARRAY and (raw as Array).size() >= 2:
 				pos = Vector2(float(raw[0]), float(raw[1]))
-			if str(poi.get("id", "")) == "pacific_void":
-				continue                      # 这个地标故意在空旷的海上
+			if bool(poi.get("water", false)) or str(poi.get("id", "")) == "pacific_void":
+				continue                      # 这些地标故意在海面上（峡口 / 空旷的海）
 			if not s.world.is_land(pos):
 				off_land.append(str(poi.get("id", "?")))
 	_check(off_land.is_empty(), "地标都落在陆地上（%s）" % ", ".join(off_land))

@@ -1,0 +1,81 @@
+{
+  "_comment": "南美段的事件池（M12）：海峡里的狂风、岸上的火、圣胡利安的旧绞架、走到太平洋的第一眼。条件里的 `region` 读的是世界数据的分区图幅（M9 的 `regions`）—— 所以它们只会在这几片海里发生。",
+  "version": 1,
+  "pool": "external",
+  "events": [
+    {
+      "id": "strait_squall",
+      "name": "海峡里的狂风",
+      "priority": 3,
+      "requires": { "region": "strait", "days_min": 40 },
+      "effects": {
+        "weather": { "id": "squall", "hours": 6.0 },
+        "damage": { "mast": 0.06 },
+        "mood": -0.03,
+        "message": "风从峡口里灌出来，像有人在吹号角。桅杆响了一声 —— 那是木头在喊。"
+      },
+      "text": "海峡里的风是从陆地上砸下来的，不是吹过来的。",
+      "knowledge": {
+        "category": "weather",
+        "id": "strait_wind",
+        "title": "海峡的风",
+        "text": "这条水道的风从岸上垂直砸下来，风向表在峡里不作数。"
+      }
+    },
+    {
+      "id": "fires_of_tierra",
+      "name": "南岸的火",
+      "priority": 2,
+      "requires": { "region": "strait", "days_min": 40 },
+      "effects": {
+        "mood": 0.02,
+        "memory_add": { "saw_fires": 1 },
+        "message": "夜里南岸到处是火 —— 那不是我们点的。有人住在这个冷得不像话的地方。"
+      },
+      "text": "火地岛这个名字是这么来的。",
+      "knowledge": {
+        "category": "culture",
+        "id": "tierra_fires",
+        "title": "火地岛的火",
+        "text": "海峡南岸的岛上有人长期居住，夜里点着很多火堆。"
+      }
+    },
+    {
+      "id": "san_julian_gibbet",
+      "name": "旧绞架",
+      "priority": 2,
+      "requires": { "region": "strait", "days_min": 40 },
+      "effects": {
+        "tension": 0.05,
+        "mood": -0.02,
+        "memory_add": { "old_gibbet": 1 },
+        "message": "湾里的岩石上立着一副旧绞架。没人知道是谁立的 —— 但它提醒了所有人：在海上，船长的话就是法。"
+      },
+      "text": "远征队里有人想起了上一次有人被吊死是在哪。",
+      "knowledge": {
+        "category": "chart",
+        "id": "san_julian_bay",
+        "title": "圣胡利安湾",
+        "text": "巴塔哥尼亚海岸上一个能避风的湾，淡水够用。前人在这里留下过绞架。"
+      }
+    },
+    {
+      "id": "first_pacific_look",
+      "name": "第一眼太平洋",
+      "priority": 3,
+      "requires": { "region": "pacific", "days_min": 45 },
+      "effects": {
+        "mood": 0.05,
+        "memory_add": { "saw_pacific": 1 },
+        "message": "峡口西边是一片没有边的水。风是软的，浪是长的 —— 没有人知道它有多宽。"
+      },
+      "text": "从峡口出来那一刻，才算真的离开了大西洋。",
+      "knowledge": {
+        "category": "chart",
+        "id": "pacific_entry",
+        "title": "通往另一片海",
+        "text": "穿过这条海峡之后，西边是一整片没有尽头的海。"
+      }
+    }
+  ]
+}

@@ -167,9 +167,11 @@ def wrap_delta(w, a, b):
 def cmd_route(w):
     routes = json.load(open(os.path.join(WORLD, "routes.json"), encoding="utf-8"))["routes"]
     total = 0
+    total_reef = 0
     for r in routes:
         pts = route_points(w, r)
         hits = []
+        reef_hits = []
         n = 0
         for i in range(len(pts) - 1):
             dx, dy = wrap_delta(w, pts[i], pts[i + 1])
@@ -183,15 +185,36 @@ def cmd_route(w):
                 n += 1
                 if is_dry_land(w, p):
                     hits.append(p)
+                elif reef_hit(w, p):
+                    reef_hits.append(p)
         total += len(hits)
+        total_reef += len(reef_hits)
         flag = "OK " if not hits else "BAD"
+        if reef_hits:
+            flag = "REEF"
         extra = ""
         if hits:
             nd, nid = nearest_land(w, hits[0])
             extra = "  首处 (%.0f,%.0f) 最近地=%s %.0fm" % (hits[0][0], hits[0][1], nid, nd)
-        print("%s %-16s 采样 %5d  踩干地 %4d%s" % (flag, r["id"], n, len(hits), extra))
+        if reef_hits:
+            nd, nid = nearest_land(w, reef_hits[0])
+            extra += "  踩礁 (%.0f,%.0f)" % (reef_hits[0][0], reef_hits[0][1])
+        print("%s %-16s 采样 %5d  踩干地 %4d  踩礁 %3d%s"
+              % (flag, r["id"], n, len(hits), len(reef_hits), extra))
     print("--- 全部航段踩干地合计：%d" % total)
-    return 1 if total else 0
+    print("--- 全部航段踩礁合计：%d" % total_reef)
+    return 1 if (total or total_reef) else 0
+
+
+def reef_hit(w, p):
+    """这一点是不是压在礁上（礁在游戏里不挡船，但会撞出损伤 —— 航线也该躲开）。"""
+    for f in w["features"]:
+        if f.get("kind") != "reef":
+            continue
+        shape = shape_of(f, w)
+        if surf_dist(shape, p) <= 0.0:
+            return True
+    return False
 
 
 def _port_pos_any(w, pid):

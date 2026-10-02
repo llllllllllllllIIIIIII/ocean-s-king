@@ -60,6 +60,7 @@ var _act_card_timer := 0.0         # 剧情卡的剩余播放时间（真实秒�
 var _act_card_seconds := 9.0       # 剧情卡放多久（截图模式下压到 2 秒，免得挡住一组图）
 var _picker: LandingPicker
 var _shot_mode := false
+var _strait_only := false            # M12：只跑海峡那两张的专用快路径
 var _frame := 0
 var _shot_dir := "res://.shots"
 var _wind_gizmo: WindGizmo
@@ -107,6 +108,7 @@ func _pursuit_line(r: Dictionary) -> String:
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
 	_shot_mode = args.has("shots")
+	_strait_only = _shot_mode and args.has("strait")
 	voyage = Voyage.new()
 	voyage.setup(_region_from_args(args))
 	# 海图层要先于船加进来：Node2D 的子节点按加入顺序画，
@@ -287,7 +289,10 @@ func _begin_voyage(show_title: bool) -> void:
 
 func _process(delta: float) -> void:
 	if _shot_mode:
-		_run_shot_timeline()
+		if _strait_only:
+			_run_strait_shots()
+		else:
+			_run_shot_timeline()
 		return
 	if _session != null:
 		_session.poll(delta)
@@ -1389,11 +1394,16 @@ func _run_shot_timeline() -> void:
 		106:
 			# M5：船员面板的右半边 —— 规矩、三伙人、以及"他为什么心情差"
 			# （先把桌上已经摊着的抉择答掉，不然它会盖在面板上）
-			while voyage.dilemmas.current() != "":
+			# ⚠️ **有界循环 + 推进时间**：全球图上补给撑不到第一个港，缺粮的抉择会一张接一张，
+			#    而"冷却"要靠时间走 —— 不在循环里推进时间，同一张卡会立刻再来（M12 真的挂死过一次）。
+			var guard_a := 0
+			while voyage.dilemmas.current() != "" and guard_a < 20:
+				guard_a += 1
 				var opts: Array = voyage.dilemmas.take_current().get("options", [])
 				if opts.is_empty():
 					break
 				voyage.answer_dilemma(str((opts[0] as Dictionary).get("id", "")))
+				voyage.tick(SIM_DT)
 			_show_crew_panel = true
 			_crew_panel.visible = true
 			_crew_panel.focus = "rules"
@@ -1414,11 +1424,14 @@ func _run_shot_timeline() -> void:
 		110:
 			# M7：知识与日志页 + 风暴的画面
 			_dilemma_card.visible = false
-			while voyage.dilemmas.current() != "":
+			var guard_b := 0
+			while voyage.dilemmas.current() != "" and guard_b < 20:
+				guard_b += 1
 				var opts2: Array = voyage.dilemmas.take_current().get("options", [])
 				if opts2.is_empty():
 					break
 				voyage.answer_dilemma(str((opts2[0] as Dictionary).get("id", "")))
+				voyage.tick(SIM_DT)
 			voyage.knowledge.note("current", "storm_seen", "风暴带", "桅杆在响的那两天。", voyage.t)
 			_knowledge_panel.visible = true
 		111:
@@ -1457,6 +1470,34 @@ func _run_shot_timeline() -> void:
 				print("[shot] 海战中（链弹）：%s" % voyage.naval_report())
 				_capture("64_naval_chain_shot")
 
+			get_tree().quit(0)
+
+
+func _run_strait_shots() -> void:
+	"""M12 的**专用快路径**：只跑海峡那两张。
+
+	为什么不并进主时间线：全球图那一趟慢得多（200 块雾要画），主时间线有 120 多帧，
+	等它跑完要四分钟；而"拍海峡"这件事只关心两帧。用 `-- shots strait region=global`。
+	"""
+	_frame += 1
+	_update_camera()
+	_update_hud()
+	queue_redraw()
+	match _frame:
+		1:
+			voyage.encounters_enabled = false
+			voyage.ship.set_pose(voyage.sea.lonlat_to_m(-71.0, -53.0), 250.0)
+			voyage.orders.anchored = false
+			voyage.orders.set_sail_level(ShipOrders.SailLevel.REEF)
+			_zoom = 9.0
+		2:
+			_capture("65_strait_narrow")
+		3:
+			voyage.ship.set_pose(voyage.sea.lonlat_to_m(-68.9, -52.4), 240.0)
+			_zoom = 6.0
+		4:
+			_capture("66_strait_east_mouth")
+		5:
 			get_tree().quit(0)
 
 

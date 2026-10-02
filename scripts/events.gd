@@ -13,7 +13,8 @@ extends RefCounted
 #   3. 判定用 (事件时刻, 池子) 的哈希取候选里的第几个 —— 无随机数，可复现。
 
 const DIR := "res://data/defs/events"
-const FILES := ["chain.json", "external.json", "ship.json", "expedition.json"]
+const FILES := ["chain.json", "external.json", "ship.json", "expedition.json",
+	"south_america.json"]      # M12：按海域发生的事件（海峡/太平洋那几条）
 const CHECK_STEP := 600.0            # 每 600 个游戏秒看一次（= 0.5 个航程小时）
 const COOLDOWN := 900.0              # 两次事件之间至少隔这么久（游戏秒）
 
@@ -143,6 +144,13 @@ func unmet(e: Dictionary, v: Voyage) -> String:
 		for k in (r["memory_min"] as Dictionary).keys():
 			if int(v.memory.get(str(k), 0)) < int(r["memory_min"][k]):
 				return "世界还没记住这件事：" + str(k)
+	# M12：**按海域**发生的事件（"海峡里的狂风""太平洋上的第一眼"这种）。
+	# 用的是世界数据里的分区图幅（M9 加的 `regions`），不是另写一张坐标表。
+	if r.has("region"):
+		var want := str(r["region"])
+		var here := v.sea.world.region_of_tile(v.sea.tile_of(v.ship.position_m()))
+		if str(here.get("id", "")) != want:
+			return "不在这片海域（要 %s）" % want
 	return ""
 
 
