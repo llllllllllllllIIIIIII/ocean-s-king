@@ -30,6 +30,7 @@ func _initialize() -> void:
 	_test_pacific_content()
 	_test_aground_escape()
 	_test_sea_repair()
+	_test_fresh_food()
 	_finish()
 
 
@@ -412,6 +413,34 @@ func _test_aground_escape() -> void:
 
 
 # ---------------------------------------------------------------- 收尾
+
+func _test_fresh_food() -> void:
+	"""M13 验收第 3 条的后半：**带上新鲜食物 → 明显缓解**，而它会坏。"""
+	_check(Climate.fresh_keep_days() > 0.0 and Climate.fresh_per_day() > 0.0,
+		"新鲜食物的天数与定量来自真源（%.0f 天 / 一人一天 %.2f 份）"
+		% [Climate.fresh_keep_days(), Climate.fresh_per_day()])
+	# 带上新鲜食物：四十天之内坏血病计时压着不走
+	var v := _v()
+	v.cargo.add("fresh_food", 200)
+	for i in 10:
+		v.days_since_fresh = 0.0
+		v._consume_supplies(60.0)
+	_check(is_equal_approx(v.days_since_fresh, 0.0), "有新鲜食物时坏血病计时压着（%.1f 天）"
+		% v.days_since_fresh)
+	_check(v.cargo.qty("fresh_food") < 200, "新鲜食物在吃（%d 份）" % v.cargo.qty("fresh_food"))
+	# 没有新鲜食物：计时照旧往上走
+	var v2 := _v()
+	v2.days_since_fresh = 0.0
+	for i in 200:                      # 每次 60 游戏秒 ≈ 2 个航程小时
+		v2._consume_supplies(60.0)
+	_check(v2.days_since_fresh > 10.0, "没带新鲜食物时计时照样走（%.1f 天）" % v2.days_since_fresh)
+	# 放久了会烂：超过 fresh_keep_days 之后剩下的全倒掉
+	var v3 := _v()
+	v3.cargo.add("fresh_food", 100)
+	v3.days_since_fresh = Climate.fresh_keep_days() + 1.0
+	v3._consume_supplies(60.0)
+	_check(v3.cargo.qty("fresh_food") == 0, "放太久就烂了（还剩 %d 份）" % v3.cargo.qty("fresh_food"))
+
 
 func _test_sea_repair() -> void:
 	"""M15：**海上自修**（M13 卡片里"长期磨损与修补"的另一半）——

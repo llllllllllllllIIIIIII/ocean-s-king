@@ -140,6 +140,16 @@ static func attrition_grace_days() -> float:
 	return float((defs().get("attrition", {}) as Dictionary).get("grace_days", 5.0))
 
 
+static func fresh_keep_days() -> float:
+	"""新鲜食物在海上放得住多少天（过了就全烂）。"""
+	return float((defs().get("scurvy", {}) as Dictionary).get("fresh_keep_days", 40.0))
+
+
+static func fresh_per_day() -> float:
+	"""**一个人**一天吃多少份新鲜食物（压住坏血病）。"""
+	return float((defs().get("scurvy", {}) as Dictionary).get("fresh_per_crew_per_day", 0.25))
+
+
 static func death_health() -> float:
 	"""健康掉到这个数以下就有人死（坏血病与断粮共用这个门槛）。"""
 	var a: Dictionary = defs().get("attrition", {})

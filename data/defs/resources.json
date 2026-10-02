@@ -22,6 +22,8 @@
       "base_price": 3, "text": "火绳枪的点火绳，一直在烧。" },
     { "id": "medicine", "name": "药品", "unit": "箱", "kg": 8, "kind": "consumable",
       "base_price": 14, "text": "外科医生的箱子。" },
+    { "id": "fresh_food", "name": "新鲜食物", "unit": "份", "kg": 2, "kind": "consumable",
+      "base_price": 4, "text": "水果、活的家禽、岸上的菜。治坏血病，但**放不住** —— 出海四十天就烂。" },
     { "id": "ivory", "name": "象牙", "unit": "根", "kg": 12, "kind": "goods",
       "base_price": 30, "text": "非洲货。在欧洲值三倍的价钱。" },
     { "id": "brazilwood", "name": "巴西红木", "unit": "捆", "kg": 80, "kind": "goods",

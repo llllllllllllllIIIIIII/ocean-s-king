@@ -41,7 +41,10 @@
     "steep_days": 60.0,
     "health_per_day_late": 0.011,
     "mood_per_day": 0.0025,
-    "death_health": 0.02
+    "death_health": 0.02,
+    "_fresh": "**带上新鲜食物**是另一条路（M13 验收第 3 条的后半）：船上有新鲜东西而且还没坏，坏血病的计时就压着不走。一个人一天吃 fresh_per_crew_per_day 份；离港超过 fresh_keep_days 天，剩下的全烂掉 —— 所以不能一次带一年的。",
+    "fresh_per_crew_per_day": 0.25,
+    "fresh_keep_days": 40.0
   },
   "attrition": {
     "_comment": "断粮断水的长期后果：先有宽限期，过了宽限期健康按天掉；健康见底就有人死。",

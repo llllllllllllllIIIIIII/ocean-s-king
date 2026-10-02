@@ -817,6 +817,18 @@ func _consume_supplies(delta: float) -> void:
 		_say("在港口补上了水和食物，船上又有了底气。", true)
 	# --- M13：坏血病 / 断粮断水 / 船体老化（都按**航程日**算）---
 	days_since_fresh += days
+	# **带上新鲜食物**（M13 验收第 3 条的后半）：船上有、而且还没坏，坏血病的计时就压着不走。
+	# 新鲜东西会烂：离港超过 `fresh_keep_days` 天，剩下的全倒掉 —— 所以不能一次带一年的。
+	if cargo.qty("fresh_food") > 0:
+		if days_since_fresh >= Climate.fresh_keep_days():
+			var rotten := cargo.qty("fresh_food")
+			cargo.remove("fresh_food", rotten)
+			_say("舱里的新鲜东西全烂了（%d 份）—— 从今天起又只有咸肉和饼干。" % rotten, true)
+			journal.decide("新鲜食物在海上放坏了（%d 份）。" % rotten)
+		else:
+			var need_fresh := Climate.fresh_per_day() * float(crew_on_board()) * days
+			if need_fresh > 0.0 and cargo.spend_fraction("fresh_food", need_fresh):
+				days_since_fresh = 0.0
 	var short_food := int(r["want_food"]) - int(r["got_food"])
 	var short_water := int(r["want_water"]) - int(r["got_water"])
 	days_short = days_short + days if (short_food > 0 or short_water > 0) else 0.0
@@ -1439,6 +1451,21 @@ func dock() -> String:
 	docked_port = str(p.get("id", ""))
 	# M13：靠港就能弄到新鲜东西（水果、活的家禽、岸上的菜）—— 坏血病的计时在这里清零
 	days_since_fresh = 0.0
+	# M15：靠港不只是"补水补食"——新鲜东西与岸上的休息让人的身体真的缓过来。
+	# 少了这一条，太平洋那一段掉下去的健康**永远回不来**：下一段一开就是
+	# 一个接一个地死人（长跑里 28 个人在 29 个航程日里死光）。
+	# 有供给服务的港口才补（补给港/商港都有，纯锚地没有）。
+	if ports.has_service(docked_port, "supply"):
+		var healed := 0
+		for m in roster.members:
+			if m.dead:
+				continue
+			if m.health < 0.95:
+				healed += 1
+			m.health = clampf(m.health + 0.25, 0.05, 1.0)
+			m.mood = clampf(m.mood + 0.10, 0.0, 1.0)
+		if healed > 0:
+			_say("靠港歇了几天，新鲜东西下肚 —— %d 个人的气色回来了。" % healed, true)
 	# M13：港里有水泵与救火的人手 —— 一进港，火与水都了结（不然可以在港里看着船烧掉）
 	if ship.hazard_any():
 		_say("靠港之后，码头上的人帮着把火扑灭、把水抽干。", true)

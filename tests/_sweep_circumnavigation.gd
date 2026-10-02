@@ -66,6 +66,7 @@ func _initialize() -> void:
 	var serviced := {}                 # 靠过哪些港（每个港只停一次）
 	var stops := 0
 	var island_stops := 0
+	var used_islands := {}             # 上过哪些岛（每座岛只补一次）
 	while t < TOTAL:
 		v.tick(DT)
 		t += DT
@@ -98,6 +99,8 @@ func _initialize() -> void:
 				# 舱位装不下就装到满（载重那本账仍然是船的数据说了算）。
 				v.cargo.add("water", mini(240, v.cargo.how_many_fit("water")))
 				v.cargo.add("food", mini(4800, v.cargo.how_many_fit("food")))
+				# 新鲜食物：压住坏血病的那一条（M13 验收第 3 条的后半），但只放得住四十天
+				v.cargo.add("fresh_food", mini(400, v.cargo.how_many_fit("fresh_food")))
 				v.cargo.add("wood", mini(20, v.cargo.how_many_fit("wood")))
 				v.cargo.add("canvas", mini(10, v.cargo.how_many_fit("canvas")))
 				v.cargo.money = maxi(v.cargo.money, 600)
@@ -110,23 +113,33 @@ func _initialize() -> void:
 			v.start_route_follow()
 			break
 		# **上岛补给**（M13 的规则：岛链就是太平洋上的补给点）：
-		# 新鲜东西快断、又刚好挨着岸的时候，上去补水补食再回来接着走。
-		if v.days_since_fresh > 25.0 and not v.ashore and v.can_land():
-			var before_water := v.cargo.qty("water")
-			v.orders.anchored = true
-			v.land([], 4)
-			if v.ashore:
-				island_stops += 1
-				_say("  · t=%.0f 上岛补水（淡水 %d → %d 桶，坏血病计时清零）"
-					% [t, before_water, v.cargo.qty("water")])
-				v.return_to_ship()
-				var guard := 0
-				while v.ashore and guard < 400:
-					v.tick(DT)
-					t += DT
-					guard += 1
-			v.orders.anchored = false
-			v.start_route_follow()
+		# 新鲜东西快断的时候**主动朝最近的岛开**（真船长会这么做），到了就上去补水补食。
+		if v.days_since_fresh > 30.0 and not v.ashore:
+			if v.can_land():
+				var before_water := v.cargo.qty("water")
+				var land_id := str(v.landing_land.get("id", "")) # 上一次的，占位（下面用真正的）
+				v.orders.anchored = true
+				v.land([], 4)
+				if v.ashore:
+					island_stops += 1
+					land_id = str(v.landing_land.get("id", ""))
+					used_islands[land_id] = true
+					_say("  · t=%.0f 上岛补水（%s，淡水 %d → %d 桶）"
+						% [t, land_id, before_water, v.cargo.qty("water")])
+					v.return_to_ship()
+					var guard := 0
+					while v.ashore and guard < 400:
+						v.tick(DT)
+						t += DT
+						guard += 1
+				v.orders.anchored = false
+				v.start_route_follow()
+			elif v.following_route:
+				var off := _island_offshore(v, used_islands)
+				if off != Vector2.ZERO:
+					v.stop_route_follow()
+					v.orders.anchored = false
+					v.orders.set_target_point(off)
 		var rid := str(v.sea.world.region_of_tile(v.sea.tile_of(p)).get("id", ""))
 		if rid != "":
 			regions[rid] = true
@@ -181,3 +194,26 @@ func _alive(v: Voyage) -> int:
 		if not m.dead:
 			n += 1
 	return n
+
+
+func _island_offshore(v: Voyage, used: Dictionary) -> Vector2:
+	"""最近的一座**还没上去过**的岛的"离岸一点"（用它当目标点开过去）。
+
+	只看 `role == "island"` 的陆地 —— 大陆海岸线不在此列（`extent` 太大，目标点会飞到海里）。
+	"""
+	var best := Vector2.ZERO
+	var best_d := INF
+	var pos := v.ship.position_m()
+	for land in v.sea.lands():
+		var id := str(land.get("id", ""))
+		if id == "" or used.has(id) or str(land.get("role", "")) != "island":
+			continue
+		var c := Geom2D.centroid(land["shape"])
+		var d := v.sea.dist(c, pos)
+		if d > 40000.0 or d >= best_d:
+			continue
+		var dir := v.sea.delta(c, pos).normalized()          # 从岛指向船
+		var off := v.sea.wrap_pos(c + dir * (Geom2D.extent(land["shape"]) + 320.0))
+		best = off
+		best_d = d
+	return best
