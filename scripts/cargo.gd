@@ -261,6 +261,34 @@ func can_repair(part: String, amount: float) -> Dictionary:
 	return {"ok": lack.is_empty(), "need": need, "lack": lack}
 
 
+func can_pay(cost: Dictionary) -> Dictionary:
+	"""通用的"付得起吗"：`ducats` 走 `money`，其余走货舱。
+
+	修船、谈判、买路钱……凡是"一份账单"都用这一个入口 ——
+	免得每处各写一遍，然后其中一处忘了金币不是货。
+	"""
+	var lack := PackedStringArray()
+	for k in cost.keys():
+		if str(k) == "ducats":
+			if float(money) < float(cost[k]):
+				lack.append("金币")
+		elif qty(str(k)) < int(ceil(float(cost[k]))):
+			lack.append(item_name(str(k)))
+	return {"ok": lack.is_empty(), "lack": lack}
+
+
+func pay(cost: Dictionary) -> bool:
+	"""付一份账单（付不起就一点不扣）。"""
+	if not bool(can_pay(cost)["ok"]):
+		return false
+	for k in cost.keys():
+		if str(k) == "ducats":
+			money -= int(round(float(cost[k])))
+		else:
+			remove(str(k), int(ceil(float(cost[k]))))
+	return true
+
+
 func pay_repair(part: String, amount: float) -> bool:
 	var c := can_repair(part, amount)
 	if not bool(c["ok"]):

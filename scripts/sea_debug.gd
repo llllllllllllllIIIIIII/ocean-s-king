@@ -95,6 +95,15 @@ func _region_from_args(args: PackedStringArray) -> String:
 	return Sea.ATLANTIC_PATH
 
 
+func _pursuit_line(r: Dictionary) -> String:
+	"""追捕手段的回报转成人话（M11）。"""
+	if not bool(r.get("ok", false)):
+		return str(r.get("reason", "没用"))
+	if bool(r.get("battle", false)):
+		return "动手 —— 交给海战（G 开火 / H 等齐射 / J 接舷 / U 拉开）。"
+	return "%s（现在是「%s」）" % [str(r.get("text", "")), str(r.get("name", ""))]
+
+
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
 	_shot_mode = args.has("shots")
@@ -968,6 +977,15 @@ func _key(k: InputEventKey) -> void:
 				var r: Dictionary = voyage.begin_naval_battle()
 				voyage.say("（海战）" + ("开始了。" if bool(r.get("ok", false))
 					else str(r.get("reason", ""))), true)
+		KEY_Z:
+			# M11：对付追捕 —— 改线（不花钱）
+			voyage.say("（追捕）" + _pursuit_line(voyage.pursuit_action("dodge")), true)
+		KEY_O:
+			# M11：伪装（要动帆布）
+			voyage.say("（追捕）" + _pursuit_line(voyage.pursuit_action("disguise")), true)
+		KEY_M:
+			# M11：谈判（要花钱）
+			voyage.say("（追捕）" + _pursuit_line(voyage.pursuit_action("negotiate")), true)
 		KEY_K:
 			# M7：知识与日志页
 			_knowledge_panel.visible = not _knowledge_panel.visible

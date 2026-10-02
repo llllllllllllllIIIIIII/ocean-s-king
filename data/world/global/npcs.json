@@ -1,0 +1,30 @@
+{
+  "_comment": "大西洋上别的船（M11）：两条海盗、一条商船、一条同路的船。规则（遭遇距离、冷却）在 `data/defs/npcs.json`；巡逻线用**世界大小的比例**写。",
+  "version": 1,
+  "ships": [
+    {
+      "id": "pirate_atlantic", "name": "一条没有旗的船", "kind": "pirate", "faction": "pirates",
+      "speed_ms": 2.6, "crew": 30,
+      "patrol": { "a": [0.62, 0.34], "b": [0.24, 0.72] },
+      "text": "帆是补过的，甲板上的人多得不像商船。"
+    },
+    {
+      "id": "pirate_atlantic_2", "name": "一条挂着假旗的船", "kind": "pirate", "faction": "pirates",
+      "speed_ms": 2.4, "crew": 26,
+      "patrol": { "a": [0.78, 0.55], "b": [0.45, 0.18] },
+      "text": "它一直跟着你，保持着刚好在射程外的那个距离。"
+    },
+    {
+      "id": "merchant_atlantic", "name": "一条商船", "kind": "merchant", "faction": "merchants",
+      "speed_ms": 1.9, "crew": 18,
+      "patrol": { "a": [0.35, 0.62], "b": [0.58, 0.78] },
+      "text": "吃水很深，甲板上堆着桶。船尾的人朝你挥了挥手。"
+    },
+    {
+      "id": "sailor_atlantic", "name": "一条同路的船", "kind": "sailor", "faction": "sailors",
+      "speed_ms": 2.1, "crew": 22,
+      "patrol": { "a": [0.42, 0.28], "b": [0.72, 0.44] },
+      "text": "挂的是你不认识的旗，走的是同一条航线。"
+    }
+  ]
+}

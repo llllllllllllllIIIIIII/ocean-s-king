@@ -213,6 +213,12 @@ func _test_player_sails_to_brazil() -> void:
 	这条断言就是那个修法的护栏：谁把航点删了、或者把风向调回去，这里会当场变红。
 	"""
 	var v := _v()
+	# ⚠️ **M11 起这里要先把"别的船与追捕"关掉**：这一条护栏盯的是**航线与风**
+	#    （见上面的注释：航点被删、风向被调回去，这里就该变红）。
+	#    海盗与葡萄牙人都是 M11 的另一套内容 —— 半路被截击、船被打慢之后，
+	#    这条断言会因为"航速变了"而不是"航线坏了"变红，那就失去了它盯的东西。
+	#    被截击与追捕在 `test_factions`、海战在 `test_naval` 里各有一组断言。
+	v.encounters_enabled = false
 	v.start_route_follow()
 	var goal := _goal()
 	var dt := 0.5

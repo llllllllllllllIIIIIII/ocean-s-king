@@ -65,6 +65,11 @@ static func world_projection(v: Voyage) -> Dictionary:
 		"reef_hit": v.reef_hit,
 		"story": v.story.capture_state(),
 		"journal": v.journal.capture_state(),
+		# M11：势力态度与王室命令、葡萄牙追捕的环、别的船 —— 都是"世界对我们做了什么"，
+		# 只由房主推进（docs/22 第 4.2 节），客户端只读覆盖。
+		"factions": v.factions.capture_state(),
+		"pursuit": v.pursuit.capture_state(),
+		"npcs": v.npcs.capture_state(),
 	}
 
 
@@ -83,5 +88,8 @@ static func apply_world_projection(v: Voyage, d: Dictionary) -> void:
 	v.reef_hit = bool(d.get("reef_hit", false))
 	v.story.apply_state(d.get("story", {}))
 	v.journal.apply_state(d.get("journal", {}))
+	v.factions.apply_state(d.get("factions", {}))
+	v.pursuit.apply_state(d.get("pursuit", {}))
+	v.npcs.apply_state(d.get("npcs", {}))
 	for raw in d.get("fleet", []):
 		v.fleet.receive_summary(raw)

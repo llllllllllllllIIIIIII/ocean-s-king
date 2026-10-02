@@ -145,6 +145,9 @@ func _write_report(status: String) -> void:
 		# M8 收尾：结局旗标也要对账 —— "拿到船队级结算页"这句话对**每个玩家**都该成立
 		"ending_ready": voyage.story.ending_ready if voyage != null else false,
 		"decisions": voyage.journal.decisions.duplicate() if voyage != null else [],
+		# M11：势力态度与追捕环（房主权威）—— 客户端手里拿到的应该是房主推过来的那一份
+		"factions": voyage.factions.attitude.duplicate() if voyage != null else {},
+		"pursuit_ring": voyage.pursuit.ring if voyage != null else -1,
 		"recv": _recv,
 	}
 	var f := FileAccess.open(_out, FileAccess.WRITE)

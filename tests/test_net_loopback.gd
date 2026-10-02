@@ -30,6 +30,7 @@ var _real := 0.0
 var _pids: Array[int] = []
 var _report_path := "user://net_client_report.json"
 var _report2_path := "user://net_client_report_b.json"
+var _m11_pushed := false           # M11：房主只推一次势力/追捕，用来验它铺到了客户端
 var _started_at := 0
 var _snapshot := {}
 var _phase := "run"
@@ -120,6 +121,14 @@ func _process(delta: float) -> bool:
 	if _phase == "mid" and voyage.t >= ENDING_AT and not voyage.story.ending_ready:
 		voyage.story.ending_ready = true
 		print("[host] t=%.1f 房主这边宣布结局（等价于全队抵达）" % voyage.t)
+	# M11：**势力态度与追捕环由房主推进** —— 房主这边改一次，
+	# 客户端手里的世界状态必须跟着变（它们都在 WorldState 里，docs/22 第 4.2 节）。
+	if _phase == "mid" and voyage.t >= MID_JOIN_AT + 60.0 and not _m11_pushed:
+		_m11_pushed = true
+		voyage.factions.react_all("trade", 1)
+		voyage.pursuit.tick(2.5, true)
+		print("[host] t=%.1f 房主推进势力与追捕（态度/环 = %.2f / %d）"
+			% [voyage.t, voyage.factions.value("castile"), voyage.pursuit.ring])
 	# 到了 10 分钟：给两边各拍一张快照，然后等客户端的报告
 	if _phase == "mid" and voyage.t >= GAME_SECONDS:
 		_phase = "wait"
@@ -167,6 +176,9 @@ func _snapshot_of(v: Voyage) -> Dictionary:
 		"story_head": v.story.head,
 		"ending_ready": v.story.ending_ready,
 		"local_id": v.fleet.local_id,
+		# M11：势力态度与追捕环（房主权威）—— 客户端手里的值必须与房主一致
+		"factions": v.factions.attitude.duplicate(),
+		"pursuit_ring": v.pursuit.ring,
 		"mine": {"pos": [v.ship.position_m().x, v.ship.position_m().y],
 			"hull_pct": 1.0 - v.ship.damage_of("hull")},
 	}
@@ -243,6 +255,13 @@ func _compare() -> void:
 			Array(c1.get("fired", [])).size(), Array(_snapshot["fired"]).size()])
 	_check(int(c1.get("story_head", -1)) == int(_snapshot["story_head"]),
 		"演到同一幕（第 %d 幕）" % (int(_snapshot["story_head"]) + 1))
+	# M11：势力态度与追捕环由房主推进 —— 两个客户端手里的值必须与房主一致
+	_check(str(c1.get("factions", {})) == str(_snapshot["factions"]),
+		"客户端拿到同一份势力态度（%d 家）" % (c1.get("factions", {}) as Dictionary).size())
+	_check(int(c1.get("pursuit_ring", -1)) == int(_snapshot["pursuit_ring"]),
+		"客户端拿到同一个追捕环（第 %d 环）" % int(_snapshot["pursuit_ring"]))
+	_check(str(c2.get("factions", {})) == str(_snapshot["factions"]),
+		"第二个客户端也是同一份势力态度")
 
 	# ⑤ 对账那一刻的四条船：2 个人在开（房主 + 客户端），2 条是 AI
 	#    （用"客户端还没走之前"的分布：它们到点就退出，晚一帧看就只剩 AI 了）

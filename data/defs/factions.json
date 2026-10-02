@@ -1,0 +1,107 @@
+{
+  "_comment": "势力 · 外交 · 王室命令 · 葡萄牙追捕的真源（M11）。与 rules.json / weapons.json 同等地位：态度、反应、命令、追捕的节奏都在这一份里，GDScript 只读它。",
+  "_attitude": "态度值 0..1（0 = 死敌、1 = 盟友）。三档由 bands 决定 —— 阈值只有这一份，界面与行为都读它。",
+  "version": 1,
+  "attitude_bands": { "hostile_max": 0.35, "friendly_min": 0.65, "start": 0.5 },
+  "_reactions": "玩家做的事 → 各势力态度怎么变。键是 WorldState.memory 里记的那些行为名（trade / kill / fire / trespass / break_faith / deliver / spy / rescue）。",
+  "factions": [
+    {
+      "id": "castile",
+      "name": "卡斯蒂利亚王室",
+      "kind": "patron",
+      "attitude": 0.62,
+      "text": "出钱的人。他们要看的是账：香料、海图、以及你有没有听话。",
+      "react": { "trade": 0.01, "deliver": 0.06, "rescue": 0.02, "break_faith": -0.12, "kill": -0.02, "trespass": -0.02 }
+    },
+    {
+      "id": "portugal",
+      "name": "葡萄牙",
+      "kind": "rival",
+      "attitude": 0.42,
+      "text": "先到东方的人。1494 年那条线把世界分成两半，他们觉得东边那一半是自己的。",
+      "react": { "trade": 0.0, "trespass": -0.06, "fire": -0.08, "kill": -0.12, "spy": -0.05, "deliver": -0.02 }
+    },
+    {
+      "id": "locals",
+      "name": "当地文明",
+      "kind": "peoples",
+      "_note": "当地文明**不是一个势力**：每一个群体自己一条记录（`Culture.groups`，键就是群体 id）。这里的数只是「没打过交道的默认值」，以及把各群体汇总成「当地人对我们的总体印象」时用的口径。",
+      "attitude": 0.5,
+      "text": "岸上的人。有的愿意换东西，有的只想让你走。",
+      "react": { "trade": 0.05, "gift": 0.1, "kill": -0.25, "fire": -0.2, "kidnap": -0.4, "trespass": -0.08, "leave_alone": 0.04 }
+    },
+    {
+      "id": "merchants",
+      "name": "商人",
+      "kind": "neutral",
+      "attitude": 0.55,
+      "text": "哪里有钱赚就去哪里。对他们来说，你是买家、卖家，或者货。",
+      "react": { "trade": 0.04, "fire": -0.15, "kill": -0.25, "break_faith": -0.15, "deliver": 0.02 }
+    },
+    {
+      "id": "pirates",
+      "name": "海盗",
+      "kind": "hostile",
+      "attitude": 0.22,
+      "text": "他们不看旗，只看你的舷侧有几门炮。",
+      "react": { "trade": 0.0, "kill": -0.05, "fire": 0.05, "prize": 0.08 }
+    },
+    {
+      "id": "sailors",
+      "name": "其他航海者",
+      "kind": "neutral",
+      "attitude": 0.5,
+      "text": "同样在海上漂的人。交换情报比交换货物更常见。",
+      "react": { "trade": 0.03, "rescue": 0.12, "kill": -0.2, "fire": -0.1 }
+    }
+  ],
+  "_orders": "王室命令：**开局就摊开给玩家看**的三条硬指标（docs/22 第 8.4 节）。每条有可断言的完成条件；完成与违抗都进世界记忆，并直接改结局档位（docs/22 第 15.2 节）。",
+  "royal_orders": [
+    {
+      "id": "find_passage",
+      "name": "找到通往香料群岛的航路",
+      "text": "文书把它抄在第一页上：绕过新大陆，找到去香料群岛的水路。",
+      "check": { "type": "reached_port", "port": "tidore" },
+      "reward": 0.08,
+      "penalty": -0.10
+    },
+    {
+      "id": "bring_spice",
+      "name": "带回足以证明这次远征的东西",
+      "text": "货舱里得有值钱的东西 —— 香料的价钱是象牙的三倍。",
+      "check": { "type": "goods_value", "ducats": 600 },
+      "reward": 0.10,
+      "penalty": -0.06
+    },
+    {
+      "id": "hold_course",
+      "name": "不得私自改变远征目的",
+      "text": "不许对卡斯蒂利亚的盟友动手，也不许把船开去做自己的买卖。",
+      "check": { "type": "no_friendly_kill" },
+      "reward": 0.06,
+      "penalty": -0.14
+    }
+  ],
+  "_pursuit": "葡萄牙追捕（docs/22 第 9 章）：六环比六张卡更难写的是**进出条件**。这里的数决定「在势力水域里待多久进下一环」与「离开多久算甩掉」。玩家手段：改线 / 伪装 / 谈判 / 战斗。",
+  "pursuit": {
+    "_after_days": "after_days = **在这一环里待够这么多天**（都指在葡萄牙水域里）就进下一环。所以玩家有一到两天的时间去做点什么 —— 追捕不是一到就开打。",
+    "rings": [
+      { "id": "sighted", "name": "被发现", "after_days": 1.0 },
+      { "id": "shadowed", "name": "被跟踪", "after_days": 1.0 },
+      { "id": "warned", "name": "被警告", "after_days": 2.0 },
+      { "id": "expelled", "name": "被驱逐", "after_days": 2.0 },
+      { "id": "intercepted", "name": "被拦截", "after_days": 1.0 },
+      { "id": "attacked", "name": "被攻击", "after_days": 0.0 }
+    ],
+    "waters": ["santiago", "tidore", "malacca", "mozambique"],
+    "water_radius_m": 14000.0,
+    "sight_range_m": 6000.0,
+    "escape_days": 3.0,
+    "actions": {
+      "dodge": { "days": 1.0, "ring_delta": -1, "cost": {}, "text": "改线：绕开他们常走的那条路。" },
+      "disguise": { "days": 2.0, "ring_delta": -2, "cost": { "canvas": 1 }, "text": "换旗、改舷号、把船尾的字刮掉。" },
+      "negotiate": { "days": 0.5, "ring_delta": -3, "cost": { "ducats": 300 }, "text": "交点钱，说清楚你不是来抢生意的。" },
+      "fight": { "days": 0.0, "ring_delta": 0, "cost": {}, "battle": true, "text": "打：让他们记住这条船。" }
+    }
+  }
+}

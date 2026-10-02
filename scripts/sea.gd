@@ -65,6 +65,16 @@ func ports_path() -> String:
 	return pp if FileAccess.file_exists(pp) else Ports.DATA_PATH
 
 
+func npcs_path() -> String:
+	"""这个海域里"别的船"的表：同目录下的 `npcs.json`。
+
+	没有就返回空 —— **8km 的迷你海域（教程与回归用）里没有海盗**，
+	这是有意的：那里的用途是复现老行为，不该被随机遭遇打扰。
+	"""
+	var np := path.get_base_dir().path_join("npcs.json")
+	return np if FileAccess.file_exists(np) else ""
+
+
 func setup_data(d: Dictionary) -> void:
 	"""直接喂一份已经解析好的数据（测试造小世界时用）。"""
 	data = d

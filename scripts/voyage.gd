@@ -28,6 +28,15 @@ var society := Society.new()       # 船上社会（M5，本船）
 var dilemmas := Dilemma.new()      # 三个高压抉择（M5，本船）
 var battle: LandBattle = null      # 上岸打起来的那一场（M6，null = 没在打）
 var naval: NavalBattle = null      # 海上咬上的那一场（M10，null = 没在打）
+var factions := Factions.new()     # M11：六类势力的态度与王室命令
+var pursuit := Pursuit.new()       # M11：葡萄牙追捕的当前环（世界状态）
+var npcs := NpcShips.new()         # M11：商人/海盗/其他航海者（抽象船，房主推进）
+var _npc_cooldown := 0.0           # 一场遭遇之后的冷却（游戏秒）
+# 给**测试与教程**用的总开关：关掉之后海面上没有别的船、也不会被追捕。
+# 它默认开着 —— 正式玩的时候海盗与葡萄牙人都该在。
+# （为什么需要它：有些断言盯的是**航线与风**这类东西，不该因为"半路被截击、
+#   船被打慢了"而变红 —— 那是另一套内容，另有断言盯着。）
+var encounters_enabled := true
 var culture := Culture.new()        # 当地文明的三档态度（M6）
 var locals := LocalGroup.new()      # 岛上那伙人（M6 收尾：他们是常驻实体，不是打起来才刷出来的）
 var weather := Weather.new()        # 自然环境（M7）
@@ -113,6 +122,9 @@ func setup(region := Sea.DATA_PATH, ship_id := "trinidad", inherited := {}) -> v
 	society.setup(roster)
 	dilemmas.setup()
 	culture.setup()
+	factions.setup()
+	pursuit.setup()
+	npcs.setup(sea)
 	# 岛上的当地人：**从一开始就住在村子里**（站位确定性）。打了才少人，不会重新刷满。
 	# （老海域没有 village 这个地标就让他们空着 —— 那种世界里也打不起来。）
 	if sea.poi_pos("village") != Vector2.ZERO:
@@ -198,6 +210,8 @@ func tick(delta: float) -> void:
 		naval.tick(delta, cargo, ship)
 		if naval.over:
 			_resolve_naval()
+	_pursuit_tick(delta)
+	_npc_contact_tick(delta)
 	_check_fleet_arrival()
 	_route_tick()
 	_stall_hint(delta)
@@ -265,6 +279,118 @@ func _check_fleet_arrival() -> void:
 	story.ending_ready = true
 	_say("【船队】四条船都到了圣阿莱克索。文书把这一路的账摊在桌上。", true)
 	journal.decide("船队抵达圣阿莱克索，远征走完。")
+	settle_royal_orders()
+
+
+# ------------------------------------------------------------ 势力 · 追捕 · 王室命令（M11）
+
+func _pursuit_tick(delta: float) -> void:
+	"""追捕按**航程日**走（与补给同一个尺度：60 游戏秒 × 压缩系数 = 一天）。"""
+	if not encounters_enabled:
+		return
+	var days := delta * VoyageJournal.voyage_time_scale / 86400.0
+	if days <= 0.0:
+		return
+	var ev := pursuit.tick(days, in_portuguese_waters())
+	if bool(ev.get("entered", false)):
+		_say("【葡萄牙】一条巡逻船在视野里 —— 他们看见我们了。", true)
+		journal.record(t, "pursuit", "被葡萄牙巡逻船发现。")
+		factions.react("portugal", "spy", 1)
+	elif bool(ev.get("advanced", false)):
+		_say("【葡萄牙】追捕到了下一环：%s。" % Pursuit.ring_name(int(ev["ring"])), true)
+		journal.record(t, "pursuit", "追捕进入「%s」。网越收越紧。" % Pursuit.ring_name(int(ev["ring"])))
+		# 最后一环就是"被攻击" —— 追到这一步的人不会只是警告你
+		if int(ev["ring"]) >= Pursuit.ring_count() and not ashore:
+			var r := begin_naval_battle(30, weather.state_id, 0.0)
+			if bool(r.get("ok", false)):
+				_say("【葡萄牙】他们升起了战旗，炮门推出来了。", true)
+				journal.record(t, "pursuit", "葡萄牙人开火。")
+				factions.react_all("fire", 1)
+	elif bool(ev.get("escaped", false)):
+		_say("【葡萄牙】已经三天没看见他们的帆了 —— 甩掉了。", true)
+		journal.decide("甩掉了葡萄牙的追捕。")
+		memory["escaped_pursuit"] = int(memory.get("escaped_pursuit", 0)) + 1
+
+
+func in_portuguese_waters() -> bool:
+	"""船在不在葡萄牙的水域里：离他们那四个据点任一个够近就算。"""
+	var here := ship.position_m()
+	for pid in Pursuit.waters():
+		for p in sea.ports():
+			if str(p.get("id", "")) != str(pid):
+				continue
+			if sea.dist(here, Geom2D.centroid(p["shape"])) <= Pursuit.water_radius_m():
+				return true
+	return false
+
+
+func _npc_contact_tick(delta: float) -> void:
+	"""别的船在动；海盗够近就咬上来 —— 「被截击」就是这一行。"""
+	if not encounters_enabled:
+		return
+	if _npc_cooldown > 0.0:
+		_npc_cooldown = maxf(0.0, _npc_cooldown - delta)
+	npcs.tick(delta, sea)
+	if ashore or (naval != null and not naval.over) or _npc_cooldown > 0.0:
+		return
+	var range_m := NpcShips.encounter_range_m()
+	var here := ship.position_m()
+	var pirate := npcs.nearest_hostile(here, range_m, sea, factions)
+	if pirate.is_empty():
+		# 不是海盗就不动手：商人和其他航海者只是擦肩而过（写一条消息）
+		var other := npcs.nearest_any(here, range_m, sea)
+		if not other.is_empty() and str(other["kind"]) != "pirate":
+			_say("【海上】%s：%s" % [str(other["name"]), str(other["text"])], true)
+			factions.react(str(other["faction"]), "trade", 0)   # 只是看见，不改态度
+			npcs.mark_engaged(str(other["id"]), NpcShips.cooldown_s() * 0.5)
+			_npc_cooldown = NpcShips.cooldown_s() * 0.5
+		return
+	var r := begin_naval_battle(int(pirate.get("crew", 30)), weather.state_id, 0.0)
+	if bool(r.get("ok", false)):
+		npcs.mark_engaged(str(pirate["id"]), NpcShips.cooldown_s())
+		_npc_cooldown = NpcShips.cooldown_s()
+		_say("【遭遇】%s 朝你压过来 —— %s" % [str(pirate["name"]), str(pirate["text"])], true)
+		journal.record(t, "encounter", "海上被%s截击。" % str(pirate["name"]))
+
+
+func royal_order_ctx() -> Dictionary:
+	"""三条王室命令的判定材料 —— 都是这个世界里已经在算的东西。"""
+	var visited_ports := []
+	for p in sea.ports():
+		var id := str(p.get("id", ""))
+		if known_places.has(id) or visited.has(id):
+			visited_ports.append(id)
+	var goods_value := 0.0
+	for id in cargo.ids_of_kind("goods"):
+		goods_value += float(cargo.qty(str(id))) * float(cargo.item_def(str(id)).get("base_price", 0))
+	return {
+		"visited_ports": visited_ports,
+		"goods_value": goods_value,
+		"friendly_kills": int(memory.get("friendly_kills", 0)),
+	}
+
+
+func settle_royal_orders() -> Dictionary:
+	var r := factions.settle_orders(royal_order_ctx(), ending_score)
+	for nm in (r.get("done", []) as Array):
+		_say("【王室】交得出账的一条：%s。" % str(nm), true)
+	for nm in (r.get("broken", []) as Array):
+		_say("【王室】这一条你违了：%s。" % str(nm), true)
+	return r
+
+
+func pursuit_action(action: String) -> Dictionary:
+	"""玩家的四种手段：改线 / 伪装 / 谈判 / 战斗（数值与代价在真源里）。"""
+	var r := pursuit.act(action, cargo)
+	if not bool(r.get("ok", false)):
+		return r
+	if bool(r.get("battle", false)):
+		journal.decide("对葡萄牙人动了手。")
+		factions.react_all("fire", 1)
+		return r
+	_say("【葡萄牙】%s（现在是「%s」）" % [str(r.get("text", "")), str(r.get("name", ""))], true)
+	journal.decide("对付追捕：%s。" % str(r.get("text", "")))
+	return r
 
 
 # ------------------------------------------------------------ 沿航线走（M8 的"不会搁浅"辅助）
@@ -1513,6 +1639,10 @@ func capture_world_state() -> Dictionary:
 		"reached_destination": reached_destination,
 		"reef_hit": reef_hit,
 		"shortage_events": shortage_events,
+		# M11：势力态度与王室命令、葡萄牙追捕（房主权威，docs/22 第 4.2 节）
+		"factions": factions.capture_state(),
+		"pursuit": pursuit.capture_state(),
+		"npcs": npcs.capture_state(),
 		"last_message": last_message,
 		"message_timer": message_timer,
 		"log_lines": log_lines.duplicate(),
@@ -1543,6 +1673,9 @@ func apply_world_state(d: Dictionary) -> void:
 	reached_destination = bool(d.get("reached_destination", false))
 	reef_hit = bool(d.get("reef_hit", false))
 	shortage_events = int(d.get("shortage_events", 0))
+	factions.apply_state(d.get("factions", {}))
+	pursuit.apply_state(d.get("pursuit", {}))
+	npcs.apply_state(d.get("npcs", {}))
 	last_message = str(d.get("last_message", ""))
 	message_timer = float(d.get("message_timer", 0.0))
 	log_lines = (d.get("log_lines", []) as Array).duplicate()
