@@ -16,6 +16,10 @@ var base_from_dir := 0.0        # 基准真风来向
 var gust_gain := 0.8            # 阵风幅度 m/s
 var dir_swing_deg := 14.0       # 风向摆幅
 var time_scale := 1.0
+# M13：季风 —— 把基准风向转一个角度、把风力乘一个倍数。
+# **派生量，不进存档**（每帧由 `Climate` 按"当前纬度 + 日历"算出来）。
+var season_shift_deg := 0.0
+var season_gain := 1.0
 
 var tws_ms := 8.0
 var from_dir_deg := 0.0
@@ -32,10 +36,10 @@ func _init(p_tws := 8.0, p_dir := 0.0) -> void:
 func step(delta: float) -> void:
 	"""风随时间缓变。两条不同周期的正弦叠加：看着不规律，但完全可复现。"""
 	t += delta * time_scale
-	from_dir_deg = base_from_dir + dir_swing_deg * sin(t * 0.045) \
+	from_dir_deg = base_from_dir + season_shift_deg + dir_swing_deg * sin(t * 0.045) \
 		+ 0.35 * dir_swing_deg * sin(t * 0.117 + 1.7)
 	tws_ms = base_tws + gust_gain * sin(t * 0.09) + 0.4 * gust_gain * sin(t * 0.21 + 0.6)
-	tws_ms = maxf(tws_ms, 0.5)
+	tws_ms = maxf(tws_ms * season_gain, 0.5)
 
 
 func velocity_world() -> Vector2:

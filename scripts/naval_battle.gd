@@ -52,6 +52,9 @@ var _our_frac := 0.0
 var _their_frac := 0.0
 var foe_rounds := 0                 # 对面朝我打了几轮（对账与面板要看的数）
 var volleys_sent := 0               # 我朝对面打了几轮（联机时记在"等回执"上）
+# M13：起火 / 进水的硬币**每场只掷一次**（掷出"没有"也不能反复掷 —— 那等于必中）
+var _fire_rolled := false
+var _flood_rolled := false
 var last_incoming: Dictionary = {}   # 最近一次挨打的结果（受击方权威那一份）
 var last_outgoing: Dictionary = {}   # 最近一次打出去的结果（对面权威广播回来的那一份）
 # 联机时挂上它：开火不再本机判命中，而是把 `volley_request()` 交给受击方的拥有者
@@ -289,6 +292,9 @@ func _take_hits(res: Dictionary, ship: ShipDynamics) -> void:
 		ship.apply_damage("hull", structure * float(split.get("hull", 0.0)) / hp)
 		ship.apply_damage("mast", structure * float(split.get("mast", 0.0)) / hp)
 		ship.apply_damage("rudder", structure * float(split.get("rudder", 0.0)) / hp)
+		# M13：货舱与弹药区也留在船上（不然打完这一仗账就丢了）
+		ship.apply_damage("hold", structure * float(split.get("hold", 0.0)) / hp)
+		ship.apply_damage("magazine", structure * float(split.get("magazine", 0.0)) / hp)
 	own_hull_damage = clampf(own_hull_damage + structure / hp, 0.0, 1.0)
 	hold_damage = clampf(hold_damage + structure * float(split.get("hold", 0.0)) / hp, 0.0, 1.0)
 	magazine_damage = clampf(magazine_damage
@@ -301,6 +307,30 @@ func _take_hits(res: Dictionary, ship: ShipDynamics) -> void:
 			_say("我们甲板上倒了 %d 个。" % losses)
 	if int(res["hits"]) > 0:
 		_say("对面命中 %d 发 —— 船壳在响。" % int(res["hits"]))
+	if ship != null:
+		_roll_ignition(ship)
+
+
+func _roll_ignition(ship: ShipDynamics) -> void:
+	"""挨到那一下之后掷"起火 / 进水"的确定性硬币（docs/22 第 5.4 节的第七处）。
+
+	由**受击方**掷（谁挨打谁说了算）—— 单机时是 `_take_hits` 里这一下，
+	联机时是受击方机器上同一个函数。每场只掷一次。
+	"""
+	var ig: Dictionary = Ballistics.naval().get("ignition", {})
+	if ig.is_empty():
+		return
+	var key := int(floor(t * 10.0))
+	if not _fire_rolled and magazine_damage >= float(ig.get("magazine_threshold", 0.25)):
+		_fire_rolled = true
+		if Ballistics.roll(811, key) < float(ig.get("fire_coin", 0.5)):
+			ship.apply_hazard("fire", float(ig.get("fire_start", 0.3)))
+			_say("弹药区被打穿 —— 甲板上窜起火苗！")
+	if not _flood_rolled and own_hull_damage >= float(ig.get("hull_threshold", 0.45)):
+		_flood_rolled = true
+		if Ballistics.roll(577, key) < float(ig.get("flood_coin", 0.5)):
+			ship.apply_hazard("flood", float(ig.get("flood_start", 0.35)))
+			_say("水线下面破了个口子 —— 开始进水！")
 
 
 # ------------------------------------------------------------ 接舷

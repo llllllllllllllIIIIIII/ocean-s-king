@@ -46,7 +46,19 @@ var land_shapes: Array = []
 var wrap_width := 0.0               # 圆柱世界（M9/M12）：> 0 时位置按它卷起来
 var last_blocked := false           # 这一帧是不是撞上了（给上层做损伤提示）
 # 损伤（docs/01：只做三处，每一处都要能在气动上看见效果）
-var damage := { "hull": 0.0, "mast": 0.0, "rudder": 0.0 }
+# M13：第四处 —— **风帆**。它和桅杆分开：桅杆断了是"挂不上帆"，帆破了是"挂上也兜不住风"。
+# （docs/22 第 5.4 节的七处损伤里，船壳/桅杆/舵 + 风帆这四处落在气动这条链上；
+#   货舱 / 弹药区 / 起火进水在遭遇与磨损里记账。）
+var damage := {
+	"hull": 0.0, "mast": 0.0, "rudder": 0.0, "sail": 0.0,
+	# M13：货舱与弹药区也进同一张损伤表 —— 它们由海战记账，却要在**船**上留痕
+	# （货舱掉了 → 货被泡；弹药区坏了 → 炮打得慢），所以和另外四处一样进 capture/apply。
+	"hold": 0.0, "magazine": 0.0,
+}
+# 起火 / 进水（M13，docs/22 第 5.4 节的第七处）：不是损伤值，而是**状态**。
+# 强度 0..1，每个航程小时自己恶化，要派人去救；涨到 `hazard.loss_at` 这条船就没了。
+# 速率在 `physics.hazard`（`data/defs/ship_physics.json`）。
+var hazard := { "fire": 0.0, "flood": 0.0 }
 var _wind_world := Vector2.ZERO
 var _t := 0.0
 var _last := {}                     # 上一帧的受力细节（帆态面板要读）
@@ -195,6 +207,7 @@ func apply_damage(part: String, amount: float) -> void:
 	船体  -> 摩擦与兴波阻力变大（同样的风跑不快）
 	桅杆  -> 能用帆面积变小（推力直接掉）
 	舵    -> 转舵效率下降（换舷更慢）
+	风帆  -> 帆面自己漏风（推力再掉一截），用帆布补
 	"""
 	if not damage.has(part):
 		push_warning("未知的损伤部位：" + part)
@@ -206,12 +219,40 @@ func damage_of(part: String) -> float:
 	return float(damage.get(part, 0.0))
 
 
+func apply_hazard(part: String, amount: float) -> void:
+	"""点一把火 / 破一道口子。amount 是强度增量（0..1 的尺子里）。"""
+	if not hazard.has(part):
+		push_warning("未知的险情：" + part)
+		return
+	hazard[part] = clampf(float(hazard[part]) + amount, 0.0, 1.0)
+
+
+func hazard_of(part: String) -> float:
+	return float(hazard.get(part, 0.0))
+
+
+func hazard_any() -> bool:
+	return hazard_of("fire") > 0.001 or hazard_of("flood") > 0.001
+
+
+func _hazard_cfg(part: String) -> Dictionary:
+	return (physics.hazard.get(part, {}) as Dictionary)
+
+
 func describe_damage() -> String:
 	var parts := PackedStringArray()
-	for k in ["hull", "mast", "rudder"]:
-		var v := float(damage[k])
+	var names := {
+		"hull": "船体", "mast": "桅杆", "rudder": "舵", "sail": "风帆",
+		"hold": "货舱", "magazine": "弹药区",
+	}
+	for k in names.keys():
+		var v := float(damage.get(k, 0.0))
 		if v > 0.01:
-			parts.append("%s %.0f%%" % [{"hull": "船体", "mast": "桅杆", "rudder": "舵"}[k], v * 100.0])
+			parts.append("%s %.0f%%" % [names[k], v * 100.0])
+	for k in hazard.keys():
+		var hv := float(hazard[k])
+		if hv > 0.01:
+			parts.append("%s%.0f%%" % [str(_hazard_cfg(str(k)).get("name", k)), hv * 100.0])
 	return "无损伤" if parts.is_empty() else "　".join(parts)
 
 
@@ -261,10 +302,13 @@ func step(delta: float, wind_world: Vector2) -> void:
 	# 帆档（缩帆/收帆）在这里生效：帆布少了，力和横倾一起小下去
 	# 桅杆损伤 = 还能挂的帆面积变小
 	var mast_ok := 1.0 - 0.5 * damage_of("mast")
+	var sail_ok := 1.0 - 0.4 * damage_of("sail")     # M13：破帆兜不住风
+	# M13：烧着的帆更兜不住风（火是状态，但它必须在气动上看得见）
+	sail_ok *= 1.0 - 0.3 * hazard_of("fire")
 	var fm := physics.sail_force(app_speed, app_dir, _sail_main_deg,
-		physics.area_main * _sail_area_scale * mast_ok)
+		physics.area_main * _sail_area_scale * mast_ok * sail_ok)
 	var fj := physics.sail_force(app_speed, app_dir, _sail_jib_deg,
-		physics.area_jib * _sail_area_scale * mast_ok)
+		physics.area_jib * _sail_area_scale * mast_ok * sail_ok)
 	var fx := fm.x + fj.x
 	var fy := fm.y + fj.y
 	var cp := cos(deg_to_rad(_heel_deg))
@@ -298,7 +342,9 @@ func step(delta: float, wind_world: Vector2) -> void:
 		# 60 吨的船换速要几十秒 —— 这点惯性是"换舷能不能过顶"的关键：
 		# 抢风时要带着余速穿过死区，瞬时求解的话一顶风速度立刻归零，船就卡死在风里。
 		# 船体损伤 = 阻力变大（船底蹭过礁石之后就跑不动了）
-		var hull_bad := 1.0 + 0.9 * damage_of("hull")
+		# M13：进水让船更沉、更难推（第七处损伤的"上层看得见"就落在这条链上）
+		var hull_bad := 1.0 + 0.9 * damage_of("hull") \
+			+ float(_hazard_cfg("flood").get("drag_bonus", 0.6)) * hazard_of("flood")
 		# 阻力永远**对抗相对水流**：水比船快（u_rel<0）时它就是**推**船。
 		# 少了这个符号，洋流就带不动船（Day 6 现场抓到的）。
 		var drag_axial := physics.hull_drag(absf(u_rel)) * hull_bad * signf(u_rel) \
@@ -348,6 +394,22 @@ func _wrap(p: Vector2) -> Vector2:
 	return Vector2(fposmod(p.x, wrap_width), p.y)
 
 
+func kedge_off(target: Vector2, heading_deg := NAN) -> void:
+	"""**绞缆脱浅**（M13）：放小艇把锚带出去、再绞回来 —— 船被按在岸上出不来时唯一的办法。
+
+	真船上就这么干（kedge off），所以这里不是"帮忙作弊"，是把一件水手真的会做的事补上。
+	位置只能由**这个文件**写（AGENTS.md 铁律 5 / `check_motion_ownership.py`）——
+	所以上层只能调这个指令入口，不能自己动 `_pos_m`。代价（士气/时间）由调用方给。
+	"""
+	_pos_m = _wrap(target)
+	_u = 0.0
+	_w = 0.0
+	if not is_nan(heading_deg):
+		_heading_deg = fposmod(heading_deg, 360.0)
+		_yaw_rate_dps = 0.0
+	last_blocked = false
+
+
 func _blocked_at(p: Vector2) -> bool:
 	# 先看 M2 的形状表（海岸 / 多个岛），没有再退回 v0.1 的那个圆
 	if not land_shapes.is_empty():
@@ -381,6 +443,8 @@ func capture_state() -> Dictionary:
 		"_sail_main_deg": _sail_main_deg, "_sail_jib_deg": _sail_jib_deg,
 		"_sail_area_scale": _sail_area_scale, "_anchored": _anchored,
 		"damage": damage.duplicate(),
+		# M13：起火 / 进水是状态，必须跟着船走（存档、联机摘要都看它）
+		"hazard": hazard.duplicate(),
 		"current_world": StateIO.v2(current_world),
 		# _wind_world 是"上一帧的风"：nav.decide() 在 step() 之前跑，读的就是它，
 		# 所以它会影响下一步的决策 —— 必须存。
@@ -404,6 +468,10 @@ func apply_state(d: Dictionary) -> void:
 	_sail_area_scale = float(d.get("_sail_area_scale", 1.0))
 	_anchored = bool(d.get("_anchored", false))
 	damage = (d.get("damage", {}) as Dictionary).duplicate()
+	hazard = { "fire": 0.0, "flood": 0.0 }
+	for hk in (d.get("hazard", {}) as Dictionary).keys():
+		if hazard.has(str(hk)):
+			hazard[str(hk)] = clampf(float(d["hazard"][hk]), 0.0, 1.0)
 	current_world = StateIO.to_v2(d.get("current_world", [0.0, 0.0]))
 	_wind_world = StateIO.to_v2(d.get("_wind_world", [0.0, 0.0]))
 	_t = float(d.get("_t", 0.0))

@@ -189,6 +189,20 @@ def cmd_route(w):
                     reef_hits.append(p)
         total += len(hits)
         total_reef += len(reef_hits)
+        # 最小离岸距离：航段贴得多近？（海峡那一段本来就近，所以只是报出来给人看）
+        min_clear = 1e18
+        for i in range(len(pts) - 1):
+            dx, dy = wrap_delta(w, pts[i], pts[i + 1])
+            dist = math.hypot(dx, dy)
+            steps = max(1, int(math.ceil(dist / 250.0)))
+            for k in range(steps + 1):
+                t = k / float(steps)
+                p = (pts[i][0] + dx * t, pts[i][1] + dy * t)
+                if w.get("wrap_x"):
+                    p = (p[0] % w["world_m"][0], p[1])
+                d, _ = nearest_land(w, p)
+                if d < min_clear:
+                    min_clear = d
         flag = "OK " if not hits else "BAD"
         if reef_hits:
             flag = "REEF"
@@ -199,8 +213,8 @@ def cmd_route(w):
         if reef_hits:
             nd, nid = nearest_land(w, reef_hits[0])
             extra += "  踩礁 (%.0f,%.0f)" % (reef_hits[0][0], reef_hits[0][1])
-        print("%s %-16s 采样 %5d  踩干地 %4d  踩礁 %3d%s"
-              % (flag, r["id"], n, len(hits), len(reef_hits), extra))
+        print("%s %-16s 采样 %5d  踩干地 %4d  踩礁 %3d  最近离岸 %5.0f 米%s"
+              % (flag, r["id"], n, len(hits), len(reef_hits), min_clear, extra))
     print("--- 全部航段踩干地合计：%d" % total)
     print("--- 全部航段踩礁合计：%d" % total_reef)
     return 1 if (total or total_reef) else 0

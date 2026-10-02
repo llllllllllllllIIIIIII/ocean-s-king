@@ -21,7 +21,15 @@ const NO_GO_TWA := 37.0
 # 永远攒不起速度（Day 4 现场抓到的就是这个死循环）。
 const TACK_HYSTERESIS := 12.0
 
-enum Method { HOLD, STEER, BEAT, RUN, STOP }
+# M13（自拍，可否决 —— 见 docs/07 待决问题）：**避岸**。
+# 长跑扫描抓到：船被洋流按在背风岸上、速度掉光之后就再也出不来（巴塔哥尼亚外海卡了 50 天）。
+# 现实里的水手不会一直往岸上顶，他们会"贴着风偏出去"（把船从背风岸上抢出来）。
+# 所以航海官多一条规则：贴着岸又走不动的时候，选那一舷**离岸最远**的可走航向。
+const SHOAL_TRIGGER_M := 250.0       # 离岸这么近、而且快停了，就算"贴岸"
+const SHOAL_RELEASE_M := 600.0       # 离岸超过这个数才解除（迟滞，免得在岸边来回抖）
+const SHOAL_INTO_DEG := 70.0         # 目标方位与"岸的方位"差这么多度以内 = 在往岸上顶
+
+enum Method { HOLD, STEER, BEAT, RUN, STOP, AVOID }
 
 var orders: ShipOrders
 var method: Method = Method.HOLD
@@ -35,6 +43,11 @@ var _last_tack_side := 1.0           # 上一轮抢风时受风的那一舷
 # 圆柱世界（M9/M12）：> 0 时方位与距离都**走最短的一边**。
 # 平面海域是 0（老海域一个数都不改）。由 `Voyage.setup()` 灌进来。
 var wrap_width := 0.0
+# 避岸（M13）的输入：由 `Voyage.tick()` 每帧灌进来（不存盘，是派生量）
+var shore_distance_m := INF          # 离最近的岸多远
+var shore_bearing_deg := 0.0         # 从船指向最近那点岸的方位
+var blocked := false                 # 这一帧是不是正顶着干地（`ShipDynamics.last_blocked`）
+var _avoiding := false               # 迟滞：进了避岸就走到离岸 600 米才解除
 
 
 func _init(orders_ref: ShipOrders) -> void:
@@ -67,6 +80,28 @@ func decide(ship: ShipDynamics) -> void:
 
 	bearing_deg = fposmod(rad_to_deg(atan2(to_target.y, to_target.x)), 360.0)
 	var wind_from := ship.wind_from_dir_deg()
+
+	# --- M13：避岸（见上面那段注释）---
+	if _avoiding and shore_distance_m > SHOAL_RELEASE_M and not blocked:
+		_avoiding = false
+	if not _avoiding:
+		var rel_shore := absf(ShipPhysics.normalize180(bearing_deg - shore_bearing_deg))
+		if blocked or (shore_distance_m < SHOAL_TRIGGER_M and ship.speed_ms() < 0.7
+				and rel_shore < SHOAL_INTO_DEG):
+			_avoiding = true
+	if _avoiding:
+		# 从两条"贴着死区边界"的航向里，挑**离岸更远**的那一舷 ——
+		# 这就是"贴着风把船从背风岸上抢出来"，而不是硬往岸上顶。
+		method = Method.AVOID
+		var beat := no_go_twa_deg()
+		var cand_a := fposmod(wind_from + beat, 360.0)
+		var cand_b := fposmod(wind_from - beat, 360.0)
+		var err_a := absf(ShipPhysics.normalize180(cand_a - shore_bearing_deg))
+		var err_b := absf(ShipPhysics.normalize180(cand_b - shore_bearing_deg))
+		target_heading_deg = cand_a if err_a > err_b else cand_b
+		_remember()
+		return
+
 	var off_wind := absf(ShipPhysics.normalize180(bearing_deg - wind_from))
 
 	if off_wind >= no_go_twa_deg():
@@ -127,6 +162,7 @@ func method_name() -> String:
 		Method.BEAT: return "抢风（%s受风）" % ("右舷" if tack_side > 0.0 else "左舷")
 		Method.RUN: return "顺风跑"
 		Method.STOP: return "停船"
+		Method.AVOID: return "避岸（抢出背风岸）"
 	return "?"
 
 
@@ -150,6 +186,8 @@ func capture_state() -> Dictionary:
 		"beat_count": beat_count,
 		"_last_method": int(_last_method),
 		"_last_tack_side": _last_tack_side,
+		# M13 避岸的迟滞：不存的话读档后可能立刻又往岸上顶
+		"_avoiding": _avoiding,
 	}
 
 
@@ -164,3 +202,4 @@ func apply_state(d: Dictionary) -> void:
 	beat_count = int(d.get("beat_count", 0))
 	_last_method = int(d.get("_last_method", Method.HOLD)) as Method
 	_last_tack_side = float(d.get("_last_tack_side", 1.0))
+	_avoiding = bool(d.get("_avoiding", false))

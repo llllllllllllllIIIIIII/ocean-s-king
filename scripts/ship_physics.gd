@@ -36,6 +36,8 @@ var u_min := 0.3             # m/s  参考流速下限，防止低速段除零
 var area_main := 62.0        # m^2
 var area_jib := 28.0         # m^2
 var jib_offset := -8.0       # 度   前帆相对主帆的攻角差
+# 起火 / 进水的速率（M13）：与别的参数同源，只读 `ship_physics.json` 的 `hazard` 块
+var hazard: Dictionary = {}
 
 var _alpha_tab := PackedFloat64Array()
 var _cl_tab := PackedFloat64Array()
@@ -75,6 +77,7 @@ func _apply(d: Dictionary) -> void:
 	area_main = float(sails.get("main_area_m2", area_main))
 	area_jib = float(sails.get("jib_area_m2", area_jib))
 	jib_offset = float(sails.get("jib_attack_offset_deg", jib_offset))
+	hazard = d.get("hazard", {})
 
 	var polar: Dictionary = d.get("sail_polar", {})
 	if polar.has("alpha_deg"):

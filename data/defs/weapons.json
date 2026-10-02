@@ -124,6 +124,17 @@
       "firearm_volley_mult": 0.5,
       "_firearm": "跳帮那一下能放一轮火器，但只有半效 —— 甲板上挤成一团，装填那一分钟里近战才是决定性的（硬指标 3）。",
       "melee_cycle_s": 3.6
+    },
+    "ignition": {
+      "_comment": "七处损伤的最后一条（M13）：挨打之后会不会**起火 / 进水**。用受击方权威的确定性硬币掷一次，触发之后交给 `ShipDynamics.hazard` 状态机继续恶化 —— 所以同一场遭遇必得同样的火与水。",
+      "fire_coin": 0.55,
+      "_fire": "弹药区损伤越过 magazine_threshold 之后再掷一次：小于 fire_coin 就起火。",
+      "magazine_threshold": 0.25,
+      "fire_start": 0.30,
+      "flood_coin": 0.45,
+      "_flood": "船壳损伤越过 hull_threshold 之后再掷一次：小于 flood_coin 就进水。",
+      "hull_threshold": 0.45,
+      "flood_start": 0.35
     }
   },
   "local_warriors": {

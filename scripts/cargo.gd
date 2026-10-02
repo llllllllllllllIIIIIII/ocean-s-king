@@ -22,6 +22,7 @@ var capacity_kg := 27000.0
 var shortage_total := 0.0            # 累计缺了多少（缺粮缺水的量，M5 拿它算士气）
 var starving := false
 var _frac: Dictionary = {}           # id -> 攒着的小数（不足一个单位的部分）
+var _spoil_acc := 0.0                # M13：进水泡货的小数记账（不足一件的先攒着）
 
 
 static func defs_data() -> Dictionary:
@@ -237,6 +238,38 @@ func can_shoot() -> bool:
 	return qty("powder") > 0 and qty("lead") > 0 and qty("match") > 0
 
 
+func spoil(fraction: float) -> int:
+	"""进水泡货（M13）：按比例泡掉**货物**（`kind == "goods"`），返回泡掉几件。
+
+	确定性：按 id 排序逐件扣，不掷随机数 —— 存档往返与双进程对账要一模一样。
+	口粮、弹药、药品不在这里泡（它们是"船上的补给"，另外按坏血病/断粮那条链算）。
+
+	⚠️ 小数记账（`_spoil_acc`）：一个水线小时可能只泡掉半件 —— 攒够了才真扣，
+	不然"每小时泡 2% 的货"在小船上永远泡不掉一件。
+	"""
+	if fraction <= 0.0:
+		return 0
+	var items: Array = ids_of_kind("goods")
+	items.sort()
+	var total := 0
+	for iid in items:
+		total += qty(str(iid))
+	_spoil_acc += float(total) * fraction
+	var want := int(floor(_spoil_acc))
+	if want <= 0:
+		return 0
+	var lost := 0
+	for iid in items:
+		if want <= 0:
+			break
+		var take := mini(want, qty(str(iid)))
+		if take > 0 and remove(str(iid), take):
+			want -= take
+			lost += take
+	_spoil_acc -= float(lost)
+	return lost
+
+
 # ------------------------------------------------------------ 修船
 
 func repair_need(part: String, amount: float) -> Dictionary:
@@ -333,6 +366,7 @@ func capture_state() -> Dictionary:
 		"shortage_total": shortage_total,
 		"starving": starving,
 		"_frac": _frac.duplicate(),
+		"_spoil_acc": _spoil_acc,
 	}
 
 
@@ -350,3 +384,4 @@ func apply_state(d: Dictionary) -> void:
 	var fr: Dictionary = d.get("_frac", {})
 	for k in fr.keys():
 		_frac[str(k)] = float(fr[k])
+	_spoil_acc = float(d.get("_spoil_acc", 0.0))

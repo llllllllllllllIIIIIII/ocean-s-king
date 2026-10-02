@@ -37,6 +37,22 @@ var _npc_cooldown := 0.0           # 一场遭遇之后的冷却（游戏秒）
 # （为什么需要它：有些断言盯的是**航线与风**这类东西，不该因为"半路被截击、
 #   船被打慢了"而变红 —— 那是另一套内容，另有断言盯着。）
 var encounters_enabled := true
+# M13：离开新鲜食物多少航程日（坏血病）/ 连着缺粮缺水多少航程日（断粮致死）。
+# 两个都进 ShipState —— 它们是"这条船上的日子"，存读档要跟着走。
+var days_since_fresh := 0.0
+var days_short := 0.0
+var _hurricane_day_rolled := -1     # 飓风季的硬币：每个航程日只掷一次（M13）
+# M13：沿航线走时的"磨不动"计时（只影响航线跟随：磨够久就改走下一段）
+const ROUTE_STALL_S := 1800.0       # 30 个游戏分钟没有净前进就算了
+var _route_stall := 0.0
+var _route_stall_pos := Vector2.ZERO
+# M13：起火 / 进水（第七处损伤）。`hazard_crew` = 派去救火抢险的人数（0 = 没人管）。
+# 状态在 `ship.hazard` 上（跟着船走），这里只管"派了几个人"。
+var hazard_crew := 0
+var _hazard_acc := 0.0
+# M13：搁浅计时 —— 卡在滩上太久（背风岸 + 无风区）就绞缆脱浅（见 `_aground_tick`）。
+const AGROUND_LIMIT_H := 12.0
+var _aground_t := 0.0
 var culture := Culture.new()        # 当地文明的三档态度（M6）
 var locals := LocalGroup.new()      # 岛上那伙人（M6 收尾：他们是常驻实体，不是打起来才刷出来的）
 var weather := Weather.new()        # 自然环境（M7）
@@ -168,6 +184,12 @@ func tick(delta: float) -> void:
 	# **天气真的改风**：风暴里同样的信风是 1.9 倍，无风带里只剩两成
 	var wind_vec := wind.velocity_world() * sea.lee_factor(pos) * weather.wind_mult()
 	# 指挥链路（船长在不在船上都一样：不在就是大副在管）
+	# M13：避岸规则的输入 —— 离岸多远、岸在哪边、是不是正顶着干地（见 navigator.gd）
+	var shore_info := sea.nearest_shore(pos)
+	nav.shore_distance_m = float(shore_info.get("distance_m", INF))
+	var shore_delta := sea.delta(pos, shore_info.get("pos", pos))
+	nav.shore_bearing_deg = fposmod(rad_to_deg(atan2(shore_delta.y, shore_delta.x)), 360.0)
+	nav.blocked = ship.last_blocked
 	nav.decide(ship)
 	crew.set_target_heading(nav.target_heading_deg)
 	crew.hands_on_sails = orders.hands_on_sails
@@ -181,10 +203,18 @@ func tick(delta: float) -> void:
 	# 蹭上滩头：给一点损伤与提示（不该天天撞，所以有冷却）
 	_shore_cooldown = maxf(0.0, _shore_cooldown - delta)
 	if ship.last_blocked and _shore_cooldown <= 0.0:
-		_shore_cooldown = 20.0
-		ship.apply_damage("hull", 0.06)
-		journal.decide("船底蹭上滩头，船体损伤 6% —— 靠得太近了。")
-		_say("船底蹭上滩头，木匠皱着眉头看了一眼。", true)
+		# ⚠️ 冷却按**航程小时**算（M13）：原来是 20 游戏秒 —— 那等于 42 个航程分钟就撞一次。
+		# ⚠️ 损伤按**撞击速度**给（M13 长跑第二轮抓到的）：船被洋流按在背风岸上、
+		#    速度近零的时候，定值 6% 会把船体 3 天磨到 0%，然后进入
+		#    "没速度 → 一直被按着 → 继续磨" 的死循环（背风岸 50 天出不来）。
+		#    撞击能量 ∝ v²，这里取线性档：3 节以上才是满 6%，0.4 节只有 0.8%。
+		#    这不是改操法（那条仍在等用户拍板），是让损伤与"撞得多重"对得上。
+		var dmg := 0.06 * clampf(ship.speed_kn() / 3.0, 0.0, 1.5)
+		_shore_cooldown = 6.0 * 3600.0 / VoyageJournal.voyage_time_scale
+		if dmg >= 0.005:
+			ship.apply_damage("hull", dmg)
+			journal.decide("船底蹭上滩头，船体损伤 %.0f%% —— 靠得太近了。" % (dmg * 100.0))
+			_say("船底蹭上滩头，木匠皱着眉头看了一眼。", true)
 	if not is_client():
 		# 世界事件与剧情是**房主权威**：客户端这一块只读（WORLD 包每 0.5 秒覆盖一次）
 		_events(delta)
@@ -203,6 +233,8 @@ func tick(delta: float) -> void:
 		if party.boarding and party.boarded_all():
 			_finish_boarding()
 	_weather_wear(delta)
+	_hazard_tick(delta)
+	_aground_tick(delta)
 	events.tick(delta, self)
 	_consume_supplies(delta)
 	if battle != null and not battle.over:
@@ -217,8 +249,9 @@ func tick(delta: float) -> void:
 			_resolve_naval()
 	_pursuit_tick(delta)
 	_npc_contact_tick(delta)
+	_climate_wind_tick()
 	_check_fleet_arrival()
-	_route_tick()
+	_route_tick(delta)
 	_stall_hint(delta)
 	_publish_local_summary()
 
@@ -315,6 +348,44 @@ func _pursuit_tick(delta: float) -> void:
 		_say("【葡萄牙】已经三天没看见他们的帆了 —— 甩掉了。", true)
 		journal.decide("甩掉了葡萄牙的追捕。")
 		memory["escaped_pursuit"] = int(memory.get("escaped_pursuit", 0)) + 1
+
+
+func latitude() -> float:
+	"""船现在在南纬/北纬多少度。**只有带投影的世界（全球图）才有纬度** ——
+	平面海域（8km 迷你海、48km 大西洋）返回 0，于是季风与飓风都不参与（那两片海是教程与回归用的）。"""
+	if not sea.world.has_projection():
+		return 0.0
+	return sea.m_to_lonlat(ship.position_m()).y
+
+
+func _climate_wind_tick() -> void:
+	"""M13：季风按"当前纬度 + 日历"灌进风场；飓风季里进那片海是在赌。"""
+	if not sea.world.has_projection():
+		wind.season_shift_deg = 0.0
+		wind.season_gain = 1.0
+		return
+	var lat := latitude()
+	wind.season_shift_deg = Climate.wind_shift_deg(lat, t)
+	wind.season_gain = Climate.wind_gain(lat, t)
+	var band := Climate.hurricane_band(lat, t)
+	if band.is_empty():
+		return
+	# 已经在坏天气里就不叠加；平静的时候按"日子 + 带子"的确定性硬币赌一把
+	if weather.state_id != "clear" and weather.state_id != "calm":
+		return
+	# ⚠️ **每个航程日只掷一次**：按帧掷的话一进那片海几乎立刻就挨风暴，
+	#    "赌"这个选择就没有意义了（它该是"待上十天，多半会碰上一场"）。
+	var day := VoyageJournal.day_index(t)
+	if day == _hurricane_day_rolled:
+		return
+	_hurricane_day_rolled = day
+	var roll := Ballistics.roll(day, str(band.get("band", "")).hash())
+	if roll < 0.10:
+		weather.force("storm", float(band.get("hours", 24.0)))
+		if not fired.has("hurricane_" + str(band.get("band", ""))):
+			fired["hurricane_" + str(band.get("band", ""))] = true
+			_say("【天气】%s" % str(band.get("text", "")), true)
+			journal.record(t, "weather", "在飓风季里闯进了%s。" % str(band.get("name", "")))
 
 
 func in_portuguese_waters() -> bool:
@@ -424,6 +495,8 @@ func start_route_follow() -> String:
 	if best_d < 500.0 and route_waypoints.size() > 1:
 		route_waypoints = route_waypoints.slice(1)
 	following_route = true
+	_route_stall = 0.0
+	_route_stall_pos = ship.position_m()
 	orders.set_target_point(route_waypoints[0] as Vector2)
 	# 顺手把这一段的"要几天 / 路上有什么"告诉玩家（M8 收尾的航线元数据）
 	var info := leg_info(_route_of_next())
@@ -461,7 +534,7 @@ func _route_leg_name() -> String:
 	return "航点 %.0f,%.0f" % [p.x, p.y]
 
 
-func _route_tick() -> void:
+func _route_tick(delta: float) -> void:
 	if not following_route:
 		return
 	if route_waypoints.is_empty():
@@ -477,7 +550,33 @@ func _route_tick() -> void:
 			return
 		route_waypoints.pop_front()
 		orders.set_target_point(route_waypoints[0] as Vector2)
+		_route_stall = 0.0
+		_route_stall_pos = ship.position_m()
 		_say("（航线）下一段：%s" % _route_leg_name(), false)
+		return
+	# M13 长跑扫描抓到的：有一段航线会**磨不进最后几百米**（正逆风 + 无风带，
+	# 船的速度掉光之后舵效 ∝ 速度²，转不过去 —— 这是 v0.5 就记过的"顶风失速"）。
+	# 兜底只动**航线跟随**：磨够久就认下这一段、改走下一段，而不是在那儿待五十天。
+	# （操法一个字没改；玩家自己点目标点的时候不受这条影响。）
+	var moved := sea.dist(_route_stall_pos, ship.position_m())
+	# 阈值取 400 米/30 游戏分钟（≈0.43 节）：低于这个速度**等于没在走** ——
+	# 长跑扫描里出现过"0.1–0.2 节爬了几十天、最后被洋流推上背风岸"的船，
+	# 120 米的阈值太松，那种船永远够得着。
+	if moved > 400.0:
+		_route_stall = 0.0
+		_route_stall_pos = ship.position_m()
+	else:
+		_route_stall += delta
+		if _route_stall >= ROUTE_STALL_S:
+			_route_stall = 0.0
+			_route_stall_pos = ship.position_m()
+			if route_waypoints.size() <= 1:
+				following_route = false
+				_say("（航线）最后这一段磨不动 —— 点一个偏开一点的目标点，或者按 X 抛锚。", true)
+			else:
+				route_waypoints.pop_front()
+				orders.set_target_point(route_waypoints[0] as Vector2)
+				_say("（航线）这一段磨不进去，改走下一段。", true)
 
 
 # ------------------------------------------------------------ 补给与港口（M4）
@@ -634,6 +733,62 @@ func _consume_supplies(delta: float) -> void:
 	elif int(r["short"]) == 0 and was_starving:
 		cargo.starving = false
 		_say("在港口补上了水和食物，船上又有了底气。", true)
+	# --- M13：坏血病 / 断粮断水 / 船体老化（都按**航程日**算）---
+	days_since_fresh += days
+	var short_food := int(r["want_food"]) - int(r["got_food"])
+	var short_water := int(r["want_water"]) - int(r["got_water"])
+	days_short = days_short + days if (short_food > 0 or short_water > 0) else 0.0
+	_climate_health_tick(days, short_food > 0, short_water > 0)
+	_wear_tick(days)
+
+
+func _climate_health_tick(days: float, short_food: bool, short_water: bool) -> void:
+	"""坏血病与断粮断水的长期后果：健康按天掉，见底就死人。
+
+	门槛与速率全部来自 `climate.json`（铁律：数值只有一个真源）。
+	"""
+	var scurvy_h := Climate.scurvy_health_per_day(days_since_fresh)
+	var scurvy_m := Climate.scurvy_mood_per_day(days_since_fresh)
+	var att_h := 0.0
+	if days_short >= Climate.attrition_grace_days():
+		att_h = Climate.attrition_health_per_day(short_food, short_water)
+	if scurvy_h <= 0.0 and att_h <= 0.0 and scurvy_m <= 0.0:
+		return
+	var deaths := 0
+	var threshold := Climate.death_health()
+	for m in roster.members:
+		if m.dead:
+			continue
+		m.health = clampf(m.health - (scurvy_h + att_h) * days, 0.0, 1.0)
+		m.mood = clampf(m.mood - scurvy_m * days, 0.0, 1.0)
+		if m.health <= threshold:
+			_kill_of_the_sea(m)
+			deaths += 1
+	if deaths > 0:
+		fired["attrition_deaths"] = int(fired.get("attrition_deaths", 0)) + deaths
+		if not fired.has("attrition_first"):
+			fired["attrition_first"] = true
+			_say("【讣告】这一趟海上带走了 %d 个人 —— 咸肉和饼干留不住人。" % deaths, true)
+			journal.decide("长期只吃咸肉与饼干，船上开始死人。")
+
+
+func _kill_of_the_sea(m: CrewMember) -> void:
+	"""海上病死（与陆战、海战共用同一条写回链：名册 → 讣告 → 结算）。"""
+	m.dead = true
+	m.health = 0.0
+	m.job = "dead"
+	ending_score["crew"] = int(ending_score.get("crew", 0)) - 1
+	_say("【讣告】%s 没能撑到下一个港。" % m.label(), true)
+	journal.record(t, "death", "讣告：%s 死于长期的咸肉与坏血病。" % m.label())
+	fired["lost_" + m.id] = true
+
+
+func _wear_tick(step_days: float) -> void:
+	"""船体老化：在海上过了 start_day 个航程日之后，每一类损伤按天累一点。"""
+	var days_at_sea := t * VoyageJournal.voyage_time_scale / 86400.0
+	var wear := Climate.wear_for_day(days_at_sea)
+	for part in wear.keys():
+		ship.apply_damage(str(part), float(wear[part]) * step_days)
 
 
 func _society_tick(delta: float) -> void:
@@ -666,6 +821,135 @@ func _weather_wear(delta: float) -> void:
 	var hours := 60.0 * VoyageJournal.voyage_time_scale / 3600.0
 	for part in per_hour.keys():
 		ship.apply_damage(str(part), float(per_hour[part]) * hours)
+
+
+func _hazard_tick(delta: float) -> void:
+	"""起火与进水（M13，docs/22 第 5.4 节的第七处）：每 60 游戏秒（= 0.5 航程小时）结算一次。
+
+	它**不是损伤值，是状态**：不派人 → 强度自己涨、还持续烧/灌；派人 → 按人头压下去。
+	强度涨到真源的 `loss_at` 这条船就保不住了（换旗舰是 M16 的事，这里先把旗标立起来）。
+	"""
+	if not ship.hazard_any():
+		_hazard_acc = 0.0
+		return
+	_hazard_acc += delta
+	if _hazard_acc < 60.0:
+		return
+	var hours := 60.0 * VoyageJournal.voyage_time_scale / 3600.0
+	_hazard_acc = 0.0
+	var hands_left := maxi(0, hazard_crew)
+	var total := ship.hazard_of("fire") + ship.hazard_of("flood")
+	for part in ["fire", "flood"]:
+		var h := ship.hazard_of(part)
+		if h <= 0.0:
+			continue
+		var cfg: Dictionary = ship.physics.hazard.get(part, {})
+		# 派人：按这一处在总强度里的占比分人手（两处同时着火就一人一半）
+		var share := (h / total) if total > 0.0 else 0.0
+		var fight := float(cfg.get("fight_per_hour_per_hand", 0.0)) * float(hands_left) * share
+		var spread := float(cfg.get("spread_per_hour", 0.0))
+		ship.hazard[part] = clampf(h + (spread - fight) * hours, 0.0, 1.0)
+		# 持续恶化：火往帆索上烧、水往船壳与货里灌（"上层看得见"就落在这条链上）
+		if part == "fire":
+			ship.apply_damage("hull", float(cfg.get("burn_hull_per_hour", 0.0)) * hours)
+			ship.apply_damage("mast", float(cfg.get("burn_mast_per_hour", 0.0)) * hours)
+			ship.apply_damage("sail", float(cfg.get("burn_sail_per_hour", 0.0)) * hours)
+		else:
+			ship.apply_damage("hull", float(cfg.get("ingress_hull_per_hour", 0.0)) * hours)
+			ship.apply_damage("hold", float(cfg.get("soak_hold_per_hour", 0.0)) * hours)
+			var lost := cargo.spoil(float(cfg.get("soak_hold_per_hour", 0.0)) * hours)
+			if lost > 0:
+				_say("海水泡掉了 %d 件货。" % lost, true)
+	# 抢险的人累、也怕（士气按人·小时掉一点）
+	if hands_left > 0:
+		var mood_cost := float(ship.physics.hazard.get("crew_mood_per_hour", 0.02)) * hours
+		for m in roster.members:
+			if not m.dead:
+				m.mood = clampf(m.mood - mood_cost, 0.0, 1.0)
+	# 压不住了：船保不住（换旗舰与轻编队是 M16；这里先把旗标与讣闻立起来）
+	var loss_at := float(ship.physics.hazard.get("loss_at", 1.0))
+	if not fired.has("ship_lost") \
+			and (ship.hazard_of("fire") >= loss_at or ship.hazard_of("flood") >= loss_at):
+		fired["ship_lost"] = true
+		if ship.hazard_of("fire") >= loss_at:
+			_say("【危难】火压不住了 —— 这条船保不住了。", true)
+			journal.decide("甲板上的火没扑灭，船保不住了。")
+		else:
+			_say("【危难】水压不住了 —— 这条船在往下沉。", true)
+			journal.decide("水线下的破口堵不住，船在往下沉。")
+
+
+func fight_hazard(hands: int) -> Dictionary:
+	"""派人去救火 / 抢险（0 就是把人都撤回来）。返回这一决定的现状。"""
+	hazard_crew = clampi(hands, 0, _alive_crew_count())
+	if hazard_crew == 0:
+		_say("没人管火与水 —— 它们会自己长大。", true)
+	else:
+		_say("派了 %d 个人去救火抢险。" % hazard_crew, true)
+	return {
+		"ok": true, "hands": hazard_crew,
+		"fire": ship.hazard_of("fire"), "flood": ship.hazard_of("flood"),
+	}
+
+
+func hazard_report() -> String:
+	if not ship.hazard_any():
+		return ""
+	var bits := PackedStringArray()
+	if ship.hazard_of("fire") > 0.001:
+		bits.append("起火 %.0f%%" % (ship.hazard_of("fire") * 100.0))
+	if ship.hazard_of("flood") > 0.001:
+		bits.append("进水 %.0f%%" % (ship.hazard_of("flood") * 100.0))
+	if hazard_crew > 0:
+		bits.append("抢险 %d 人" % hazard_crew)
+	return "　".join(bits)
+
+
+func _aground_tick(delta: float) -> void:
+	"""搁浅太久就**绞缆脱浅**（M13，自拍可否决 —— docs/07 的待决问题）。
+
+	为什么要有它：长跑扫描里船被按在巴塔哥尼亚的背风岸上，那一片是被陆地挡住的无风区
+	（`lee_factor`），帆使不上劲、洋流又把船往岸上推 —— 避岸规则能避免"磨死"，
+	但出不来。现实里的水手这时候放小艇把锚带出去，绞回来脱浅；这里就补这一下。
+
+	触发条件：贴着干地 + 几乎不动，连续 12 个航程小时。代价：全员士气掉一点。
+	"""
+	if not ship.last_blocked or ship.speed_kn() > 0.5:
+		_aground_t = 0.0
+		return
+	_aground_t += delta
+	if _aground_t < AGROUND_LIMIT_H * 3600.0 / VoyageJournal.voyage_time_scale:
+		return
+	_aground_t = 0.0
+	var offing := _find_offing()
+	if not bool(offing.get("ok", false)):
+		return
+	var away: Vector2 = offing["away"]
+	ship.kedge_off(offing["pos"], rad_to_deg(atan2(away.y, away.x)))
+	_say("放小艇把锚带出去，绞了半天 —— 船终于离开了滩头。", true)
+	journal.decide("搁浅太久，靠抛锚绞缆把船拖了出来。")
+	for m in roster.members:
+		if not m.dead:
+			m.mood = clampf(m.mood - 0.03, 0.0, 1.0)
+
+
+func _find_offing() -> Dictionary:
+	"""找一处**离岸足够远的水面**当脱浅目标（顺着"从岸指向船"的方向往外找）。"""
+	var pos := ship.position_m()
+	var shore := sea.nearest_shore(pos)
+	var away: Vector2 = pos - shore.get("pos", pos)
+	if away.length() < 1.0:
+		away = Vector2(1.0, 0.0)
+	away = away.normalized()
+	for k in 12:
+		var dir := away.rotated(TAU * float(k) / 12.0)
+		for d in [700.0, 1200.0, 2000.0]:
+			var p: Vector2 = sea.wrap_pos(pos + dir * d)
+			if sea.world.is_dry_land(p):
+				continue
+			if float(sea.nearest_shore(p)["distance_m"]) >= 600.0:
+				return {"ok": true, "pos": p, "away": dir}
+	return {"ok": false}
 
 
 func _note_weather() -> void:
@@ -767,6 +1051,8 @@ func begin_naval_battle(foe_crew := 40, foe_weather := "", gap := 0.0) -> Dictio
 	naval.setup(crew_now, foe_crew, w, g)
 	naval.own_id = fleet.local_id
 	naval.guns_own.powder_wet = weather.misfire_weather() == "rain"
+	# M13：弹药区还坏着的话，这一仗一开始就少几门炮能打（第七处损伤的"战斗力下降"）
+	naval.guns_own.magazine_damage = ship.damage_of("magazine")
 	# 联机：开火改成"把这一轮交给受击方的拥有者"（谁挨打谁判）
 	if link != null and link.session != null and link.session.is_online():
 		naval.fire_delegate = Callable(self, "naval_send_volley")
@@ -836,6 +1122,12 @@ func _resolve_naval() -> void:
 	"""打完收账：伤员与阵亡写回名册（和陆战同一条链），损伤已经落在船上。"""
 	var st := naval.stats()
 	var losses := maxi(0, _naval_start_crew - int(st["own_crew"]))
+	# M13：货舱被打漏 → 一部分货当场泡掉（第七处损伤的"货物损失"）。
+	# 之后只要 `damage.hold` 还挂着，`_hazard_tick`/`_consume_supplies` 会继续泡。
+	if naval.hold_damage > 0.02:
+		var spoiled := cargo.spoil(naval.hold_damage * 0.4)
+		if spoiled > 0:
+			_say("货舱灌了水 —— %d 件货泡烂了。" % spoiled, true)
 	var living := _living_members()
 	var surgeon := false
 	for m in roster.key_crew():
@@ -1008,6 +1300,15 @@ func dock() -> String:
 		return "要先抛锚，而且得停在港里（锚地那个圈）"
 	var p := sea.port_at(ship.position_m())
 	docked_port = str(p.get("id", ""))
+	# M13：靠港就能弄到新鲜东西（水果、活的家禽、岸上的菜）—— 坏血病的计时在这里清零
+	days_since_fresh = 0.0
+	# M13：港里有水泵与救火的人手 —— 一进港，火与水都了结（不然可以在港里看着船烧掉）
+	if ship.hazard_any():
+		_say("靠港之后，码头上的人帮着把火扑灭、把水抽干。", true)
+		journal.decide("港里的人搭了把手：火与水都了结了。")
+		ship.hazard["fire"] = 0.0
+		ship.hazard["flood"] = 0.0
+		hazard_crew = 0
 	journal.decide("靠上%s，开始盘点货舱。" % str(p.get("name", "港口")))
 	# 知识：到过的港都记一条（M7 的"发现即记录"）
 	knowledge.note("trade", "port_" + docked_port,
@@ -1099,11 +1400,15 @@ func port_repair(part: String, amount := 1.0) -> Dictionary:
 		return {"ok": false, "reason": "这一处没有损伤"}
 	var r := ports.repair(docked_port, part, do_amount, cargo, ship)
 	if bool(r.get("ok", false)):
+		var names := {
+			"hull": "船体", "mast": "桅杆", "rudder": "舵", "sail": "风帆",
+			"hold": "货舱", "magazine": "弹药区",
+		}
 		_say("修好了 %s 的 %.0f%%。" % [
-			{"hull": "船体", "mast": "桅杆", "rudder": "舵"}.get(part, part),
+			names.get(part, part),
 			do_amount * 100.0], true)
 		journal.decide("在%s修船：%s %.0f%%。" % [port_name(),
-			{"hull": "船体", "mast": "桅杆", "rudder": "舵"}.get(part, part), do_amount * 100.0])
+			names.get(part, part), do_amount * 100.0])
 	return r
 
 
@@ -1538,6 +1843,12 @@ func land(ids: Array, hands := 6) -> String:
 		taken += 1
 	ashore_count = taken
 	ashore = true
+	# M13：岛上能弄到新鲜东西（椰子、鱼、溪水）—— 太平洋的岛链就是靠这个救命的。
+	# 所以**每上一次岸**就把坏血病的计时清零（有港的地方能整船补给，见 `dock()`）。
+	if days_since_fresh > 1.0:
+		_say("岸上的椰子和溪水让船上的人缓了一口气。", true)
+		journal.decide("上岛补水补食：坏血病重新从零算起。")
+	days_since_fresh = 0.0
 	fired["landed"] = true
 	fired.erase("village_ambush")      # 新的一次登陆：伏击重新武装（上来就打，见 _village_ambush）
 	var shore := sea.nearest_shore(ship.position_m())
@@ -1758,6 +2069,11 @@ func capture_ship_state() -> Dictionary:
 		# 不存的话，存档时正在跟航线、读档回来就跟丢了（航点没了，船开到下一段就停）。
 		"following_route": following_route,
 		"route_waypoints": StateIO.v2_list(route_waypoints),
+		# M13：坏血病与断粮的计时（都是"这条船上的日子"）
+		"days_since_fresh": days_since_fresh,
+		"days_short": days_short,
+		# M13：派去救火抢险的人数（火/水本身的强度在 `ship.hazard` 里，跟着船走）
+		"hazard_crew": hazard_crew,
 	}
 
 
@@ -1793,6 +2109,9 @@ func apply_ship_state(d: Dictionary) -> void:
 	locals.apply_state(d.get("locals", {}))
 	following_route = bool(d.get("following_route", false))
 	route_waypoints = StateIO.to_v2_list(d.get("route_waypoints", []))
+	days_since_fresh = float(d.get("days_since_fresh", 0.0))
+	days_short = float(d.get("days_short", 0.0))
+	hazard_crew = int(d.get("hazard_crew", 0))
 	if following_route and route_waypoints.is_empty():
 		following_route = false          # 没剩下航点就没什么可跟的了
 	# 航程累计用的"上一帧船位"是派生值：读档后必须对齐到读回来的位置，

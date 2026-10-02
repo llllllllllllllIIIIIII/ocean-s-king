@@ -42,7 +42,10 @@
     "_comment": "修满 100% 需要多少料。修一半就是一半。",
     "hull": { "wood": 12, "canvas": 6, "ducats": 200 },
     "mast": { "wood": 4, "canvas": 8, "ducats": 120 },
-    "rudder": { "wood": 6, "canvas": 2, "ducats": 80 }
+    "rudder": { "wood": 6, "canvas": 2, "ducats": 80 },
+    "sail": { "canvas": 10, "ducats": 90 },
+    "hold": { "wood": 8, "ducats": 140 },
+    "magazine": { "wood": 3, "canvas": 2, "ducats": 110 }
   },
   "start_load": {
     "_comment": "出发时船上本来就有的一点存货（塞维利亚装好的）。它**不够**走到巴西 —— 中间必须补给。",

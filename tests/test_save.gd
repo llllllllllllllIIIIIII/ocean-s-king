@@ -74,7 +74,9 @@ func _test_field_coverage() -> void:
 			["ready", "title", "subtitle", "opening_heading", "opening_body",
 			 "opening_hint", "acts", "steps", "messages"]],
 		["VoyageJournal", v.journal, v.journal.capture_state(), []],
-		["WindField", v.wind, v.wind.capture_state(), []],
+		# WindField.season_shift_deg / season_gain 是 M13 的**派生量**：
+		# 每帧由 Climate 按"当前纬度 + 日历"算出来灌进去，读档后自然重算 → 不进存档。
+		["WindField", v.wind, v.wind.capture_state(), ["season_shift_deg", "season_gain"]],
 		["ShipDynamics", v.ship, v.ship.capture_state(),
 			# land_shapes 是 M2 加进来的**静态世界数据**（海岸/岛的纯数据形状表），
 			# 和 land_center/land_radius 一样由 setup() 重新灌，不进存档。
@@ -84,7 +86,10 @@ func _test_field_coverage() -> void:
 			 "last_blocked", "_last"]],
 		["ShipOrders", v.orders, v.orders.capture_state(), []],
 		# Navigator.wrap_width：同上，静态世界数据（圆柱世界的宽度）
-		["Navigator", v.nav, v.nav.capture_state(), ["orders", "wrap_width"]],
+		# shore_distance_m / shore_bearing_deg / blocked：M13 避岸规则的**每帧派生输入**
+		# （由 Voyage.tick() 现算现灌），不进存档。
+		["Navigator", v.nav, v.nav.capture_state(),
+			["orders", "wrap_width", "shore_distance_m", "shore_bearing_deg", "blocked"]],
 		["Crew", v.crew, v.crew.capture_state(),
 			["ship", "roster", "_tw", "_ta", "_alpha_grid"]],
 		["CrewRoster", v.roster, v.roster.capture_state(),

@@ -1,0 +1,61 @@
+{
+  "_comment": "气候与季节（M13）：季风窗口、飓风季、坏血病、断粮断水的后果、船体老化。与 weather.json 同等地位 —— 数值只有这一份，GDScript 只读它。",
+  "_how": "季风按**纬度带**给：同一个季节里，北半球那一片刮西南风、南半球那一片刮东北风（反过来）。所以「什么时候能过这片海」是真的有窗口的 —— 同一段航线，窗口内外走起来差别很大。",
+  "version": 1,
+  "seasons": [
+    { "id": "winter", "name": "冬", "months": [12, 1, 2] },
+    { "id": "spring", "name": "春", "months": [3, 4, 5] },
+    { "id": "summer", "name": "夏", "months": [6, 7, 8] },
+    { "id": "autumn", "name": "秋", "months": [9, 10, 11] }
+  ],
+  "_monsoon": "shift_deg = 把基准风向转多少度；gain = 风力倍数。窗口内顺风快、逆风慢 —— 这正是验收第 1 条要的那个差别。",
+  "monsoon": [
+    {
+      "band": "indies_north", "name": "北印度洋与香料群岛", "lat_min": 0.0, "lat_max": 32.0,
+      "shift_by_season": { "spring": 40.0, "summer": 180.0, "autumn": 90.0, "winter": 0.0 },
+      "gain_by_season": { "spring": 1.05, "summer": 1.35, "autumn": 1.1, "winter": 0.8 }
+    },
+    {
+      "band": "indies_south", "name": "南印度洋", "lat_min": -35.0, "lat_max": 0.0,
+      "shift_by_season": { "spring": 0.0, "summer": 0.0, "autumn": 90.0, "winter": 180.0 },
+      "gain_by_season": { "spring": 0.85, "summer": 0.85, "autumn": 1.05, "winter": 1.3 }
+    }
+  ],
+  "_hurricane": "飓风季：某些纬度带在某些月份里会刮起风暴。玩家可以绕、可以等、也可以赌 —— 三条路都只是「要不要进那片海、什么时候进」。",
+  "hurricane": [
+    {
+      "band": "atlantic_tropical", "name": "北大西洋热带", "lat_min": 5.0, "lat_max": 30.0,
+      "months": [7, 8, 9, 10], "hours": 24.0,
+      "text": "这个季节这片海会起飓风。能绕就绕，绕不开就别急着往里冲。"
+    },
+    {
+      "band": "indian_south", "name": "南印度洋", "lat_min": -30.0, "lat_max": -5.0,
+      "months": [12, 1, 2, 3, 4], "hours": 30.0,
+      "text": "南印度洋的飓风季是十二月到四月。"
+    }
+  ],
+  "scurvy": {
+    "_comment": "坏血病：离开最后一个能补给新鲜东西的港之后，按**航程日**累积。头一个月没事，之后健康开始掉；越久越快。靠港补给会清零。",
+    "safe_days": 30.0,
+    "health_per_day": 0.005,
+    "steep_days": 60.0,
+    "health_per_day_late": 0.011,
+    "mood_per_day": 0.0025,
+    "death_health": 0.02
+  },
+  "attrition": {
+    "_comment": "断粮断水的长期后果：先有宽限期，过了宽限期健康按天掉；健康见底就有人死。",
+    "grace_days": 5.0,
+    "starving_health_per_day": 0.02,
+    "thirsty_health_per_day": 0.05,
+    "death_health": 0.05
+  },
+  "wear": {
+    "_comment": "船体老化：在海上过了 start_day 个航程日之后开始按天掉 —— 靠港修船才能补回来。",
+    "start_day": 60.0,
+    "hull_per_day": 0.0015,
+    "mast_per_day": 0.0008,
+    "rudder_per_day": 0.0005,
+    "sail_per_day": 0.0012
+  }
+}

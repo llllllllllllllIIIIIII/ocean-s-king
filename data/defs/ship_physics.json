@@ -28,5 +28,30 @@
     "alpha_deg": [0.0, 5.0, 10.0, 15.0, 18.0, 25.0, 35.0, 50.0, 70.0, 90.0],
     "cl": [0.00, 0.40, 0.78, 1.05, 1.15, 1.05, 0.82, 0.55, 0.34, 0.20],
     "cd": [0.02, 0.04, 0.09, 0.16, 0.24, 0.45, 0.75, 1.00, 1.15, 1.20]
+  },
+  "hazard": {
+    "_comment": "起火与进水（M13 补齐 docs/22 第 5.4 节的第七处）。它们不是'损伤值'而是**状态**：不派人的话每个航程小时自己恶化，强度涨到 loss_at 这条船就没了。和气动一样，数字只有这一份 —— GDScript 只读它。",
+    "_how": "强度 0..1。涨 = spread_per_hour（没人管）；压 = fight_per_hour_per_hand × 派去的人数。同时它还会持续毁东西：火往帆索上烧、水往船壳和货里灌。",
+    "loss_at": 1.0,
+    "crew_mood_per_hour": 0.02,
+    "fire": {
+      "name": "起火",
+      "spread_per_hour": 0.05,
+      "fight_per_hour_per_hand": 0.012,
+      "burn_hull_per_hour": 0.004,
+      "burn_mast_per_hour": 0.006,
+      "burn_sail_per_hour": 0.012,
+      "drag_bonus": 0.25,
+      "text": "火从弹药区那边窜起来 —— 帆布最怕它。"
+    },
+    "flood": {
+      "name": "进水",
+      "spread_per_hour": 0.04,
+      "fight_per_hour_per_hand": 0.010,
+      "ingress_hull_per_hour": 0.005,
+      "soak_hold_per_hour": 0.010,
+      "drag_bonus": 0.60,
+      "text": "水从船壳的破口往里灌 —— 一边抽一边还得堵。"
+    }
   }
 }

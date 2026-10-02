@@ -14,7 +14,7 @@ extends RefCounted
 
 const DIR := "res://data/defs/events"
 const FILES := ["chain.json", "external.json", "ship.json", "expedition.json",
-	"south_america.json"]      # M12：按海域发生的事件（海峡/太平洋那几条）
+	"south_america.json", "pacific.json"]   # M12/M13：按海域发生的事件（海峡/太平洋）
 const CHECK_STEP := 600.0            # 每 600 个游戏秒看一次（= 0.5 个航程小时）
 const COOLDOWN := 900.0              # 两次事件之间至少隔这么久（游戏秒）
 

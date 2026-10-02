@@ -20,6 +20,10 @@ const FIELDS := [
 	# M8 收尾：玩家那艘船的"沿航线走"开关与剩下的航点
 	"following_route", "route_waypoints",
 	"culture",
+	# M13：离开新鲜食物多少航程日（坏血病）、连着缺粮缺水多少航程日（断粮致死）
+	"days_since_fresh", "days_short",
+	# M13：派去救火 / 抢险的人数（火与水的强度在 `ship.hazard` 里）
+	"hazard_crew",
 ]
 
 var data := {}

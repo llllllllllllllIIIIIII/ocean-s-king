@@ -23,6 +23,9 @@ var powder_wet := false
 var crew_skill := 0.5             # 炮组的技能（由调用方每帧灌进来）
 var shots_fired := 0              # 整场打出去多少发（统计用）
 var misfires := 0
+# M13：弹药区损伤（0..1）。它不炸（那是起火那条链的事），但它让火药取不出来 ——
+# 最后几门炮哑着。数值落地在 `ShipDynamics.damage.magazine`，这里只读。
+var magazine_damage := 0.0
 
 
 func setup_default() -> void:
@@ -76,6 +79,11 @@ func ready_guns() -> Array:
 	for g in guns:
 		if bool(g.get("loaded", false)) or float(g["reload_t"]) >= reload_time_of(g):
 			out.append(g)
+	# M13：弹药区被打坏 → 末端几门炮取不到药，这一轮哑着（docs/22 第 5.4 节）
+	if magazine_damage > 0.001 and not out.is_empty():
+		var blocked := int(floor(float(out.size()) * magazine_damage))
+		if blocked > 0:
+			out = out.slice(0, maxi(0, out.size() - blocked))
 	return out
 
 
@@ -191,6 +199,7 @@ func capture_state() -> Dictionary:
 		"powder_wet": powder_wet,
 		"shots_fired": shots_fired,
 		"misfires": misfires,
+		"magazine_damage": magazine_damage,
 	}
 
 
@@ -210,6 +219,7 @@ func apply_state(d: Dictionary) -> void:
 	powder_wet = bool(d.get("powder_wet", false))
 	shots_fired = int(d.get("shots_fired", 0))
 	misfires = int(d.get("misfires", 0))
+	magazine_damage = clampf(float(d.get("magazine_damage", 0.0)), 0.0, 1.0)
 
 
 func describe() -> String:

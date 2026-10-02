@@ -1,0 +1,100 @@
+{
+  "_comment": "太平洋段的事件池（M13）：三个月的空海里会发生什么。条件里的 `region: pacific` 读的是 M9 的分区图幅 —— 这几条只会在南美峡口到香料群岛之间那片海上发生。",
+  "_design": "它们不制造新数值，只把长期远征的压力演出来：风停了、水见底了、人病了、星图对不上了 —— 以及鲸和鸟给的那条路。",
+  "version": 1,
+  "pool": "external",
+  "events": [
+    {
+      "id": "pacific_calm_days",
+      "name": "无风的日子",
+      "priority": 2,
+      "requires": { "region": "pacific", "weather_is": ["calm"], "days_min": 55 },
+      "effects": {
+        "mood": -0.04,
+        "tension": 0.05,
+        "message": "帆垂着，水面像一块烧热的铁皮。舵手说：昨天也是这个风，前天也是。没人接话。"
+      },
+      "text": "无风带里最耗的不是水，是耐心。",
+      "knowledge": {
+        "category": "current",
+        "id": "pacific_doldrums",
+        "title": "太平洋的无风带",
+        "text": "赤道附近有一大片常年没风的水。船进去之后只能等，等到有风为止。"
+      }
+    },
+    {
+      "id": "pacific_water_ration",
+      "name": "淡水见底",
+      "priority": 3,
+      "requires": { "region": "pacific", "supplies_below": { "water": 6 }, "days_min": 50 },
+      "effects": {
+        "tension": 0.08,
+        "mood": -0.05,
+        "discipline": 0.04,
+        "flag": "pacific_rationing",
+        "message": "桶匠把水桶一个个敲过：空的。从今天起按人头量水 —— 谁犯规，谁受罚。"
+      },
+      "text": "在太平洋上，水比黄金要紧。",
+      "knowledge": {
+        "category": "chart",
+        "id": "water_discipline",
+        "title": "量水",
+        "text": "远洋船上的淡水按人头定额发放，由桶匠看管；坏了规矩的人会被当众罚。"
+      }
+    },
+    {
+      "id": "pacific_birds",
+      "name": "鲣鸟与鲸",
+      "priority": 2,
+      "requires": { "region": "pacific", "days_min": 58 },
+      "effects": {
+        "mood": 0.05,
+        "memory_add": { "saw_birds": 1 },
+        "message": "傍晚有一群鲣鸟朝西南飞；夜里一群鲸从船边过去，也是西南。瞭望手说：那边有陆地。"
+      },
+      "text": "鸟和鲸不会无缘无故朝一个方向走。",
+      "knowledge": {
+        "category": "chart",
+        "id": "birds_point_land",
+        "title": "鸟与鲸指的路",
+        "text": "远洋上的鸟与鲸有成群的方向。跟着它们走，往往能撞见岛 —— 至少不会越走越空。"
+      }
+    },
+    {
+      "id": "pacific_scurvy",
+      "name": "牙床开始出血",
+      "priority": 3,
+      "requires": { "region": "pacific", "days_min": 70 },
+      "effects": {
+        "health": -0.08,
+        "mood": -0.06,
+        "tension": 0.1,
+        "message": "先是老锚工，牙床肿得吃不下硬饼干。外科医生翻遍箱子，只说了一个字：新鲜的。"
+      },
+      "text": "在海上待久了，人不是被风浪带走的，是被食物带走的。",
+      "knowledge": {
+        "category": "medicine",
+        "id": "scurvy",
+        "title": "坏血病",
+        "text": "长期只吃咸肉与饼干的人会牙龈出血、旧伤裂开。新鲜的水果、菜与肉能治它 —— 这也是为什么每一块能上岸的陆地都金贵。"
+      }
+    },
+    {
+      "id": "pacific_stars",
+      "name": "星图对不上",
+      "priority": 2,
+      "requires": { "region": "pacific", "days_min": 62 },
+      "effects": {
+        "mood": -0.03,
+        "message": "领航员量了一夜的星高，第二天把海图卷起来：往西还有多少水，图上没有写。"
+      },
+      "text": "过了海峡，海图就只是纸。",
+      "knowledge": {
+        "category": "chart",
+        "id": "unknown_pacific_width",
+        "title": "太平洋有多宽",
+        "text": "从美洲西岸到香料群岛之间是多大一片水，当时没有人说得准。这条航线本身就是要回答这个问题。"
+      }
+    }
+  ]
+}
