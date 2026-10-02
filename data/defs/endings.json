@@ -1,0 +1,32 @@
+{
+  "_comment": "四档结局（M19）：巨大荣誉 / 普通成功 / 失败式归来 / 政治惩罚（含入狱）。判定**按 priority 从大到小**，第一个条件全满足的就是它 —— 最后一条（failed）没有条件，是兜底。所以四档**互斥且覆盖全部情况**：任何一局都恰好落进一档。",
+  "_conditions": "r 里的每一把钥匙都要满足（AND）。可用：total_min（总分下限）/ total_max（总分上限）/ all_arrived（四条船都到）/ arrived_min（至少几条船到）/ orders_done_min（王室命令完成几条）/ orders_broken_min（违抗几条）/ memory_min（世界记忆的下限）/ memory_max（世界记忆的上限）/ flag（要立起来的旗标）/ not_flag（不能有的旗标）/ any_broken（有没有违抗过王室命令）。",
+  "version": 1,
+  "endings": [
+    {
+      "id": "punished", "name": "戴着镣铐回来", "priority": 40, "imprison": true,
+      "requires": { "arrived_min": 1, "any_broken": true },
+      "text": "船回来了，人却被押上了岸。王室的账房、主教的人、还有葡萄牙人的使节都等在码头上。",
+      "reason": "命令被违抗、或者一路上结下的仇到了塞维利亚 —— 完成不等于没事。"
+    },
+    {
+      "id": "glory", "name": "巨大荣誉", "priority": 30,
+      "requires": { "total_min": 220, "all_arrived": true, "orders_broken_min": 0,
+        "memory_max": { "killed": 0 } },
+      "text": "整座城都出来了。国王的书记官当众念完了这一趟的账 —— 完了才有人敢说话。",
+      "reason": "分数够高、四条船都回来了、而且一路上没有违抗与滥杀。"
+    },
+    {
+      "id": "success", "name": "普通成功", "priority": 20,
+      "requires": { "total_min": 120, "arrived_min": 1 },
+      "text": "船进了港，账也交了上去。没有号角，但有工钱、有下一次的合同。",
+      "reason": "分数过得去、船也回来了 —— 但离「巨大荣誉」还差一截。"
+    },
+    {
+      "id": "failed", "name": "失败式归来", "priority": 10,
+      "requires": {},
+      "text": "出去四艘，回来的人凑不齐一条船的编制。账房先生合上本子，什么也没说。",
+      "reason": "没到终点、或者分太低 —— 这一趟没换来什么。"
+    }
+  ]
+}

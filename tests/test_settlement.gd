@@ -20,6 +20,7 @@ func _initialize() -> void:
 	_test_wealth_and_knowledge_move()
 	_test_crew_and_death()
 	_test_verdicts()
+	_test_four_endings()
 	_test_fleet_rows()
 	_test_fleet_sails_to_brazil()
 	_test_player_sails_to_brazil()
@@ -101,6 +102,68 @@ func _test_crew_and_death() -> void:
 
 # ---------------------------------------------------------------- 4 三档评价
 
+# ---------------------------------------------------------------- M19：四档结局
+
+func _arrive_all(v: Voyage, n := 4) -> void:
+	var ids := v.fleet.ids()
+	for i in mini(n, ids.size()):
+		v.fleet.arrived[str(ids[i])] = true
+
+
+func _test_four_endings() -> void:
+	"""验收第 1、2、3 条：四档各有确定的进入条件、互斥、覆盖全部；命令能改档。"""
+	_check(Settlement.ending_ids() == ["punished", "glory", "success", "failed"],
+		"结局表按优先级排好（%s）" % ", ".join(Settlement.ending_ids()))
+	# ① 失败式归来：什么都没做成（没到终点、分低）—— 兜底那一档
+	var a := _v()
+	var ra := Settlement.report(a)
+	_check(str(ra["ending_id"]) == "failed", "什么都没做成 → 失败式归来（%s）" % str(ra["ending_id"]))
+	# ② 普通成功：分够 + 至少一条船回来
+	var b := _v()
+	b.cargo.money += 8000
+	b.journal.distance_m = 30000.0
+	b.ending_score = {"wealth": 4, "voyage": 3, "knowledge": 4, "crew": 0, "history": 0}
+	_arrive_all(b, 1)
+	var rb := Settlement.report(b)
+	_check(str(rb["ending_id"]) == "success", "分够、船回来了 → 普通成功（%s，总分 %d）"
+		% [str(rb["ending_id"]), int(rb["total"])])
+	# ③ 巨大荣誉：分很高 + 四条船都到 + 没违抗 + 没滥杀
+	var c := _v()
+	c.cargo.money += 25000
+	c.journal.distance_m = 60000.0
+	c.ending_score = {"wealth": 8, "voyage": 8, "knowledge": 8, "crew": 8, "history": 8}
+	_arrive_all(c, 4)
+	for i in 12:
+		c.knowledge.note("chart", "glory_%d" % i, "第 %d 处" % i, "", 0.0)
+	var rc := Settlement.report(c)
+	_check(str(rc["ending_id"]) == "glory", "分高、四条船都到、没违抗 → 巨大荣誉（%s，总分 %d）"
+		% [str(rc["ending_id"]), int(rc["total"])])
+	# ④ 政治惩罚：**完成了**，但违抗过王室命令 —— "完成但被惩罚"这条线真的走得通
+	var d := _v()
+	d.cargo.money += 25000
+	d.journal.distance_m = 60000.0
+	d.ending_score = {"wealth": 8, "voyage": 8, "knowledge": 8, "crew": 8, "history": 8}
+	_arrive_all(d, 4)
+	d.memory["friendly_kills"] = 1
+	var rd := Settlement.report(d)
+	_check(str(rd["ending_id"]) == "punished", "完成环球但违抗过命令 → 政治惩罚（%s）"
+		% str(rd["ending_id"]))
+	_check(bool(rd["imprison"]), "这一档带「入狱」标记")
+	_check(int(rd["ctx"]["orders_broken"]) > 0, "判定的理由里有违抗（%d 条）"
+		% int(rd["ctx"]["orders_broken"]))
+	_check(int(rd["total"]) > 220, "它的分其实很高（%d）—— 完成不等于成功" % int(rd["total"]))
+	# 结算页（正常游戏里自动弹出的那一页）要写明档位、理由与后果
+	var txt := Settlement.text(d, d.journal, d.story)
+	_check(txt.contains("戴着镣铐回来"), "结算页写着档位（找了「戴着镣铐回来」）")
+	_check(txt.contains("理由："), "结算页写着判定的理由")
+	_check(txt.contains("带走"), "被惩罚那一档写明了入狱这件事")
+	# 互斥与覆盖：四个局面恰好落在四档上
+	var seen := {}
+	for r in [ra, rb, rc, rd]:
+		seen[str(r["ending_id"])] = true
+	_check(seen.size() == 4, "四种局面落在四档上（%s）" % ", ".join(seen.keys()))
+
+
 func _test_verdicts() -> void:
 	var bad := _v()
 	bad.roster.members[0].dead = true
@@ -124,6 +187,8 @@ func _test_verdicts() -> void:
 	good.ending_score["wealth"] = 4
 	good.ending_score["knowledge"] = 4
 	good.ending_score["voyage"] = 3
+	# M19：「满载而**归**」—— 至少要有一条船回到终点港（新结局表里"成功"这一档要求 arrived ≥ 1）
+	good.fleet.arrived[good.fleet.local_id] = true
 	var r_good := Settlement.report(good)
 	_check(str(r_good["verdict"]) != "失败式归来",
 		"满载而归、探明全图 → 不是失败式（%s，总分 %d）" % [str(r_good["verdict"]), int(r_good["total"])])

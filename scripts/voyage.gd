@@ -2270,6 +2270,20 @@ func discovered_tiles() -> int:
 	return discovered.size()
 
 
+func discovered_regions() -> int:
+	"""走过多少个**分区图幅**（M19 的航海那一档要看它）：分区里任意一块被探明就算走过。"""
+	var seen := {}
+	for ty in sea.tiles().y:
+		for tx in sea.tiles().x:
+			var t := Vector2i(tx, ty)
+			if not discovered.has(sea.tile_key(t)):
+				continue
+			var id := str(sea.world.region_of_tile(t).get("id", ""))
+			if id != "":
+				seen[id] = true
+	return seen.size()
+
+
 func total_tiles() -> int:
 	return sea.tiles().x * sea.tiles().y
 

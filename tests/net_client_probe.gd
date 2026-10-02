@@ -154,6 +154,9 @@ func _write_report(status: String) -> void:
 	var d := {
 		"status": status,
 		"role": "client",
+		# M19：四档结局 —— 客户端手里的档位必须与房主一致
+		"verdict": str(Settlement.report(voyage).get("verdict", "")) if voyage != null else "",
+		"ending_id": str(Settlement.report(voyage).get("ending_id", "")) if voyage != null else "",
 		"t": voyage.t if voyage != null else -1.0,
 		"ship_id": voyage.fleet.local_id if voyage != null else "",
 		"local": local,

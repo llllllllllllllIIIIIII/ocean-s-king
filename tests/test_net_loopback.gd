@@ -258,6 +258,12 @@ func _compare() -> void:
 
 	# ①.5 结局旗标：房主宣布之后，**每个玩家**手里都得有（结算页才有得弹）
 	# M16：客户端看到的归属 —— "沉船的人接手另一条船"必须两边一致
+	# M19：四档结局 —— 每个客户端算出来的档位必须与房主一致（结算页对谁都成立）
+	var host_ending := str(Settlement.report(voyage).get("ending_id", ""))
+	for c in [c1, c2]:
+		_check(str(c.get("ending_id", "")) == host_ending,
+			"客户端算出的结局档位与房主一致（%s = %s）"
+			% [str(c.get("ending_id", "?")), host_ending])
 	if _m16_new_id != "":
 		for c in [c1, c2]:
 			var fo: Dictionary = c.get("fleet_owner", {})

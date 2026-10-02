@@ -65,6 +65,7 @@ var _frame := 0
 var _shot_dir := "res://.shots"
 var _tri: TriView = null           # M18：三视图
 var _tri_only := false             # 截图快路径：`-- shots tri`
+var _ending_only := false          # 截图快路径：`-- shots ending`
 var _wind_gizmo: WindGizmo
 var _ship_view: ShipRenderer       # 海图上用**真正的 SVG 船**，不是占位三角块
 var _chart: ChartView              # M2：拉远之后淡入的海图层
@@ -112,6 +113,7 @@ func _ready() -> void:
 	_shot_mode = args.has("shots")
 	_strait_only = _shot_mode and args.has("strait")
 	_tri_only = _shot_mode and args.has("tri")
+	_ending_only = _shot_mode and args.has("ending")
 	voyage = Voyage.new()
 	voyage.setup(_region_from_args(args))
 	# 海图层要先于船加进来：Node2D 的子节点按加入顺序画，
@@ -301,7 +303,9 @@ func _begin_voyage(show_title: bool) -> void:
 
 func _process(delta: float) -> void:
 	if _shot_mode:
-		if _tri_only:
+		if _ending_only:
+			_run_ending_shots()
+		elif _tri_only:
 			_run_tri_shots()
 		elif _strait_only:
 			_run_strait_shots()
@@ -1537,6 +1541,83 @@ func _run_strait_shots() -> void:
 			_capture("66_strait_east_mouth")
 		5:
 			get_tree().quit(0)
+
+
+func _run_ending_shots() -> void:
+	"""M19 的**专用快路径**：四档结局各截一张结算页（`-- shots ending`）。
+
+	每一档都用"构造局面"的办法摆出来（同一套判定表，不是手写文案）：
+	69 巨大荣誉 / 70 普通成功 / 71 失败式归来 / 72 政治惩罚（入狱）。
+	"""
+	_frame += 1
+	_update_camera()
+	_update_hud()
+	queue_redraw()
+	match _frame:
+		1:
+			voyage.encounters_enabled = false
+			_set_ending_scene("glory")
+		2:
+			_show_settlement()
+		3:
+			_capture("69_ending_glory")
+		4:
+			_show_overlay(_ending, false)
+			_set_ending_scene("success")
+		5:
+			_show_settlement()
+		6:
+			_capture("70_ending_success")
+		7:
+			_show_overlay(_ending, false)
+			_set_ending_scene("failed")
+		8:
+			_show_settlement()
+		9:
+			_capture("71_ending_failed")
+		10:
+			_show_overlay(_ending, false)
+			_set_ending_scene("punished")
+		11:
+			_show_settlement()
+		12:
+			_capture("72_ending_punished")
+		13:
+			get_tree().quit(0)
+
+
+func _set_ending_scene(tier: String) -> void:
+	"""把这一局摆成某一档（照 `settlement.gd` 的判定条件，不写死文案）。"""
+	# 先回到"干净的一条船"
+	voyage.fleet.arrived.clear()
+	voyage.memory.clear()
+	voyage.ending_score = {"wealth": 0, "voyage": 0, "knowledge": 0, "crew": 0, "history": 0}
+	voyage.cargo.money = 200
+	voyage.journal.distance_m = 0.0
+	match tier:
+		"glory":
+			voyage.cargo.money = 25000
+			voyage.journal.distance_m = 60000.0
+			voyage.ending_score = {"wealth": 8, "voyage": 8, "knowledge": 8, "crew": 8, "history": 8}
+			for i in 12:
+				voyage.knowledge.note("chart", "shot_glory_%d" % i, "第 %d 处" % i, "", voyage.t)
+			for id in voyage.fleet.ids():
+				voyage.fleet.arrived[str(id)] = true
+		"success":
+			voyage.cargo.money = 9000
+			voyage.journal.distance_m = 30000.0
+			voyage.ending_score = {"wealth": 4, "voyage": 3, "knowledge": 4, "crew": 0, "history": 0}
+			voyage.fleet.arrived[voyage.fleet.local_id] = true
+		"failed":
+			pass                                  # 什么都没做 = 兜底那一档
+		"punished":
+			voyage.cargo.money = 25000
+			voyage.journal.distance_m = 60000.0
+			voyage.ending_score = {"wealth": 8, "voyage": 8, "knowledge": 8, "crew": 8, "history": 8}
+			for id in voyage.fleet.ids():
+				voyage.fleet.arrived[str(id)] = true
+			voyage.memory["friendly_kills"] = 1
+	_update_hud()
 
 
 func _run_tri_shots() -> void:
