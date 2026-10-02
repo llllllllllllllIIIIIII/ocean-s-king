@@ -147,6 +147,12 @@ func _on_message(peer: int, kind: String, payload: Dictionary) -> void:
 			# 第二段：回执到手，申请方把**自己的**货与钱落账（拥有者权威）。
 			if session.is_client():
 				voyage.client_apply_trade(payload)
+		NetProtocol.ASSIGN:
+			# M16：房主判定"这条船现在归谁" —— 客户端照它改归属（其他人 / AI）
+			if session.is_host():
+				session.relay(peer, kind, payload, true)
+			voyage.fleet.assign(str(payload.get("ship_id", "")),
+				int(payload.get("peer", 0)), str(payload.get("owner_name", "")))
 
 
 func send_trade_request(req: Dictionary) -> void:
@@ -158,6 +164,14 @@ func send_trade_request(req: Dictionary) -> void:
 		voyage.client_apply_trade({"req": req, "result": result})
 		return
 	session.send_to_host(NetProtocol.TRADE_REQUEST, req, true)
+
+
+func announce_assignment(id: String, peer: int, owner_name := "") -> void:
+	"""房主：把"这条船现在归谁开"广播出去（M16 换旗舰 / 沉船接手）。"""
+	if session == null or not session.is_online():
+		return
+	session.broadcast(NetProtocol.ASSIGN,
+		{"ship_id": id, "peer": peer, "owner_name": owner_name}, true)
 
 
 func send_fire(req: Dictionary) -> void:

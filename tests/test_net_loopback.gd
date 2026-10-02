@@ -33,6 +33,8 @@ var _report2_path := "user://net_client_report_b.json"
 var _m11_pushed := false           # M11：房主只推一次势力/追捕，用来验它铺到了客户端
 var _naval_started := false        # M10：双进程海战对账（房主朝客户端那条船开一轮）
 var _naval_foe := ""               # 打的是哪条船（用来对上客户端的报告）
+var _m16_done := false             # M16：房主换一次旗舰，验客户端看到的归属
+var _m16_new_id := ""
 var _started_at := 0
 var _snapshot := {}
 var _phase := "run"
@@ -150,6 +152,21 @@ func _process(delta: float) -> bool:
 		else:
 			print("[host] 海战没起得来：%s" % str(r))
 	# 到了 10 分钟：给两边各拍一张快照，然后等客户端的报告
+	# M16：**换旗舰** —— 房主的旗舰沉了，接手一条没人开的船；
+	# 归属的判定由房主广播（`NetProtocol.ASSIGN`），客户端必须看到"那条船归房主"。
+	if _phase == "mid" and voyage.t >= MID_JOIN_AT + 180.0 and not _m16_done:
+		_m16_done = true
+		var next := ""
+		for id in voyage.fleet.others():
+			if voyage.fleet.kind_of(id) == Fleet.KIND_AI:
+				next = id
+				break
+		if next != "":
+			_m16_new_id = next
+			voyage.ship.apply_damage("hull", 1.0)
+			voyage.check_flagship_lost()
+			print("[host] t=%.1f 换旗舰：接手 %s（房主现在开的是 %s）"
+				% [voyage.t, next, voyage.fleet.local_id])
 	if _phase == "mid" and voyage.t >= GAME_SECONDS:
 		_phase = "wait"
 		_snapshot = _snapshot_of(voyage)
@@ -240,6 +257,13 @@ func _compare() -> void:
 			float(_snapshot["t"]), float(c2["t"])])
 
 	# ①.5 结局旗标：房主宣布之后，**每个玩家**手里都得有（结算页才有得弹）
+	# M16：客户端看到的归属 —— "沉船的人接手另一条船"必须两边一致
+	if _m16_new_id != "":
+		for c in [c1, c2]:
+			var fo: Dictionary = c.get("fleet_owner", {})
+			var owner: Dictionary = fo.get(_m16_new_id, {})
+			_check(int(owner.get("peer", -1)) == 1,
+				"客户端看到「%s」归房主（peer=%s）" % [_m16_new_id, str(owner.get("peer", "?"))])
 	_check(bool(_snapshot.get("ending_ready", false)),
 		"房主这边已经宣布结局（%.0f 游戏秒时）" % float(_snapshot["t"]))
 	for c in [c1, c2]:
@@ -349,7 +373,10 @@ func _drop_checks() -> void:
 	for id in ai_ids:
 		if voyage.fleet.pose_of(id).distance_to(_snapshot_pos(id)) <= 5.0:
 			still.append(id)
-	_check(ai_ids.size() >= 3 and still.is_empty(),
+	# M16：房主在 480 秒时接手了一条 AI 船（沉船接手），那条就不再是 AI ——
+	# 所以这里按"3 − 接手的条数"来数，其余 AI 照样得自己往前走。
+	var took_over := 1 if (_m16_done and _m16_new_id != "") else 0
+	_check(ai_ids.size() >= 3 - took_over and still.is_empty(),
 		"四条船里的 AI 都在继续走（%d 条，原地不动的：%s）" % [
 			ai_ids.size(), "无" if still.is_empty() else ", ".join(still)])
 	# 掉线之后，房主的存档照样能存能读（docs/13 M3 卡片第 3 条的后半句）

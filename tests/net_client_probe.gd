@@ -136,6 +136,7 @@ func _write_report(status: String) -> void:
 		for id in voyage.fleet.ids():
 			fleet[id] = voyage.fleet.summary_of(id)
 	var local := {}
+	var fleet_owner := {}
 	if voyage != null:
 		local = {
 			"id": voyage.fleet.local_id,
@@ -144,12 +145,19 @@ func _write_report(status: String) -> void:
 			"hull_pct": 1.0 - voyage.ship.damage_of("hull"),
 			"crew_count": voyage.roster.members.size(),
 		}
+		for id in voyage.fleet.ids():
+			fleet_owner[id] = {
+				"kind": voyage.fleet.kind_of(id),
+				"peer": voyage.fleet.owner_peer_of(id),
+				"name": voyage.fleet.owner_name_of(id),
+			}
 	var d := {
 		"status": status,
 		"role": "client",
 		"t": voyage.t if voyage != null else -1.0,
 		"ship_id": voyage.fleet.local_id if voyage != null else "",
 		"local": local,
+		"fleet_owner": fleet_owner,
 		"fleet": fleet,
 		"fired": voyage.fired.keys() if voyage != null else [],
 		"story_head": voyage.story.head if voyage != null else -1,

@@ -23,6 +23,8 @@ const FIELDS := [
 	"reached_destination",
 	# M11：势力态度与王室命令执行度、葡萄牙追捕的当前环（都是"世界对我们做了什么"）
 	"factions", "pursuit", "npcs",
+	# M16：轻编队指令与沉掉的船（编队是**共享约定**，沉船是全世界都得知道的事）
+	"formation", "lost_ships",
 	"last_message", "message_timer", "log_lines", "pending_reports",
 	"_shore_cooldown", "story", "journal",
 ]

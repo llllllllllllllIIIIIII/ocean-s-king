@@ -53,6 +53,9 @@ var _hazard_acc := 0.0
 # M13：搁浅计时 —— 卡在滩上太久（背风岸 + 无风区）就绞缆脱浅（见 `_aground_tick`）。
 const AGROUND_LIMIT_H := 12.0
 var _aground_t := 0.0
+# M16：轻编队指令（共享约定，进 WorldState）与沉船记录
+var formation := "free"
+var lost_ships: Array = []
 var culture := Culture.new()        # 当地文明的三档态度（M6）
 var locals := LocalGroup.new()      # 岛上那伙人（M6 收尾：他们是常驻实体，不是打起来才刷出来的）
 var weather := Weather.new()        # 自然环境（M7）
@@ -249,6 +252,7 @@ func tick(delta: float) -> void:
 			_resolve_naval()
 	_pursuit_tick(delta)
 	_npc_contact_tick(delta)
+	check_flagship_lost()
 	_climate_wind_tick()
 	_check_fleet_arrival()
 	_route_tick(delta)
@@ -1741,6 +1745,92 @@ func is_client() -> bool:
 
 # ------------------------------------------------------------ 船队（M3）
 
+# ------------------------------------------------------------ 旗舰与轻编队（M16）
+
+func set_formation(mode: String) -> Dictionary:
+	"""下达轻编队指令（M16）：跟随（近/中/远）/ 保持阵位 / 自由巡航。
+
+	编队是**共享约定**（进 WorldState 投影），执行在各机器上 —— 客户端只读覆盖。
+	"""
+	if not fleet.set_formation(mode):
+		return {"ok": false, "reason": "没有这条编队指令"}
+	formation = fleet.formation
+	_say("编队指令：%s。" % fleet.formation_name(), true)
+	journal.decide("编队指令改为「%s」。" % fleet.formation_name())
+	return {"ok": true, "formation": formation, "name": fleet.formation_name()}
+
+
+func formation_report() -> String:
+	var alive := fleet.alive_ids().size()
+	return "%s　船 %d/%d（旗舰 %s）" % [
+		fleet.formation_name(), alive, alive + lost_ships.size(), fleet.flagship_name()]
+
+
+func check_flagship_lost() -> void:
+	"""旗舰失去航行能力（船壳全毁 / 火烧沉 / 水灌满）→ M16 的**换旗舰**。
+
+	每帧检查：主角船沉了不该是"游戏结束"，而是"换一条船接着走"。
+	"""
+	if fleet.local_id == "" or fleet.alive_ids().is_empty():
+		return
+	if ship.damage_of("hull") >= 1.0:
+		_lose_flagship("船壳全毁")
+	elif bool(fired.get("ship_lost", false)):
+		_lose_flagship("沉没")
+
+
+func _lose_flagship(reason: String) -> Dictionary:
+	"""记进日志与结算 → 从船位里移走 → 房主宣布新旗舰（就近接管）。"""
+	var old := fleet.local_id
+	if old == "" or fleet.slot_of(old).is_empty():
+		return {}
+	var old_name := fleet.name_of(old)
+	var rec := fleet.sink(old, day, reason)
+	lost_ships.append(rec)
+	ending_score["crew"] = int(ending_score.get("crew", 0)) - 1
+	_say("【船队】%s%s —— 船队少了一条船。" % [old_name, reason], true)
+	journal.decide("【船队】%s%s（第 %d 天）：人撤了下来，货也抢出来一部分。" % [old_name, reason, day])
+	memory["ships_lost"] = int(memory.get("ships_lost", 0)) + 1
+	var next := fleet.nearest_alive(ship.position_m())
+	if next == "":
+		_say("海上再没有别的船了。", true)
+		return rec
+	take_over_ship(next)
+	return rec
+
+
+func take_over_ship(id: String) -> Dictionary:
+	"""把某条抽象船升为**本机细化**（M16 的旗舰转移 / 联机里的"沉船者接手另一条"）。
+
+	继承的是那几个数：位置 / 艏向 / 船体% / 人数 / 帆档 / 锚（`_take_over`）。
+	名册按**船 id 的种子**重新生成 —— 同一条船必得同一份名册，可复现。
+	"""
+	var summary := fleet.attach_player(id, 1, "我")
+	if summary.is_empty():
+		return {}
+	# ⚠️ 先把上一条船的损伤清掉再继承摘要 —— `_take_over` 是**累加**
+	# （不清的话：旧船船壳全毁 1.0 + 新船的 0.0 还是 1.0，刚接手就再沉一次）。
+	ship.damage = {"hull": 0.0, "mast": 0.0, "rudder": 0.0, "sail": 0.0,
+		"hold": 0.0, "magazine": 0.0}
+	_take_over(summary)
+	fleet.claim_local(id)
+	# M16：把"这条船现在归我"广播出去（别人那边显示的就是"他换了一条船"）
+	if link != null and link.session != null and link.session.is_online():
+		link.announce_assignment(id, 1, "我")
+	roster.setup()
+	roster.reseed(id.hash())
+	crew.retrim()
+	fired.erase("ship_lost")              # 那是上一条船的事
+	ship.hazard = {"fire": 0.0, "flood": 0.0}
+	hazard_crew = 0
+	ashore = false
+	ashore_count = 0
+	_publish_local_summary()
+	_say("【船队】旗舰换成%s —— 船长上了那条船，接着走。" % fleet.name_of(id), true)
+	journal.decide("旗舰转移到%s（第 %d 天）。" % [fleet.name_of(id), day])
+	return summary
+
+
 func _setup_fleet_ships(port_pos: Vector2) -> void:
 	"""四艘船摆在出发港外的水面上；没人开的那三条由 AI 带着走。
 
@@ -2325,9 +2415,9 @@ func report(text: String) -> void:
 
 func describe() -> String:
 	var dmg := ship.describe_damage()
-	return "%s %s　船速 %.1f 节　%s　损伤：%s　%s" % [
+	return "%s %s　船速 %.1f 节　%s　损伤：%s　%s　编队：%s" % [
 		date_string(), clock_string(), ship.speed_kn(), nav.method_name(), dmg,
-		"船长在岸上" if ashore else "船长在船上"]
+		"船长在岸上" if ashore else "船长在船上", formation_report()]
 
 
 # ------------------------------------------------------------ 存档（docs/14）
@@ -2363,6 +2453,9 @@ func capture_world_state() -> Dictionary:
 		"factions": factions.capture_state(),
 		"pursuit": pursuit.capture_state(),
 		"npcs": npcs.capture_state(),
+		# M16：轻编队指令与沉船记录（编队是共享约定，沉船全世界都得知道）
+		"formation": formation,
+		"lost_ships": lost_ships.duplicate(true),
 		"last_message": last_message,
 		"message_timer": message_timer,
 		"log_lines": log_lines.duplicate(),
@@ -2396,6 +2489,10 @@ func apply_world_state(d: Dictionary) -> void:
 	factions.apply_state(d.get("factions", {}))
 	pursuit.apply_state(d.get("pursuit", {}))
 	npcs.apply_state(d.get("npcs", {}))
+	# M16：编队指令与沉船记录（客户端只读覆盖 —— 这是房主定的共享约定）
+	if bool(fleet.set_formation(str(d.get("formation", "free")))):
+		formation = fleet.formation
+	lost_ships = (d.get("lost_ships", []) as Array).duplicate(true)
 	last_message = str(d.get("last_message", ""))
 	message_timer = float(d.get("message_timer", 0.0))
 	log_lines = (d.get("log_lines", []) as Array).duplicate()

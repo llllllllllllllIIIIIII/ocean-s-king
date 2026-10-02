@@ -15,6 +15,8 @@ const HELLO := "hello"        # 客户端 → 房主：我是谁、协议版本
 const WELCOME := "welcome"    # 房主 → 客户端：你开哪条船 + 世界的当前快照
 const BYE := "bye"            # 谁 → 房主：我走了（房主把船转 AI）
 const FULL := "full"          # 房主 → 客户端：船位满了（v0.5 最多 4 个人）
+# M16：旗舰转移 / 沉船接手 —— 房主 → 全部：这条船现在归谁开
+const ASSIGN := "assign"
 
 # --- 每帧 ---
 const SHIP := "ship"          # 拥有者 → 房主 → 其他人：20Hz 的 ShipState 摘要
@@ -82,6 +84,9 @@ static func world_projection(v: Voyage) -> Dictionary:
 		"factions": v.factions.capture_state(),
 		"pursuit": v.pursuit.capture_state(),
 		"npcs": v.npcs.capture_state(),
+		# M16：编队指令是共享约定；沉船是全世界都得知道的事
+		"formation": v.formation,
+		"lost_ships": v.lost_ships.duplicate(true),
 	}
 
 
@@ -104,5 +109,9 @@ static func apply_world_projection(v: Voyage, d: Dictionary) -> void:
 	v.factions.apply_state(d.get("factions", {}))
 	v.pursuit.apply_state(d.get("pursuit", {}))
 	v.npcs.apply_state(d.get("npcs", {}))
+	# 客户端的编队只读覆盖：**静默**（不弹消息、不写日志 —— 那是房主的事）
+	if v.fleet.set_formation(str(d.get("formation", "free"))):
+		v.formation = v.fleet.formation
+	v.lost_ships = (d.get("lost_ships", []) as Array).duplicate(true)
 	for raw in d.get("fleet", []):
 		v.fleet.receive_summary(raw)

@@ -28,5 +28,13 @@
       "text": "轻快的一条船，抢风时总能抢到上风位。"
     }
   ],
-  "_slots": "起航时的位置一律在出发港附近的水面（WorldMap 会挡住干地，所以船上不来岸）"
+  "_slots": "起航时的位置一律在出发港附近的水面（WorldMap 会挡住干地，所以船上不来岸）",
+  "_formations": "轻编队（M16）：编队指令是**共享约定**（进 WorldState 投影），执行在各自机器上。跟随 = 跟在旗舰**正后方** astern_m 米、左右各偏 abeam_m×序号；hold = 保持下达命令那一刻的相对阵位；free = 照航线走（v0.5 的老行为）。",
+  "formations": {
+    "free": { "name": "自由巡航", "astern_m": 0.0, "abeam_m": 0.0 },
+    "follow_near": { "name": "跟随（近）", "astern_m": 700.0, "abeam_m": 260.0 },
+    "follow_mid": { "name": "跟随（中）", "astern_m": 1600.0, "abeam_m": 520.0 },
+    "follow_far": { "name": "跟随（远）", "astern_m": 3200.0, "abeam_m": 900.0 },
+    "hold": { "name": "保持阵位", "astern_m": -1.0, "abeam_m": -1.0 }
+  }
 }

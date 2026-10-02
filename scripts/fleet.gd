@@ -35,6 +35,12 @@ var _local_summary: Dictionary = {} # 本机那条船的摘要（由 Voyage 每�
 var goal := Vector2.ZERO            # 这一程的终点港（抵达判定用它）
 var arrived: Dictionary = {}        # id -> true（**抵达是个闩**：到过一次就一直算到过）
 var _left_goal: Dictionary = {}     # id -> true（先离开过终点圈，回来才算"抵达"）
+# M16：轻编队与旗舰
+var formation := "free"             # free / follow_near / follow_mid / follow_far / hold
+var flagship := ""                  # 旗舰（默认从 fleet.json 的 flagship: true 读）
+var lost := {}                      # id -> {name, day, reason, summary}（沉掉的船）
+var _held := {}                     # id -> Vector2（"保持阵位"那一刻记下的相对位置）
+static var _formation_defs: Dictionary = {}
 
 
 func setup(path := DATA_PATH) -> void:
@@ -54,6 +60,141 @@ func setup(path := DATA_PATH) -> void:
 			"owner_name": "",
 			"ship": null,
 		})
+	_formation_defs = d.get("formations", {})
+	formation = "free"
+	lost.clear()
+	_held.clear()
+	for raw in d.get("ships", []):
+		if bool(raw.get("flagship", false)):
+			flagship = str(raw.get("id", ""))
+	if flagship == "" and slots.size() > 0:
+		flagship = str(slots[0]["id"])
+
+
+# ------------------------------------------------------------ 轻编队（M16）
+
+static func formation_def(mode: String) -> Dictionary:
+	return _formation_defs.get(mode, {}) as Dictionary
+
+
+static func formation_ids() -> Array:
+	return _formation_defs.keys()
+
+
+static func formation_name_of(mode: String) -> String:
+	var f := formation_def(mode)
+	return str(f.get("name", mode))
+
+
+func formation_name() -> String:
+	"""当前这条编队指令的名字（面板与消息条读它）。"""
+	return formation_name_of(formation)
+
+
+func set_formation(mode: String) -> bool:
+	"""下达编队指令。`hold` 会把**此刻**的相对阵位记下来（之后就一直保持它）。
+
+	返回 false = 不认识这条指令（前端别把状态改了）。
+	"""
+	if formation_def(mode).is_empty():
+		return false
+	formation = mode
+	_held.clear()
+	if mode == "hold" and flagship != "" and not lost.has(flagship):
+		var lead := pose_of(flagship)
+		for s in slots:
+			var id := str(s["id"])
+			if id == flagship:
+				continue
+			_held[id] = pose_of(id) - lead
+	return true
+
+
+func formation_offset(id: String, index: int) -> Vector2:
+	"""这条船相对旗舰该在哪儿（旗舰艏向的局部坐标）。"""
+	if formation == "free":
+		return Vector2.ZERO
+	if formation == "hold":
+		return _held.get(id, Vector2.ZERO)
+	var f := formation_def(formation)
+	# 正后方 = 旗舰艏向的反方向；左右按序号分开（0 就在正后方）
+	var astern := float(f.get("astern_m", 0.0))
+	var abeam := float(f.get("abeam_m", 0.0)) * float(index)
+	return Vector2(-astern, abeam)
+
+
+func formation_target(id: String, index: int, lead: Vector2, lead_heading: float) -> Vector2:
+	"""阵位点（世界坐标）。`hold` 用的是下达命令那一刻记下的**世界**相对位置，不跟着转。"""
+	if formation == "hold":
+		return lead + (_held.get(id, Vector2.ZERO) as Vector2)
+	return lead + formation_offset(id, index).rotated(deg_to_rad(lead_heading))
+
+
+func alive_ids() -> Array:
+	var out := []
+	for s in slots:
+		out.append(str(s["id"]))
+	return out
+
+
+func nearest_alive(pos: Vector2) -> String:
+	"""最近的一条**没人开的**船（M16 沉船接手只能拿没人开的 —— 别人的船不能抢）。"""
+	var best := ""
+	var best_d := INF
+	for s in slots:
+		if int(s.get("owner_peer", 0)) != 0 or str(s.get("kind", "")) != KIND_AI:
+			continue
+		var id := str(s["id"])
+		var d := pose_of(id).distance_to(pos)
+		if d < best_d:
+			best_d = d
+			best = id
+	return best
+
+
+func assign(id: String, peer: int, owner_name := "") -> bool:
+	"""把一条船判给某个人开（M16 的旗舰转移 / 沉船接手）。
+
+	房主广播这条判定（`NetProtocol.ASSIGN`），各机器照它改自己那份船位归属 ——
+	于是"两边看到的是同一个人开着同一条船"。
+	"""
+	var s := slot_of(id)
+	if s.is_empty():
+		return false
+	s["owner_peer"] = peer
+	s["owner_name"] = owner_name
+	if peer != 0:
+		s["kind"] = KIND_REMOTE if peer != 1 else KIND_LOCAL
+	elif s["ship"] == null:
+		s["kind"] = KIND_AI
+	return true
+
+
+func sink(id: String, day := 0, reason := "沉没") -> Dictionary:
+	"""一条船没了（M16）：记下来、从船位里移走；要是沉的正好是旗舰，就换一条当旗舰。
+
+	返回那条船的记录（进航海日志与结算）。
+	"""
+	var s := slot_of(id)
+	if s.is_empty():
+		return {}
+	var rec := {
+		"id": id, "name": str(s.get("name", id)), "day": day, "reason": reason,
+		"summary": summary_of(id),
+		"was_flagship": id == flagship,
+	}
+	lost[id] = rec
+	arrived.erase(id)
+	_left_goal.erase(id)
+	_buf.erase(id)
+	slots = slots.filter(func(x): return str((x as Dictionary)["id"]) != id)
+	if id == flagship:
+		flagship = str(slots[0]["id"]) if slots.size() > 0 else ""
+	return rec
+
+
+func flagship_name() -> String:
+	return name_of(flagship) if flagship != "" else "—"
 
 
 func slot_of(id: String) -> Dictionary:
@@ -207,6 +348,29 @@ func advance_clock(real_delta: float) -> void:
 
 func step_game(delta: float, sea: Sea) -> void:
 	"""一步游戏时间：AI 船往前走，远端船按真实时间轴插值出新位姿。"""
+	# M16：**轻编队** —— 有指令时，AI 船的目标点由"相对旗舰的阵位"决定
+	# （指令是共享约定，执行在各机器上：这里就是房主/单机这一侧的执行）。
+	if formation != "free" and flagship != "" and not lost.has(flagship):
+		var lead := pose_of(flagship)
+		var lead_h := heading_of(flagship)
+		var idx := 0
+		for s in slots:
+			var sid := str(s["id"])
+			if sid == flagship:
+				continue
+			idx += 1
+			if str(s["kind"]) != KIND_AI or s["ship"] == null or mirror_world:
+				continue
+			var tgt := formation_target(sid, idx, lead, lead_h)
+			# **别把阵位点摆到干地上**（否则那条船会一头顶住岸）：先收一半，再退到旗舰处
+			if sea.is_dry_land(tgt):
+				tgt = lead + (tgt - lead) * 0.5
+			if sea.is_dry_land(tgt):
+				tgt = lead
+			var ai := s["ship"] as AbstractShip
+			ai.waypoints = []
+			ai.target = tgt
+			ai.has_target = true
 	for s in slots:
 		match str(s["kind"]):
 			KIND_AI:
@@ -366,6 +530,11 @@ func name_of(id: String) -> String:
 func owner_name_of(id: String) -> String:
 	var s := slot_of(id)
 	return str(s.get("owner_name", ""))
+
+
+func owner_peer_of(id: String) -> int:
+	var s := slot_of(id)
+	return int(s.get("owner_peer", 0))
 
 
 func kind_of(id: String) -> String:

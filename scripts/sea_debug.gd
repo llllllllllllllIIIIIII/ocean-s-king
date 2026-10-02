@@ -996,6 +996,13 @@ func _key(k: InputEventKey) -> void:
 			_knowledge_panel.visible = not _knowledge_panel.visible
 			if _knowledge_panel.visible:
 				_knowledge_panel.queue_redraw()
+		KEY_F:
+			# M16：轻编队指令（循环：自由 → 近 → 中 → 远 → 保持阵位）
+			var modes := ["free", "follow_near", "follow_mid", "follow_far", "hold"]
+			var at := modes.find(voyage.formation)
+			var fr := voyage.set_formation(str(modes[(at + 1) % modes.size()]))
+			if bool(fr.get("ok", false)):
+				voyage.say("（编队）" + voyage.formation_report(), true)
 		KEY_N:
 			# M8：沿航线走（航海官不会绕开海岸，航线数据会）
 			if voyage.following_route:

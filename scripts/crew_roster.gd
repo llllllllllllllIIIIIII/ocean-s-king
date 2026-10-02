@@ -33,6 +33,7 @@ var grumble_count := 0             # 抱怨过几次（验收第 1 条要数它�
 # M14：港口招来的人（进存档、进结算的生还人数）与普通船员的工作优先级（静态数据）
 var recruited := 0
 var _hand_prio: Dictionary = {}
+var seed_offset := 0                 # M16：换旗舰时按船 id 的种子重排水手（进存档）
 
 var _grumble_pool := [
 	"这帆脚索又缠住了。",
@@ -118,6 +119,24 @@ func _place_members() -> void:
 			m.at = deck[i_deck % deck.size()]
 			i_deck += 5
 		m.path = [m.at]
+
+
+func reseed(h: int) -> void:
+	"""M16：按**船 id 的种子**把普通船员的技能重排一遍。
+
+	用途：换旗舰的时候（`Voyage.take_over_ship()`）那条船上的四十个人跟原来那条**不是同一批**，
+	但必须是**可复现**的一批 —— 同一个 id 必得同一份名册（无头测试与联机对账都要这条）。
+	关键船员的姓名与职位不动（那是 `crew_12.json` 里的历史编制）。
+	"""
+	seed_offset = absi(h) % 97
+	for i in members.size():
+		var m: CrewMember = members[i]
+		if m.is_key:
+			continue
+		var wobble := (float((i * 7 + seed_offset) % 11) / 10.0 - 0.5) * 2.0     # −1..1
+		m.skills["seamanship"] = clampf(float(m.skills.get("seamanship", 0.45)) + wobble * 0.10, 0.10, 0.90)
+		m.skills["repair"] = clampf(float(m.skills.get("repair", 0.30)) + wobble * 0.08, 0.05, 0.90)
+		m.skills["helm"] = clampf(float(m.skills.get("helm", 0.30)) + wobble * 0.06, 0.05, 0.90)
 
 
 func recruit(count := 1, skill_center := 0.45, origin := "") -> Array:
@@ -412,6 +431,7 @@ func capture_state() -> Dictionary:
 		"members": people,
 		"grumble_count": grumble_count,
 		"recruited": recruited,
+		"seed_offset": seed_offset,
 	}
 
 
@@ -423,6 +443,7 @@ func apply_state(d: Dictionary) -> void:
 	_grumble_cursor = int(d.get("_grumble_cursor", 0))
 	grumble_count = int(d.get("grumble_count", 0))
 	recruited = int(d.get("recruited", 0))
+	seed_offset = int(d.get("seed_offset", 0))
 	log_lines = (d.get("log_lines", []) as Array).duplicate()
 	var by_id := {}
 	for m in members:
