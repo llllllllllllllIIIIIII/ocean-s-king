@@ -26,6 +26,7 @@ const ARRIVE_RADIUS_M := 900.0       # 进入这个圈就算"抵达终点"（和
 
 var slots: Array = []               # [{id, name, captain, kind, owner_peer, owner_name, ship}]
 var local_id := ""
+var wrap_width := 0.0               # 圆柱世界（M12）：远端船的插值也要走最短的一边
 var t := 0.0                        # 本机的真实时间（插值用真实时间，不用游戏时间）
 # 客户端：AI 船的动态**只从房主发出**，本机不自己推它们，只照摘要插值
 var mirror_world := false
@@ -284,7 +285,7 @@ func _sample_remote(s: Dictionary) -> void:
 			var span := maxf(float(b["t"]) - float(a["t"]), 1e-6)
 			var k := clampf((want - float(a["t"])) / span, 0.0, 1.0)
 			var out: Dictionary = b.duplicate()
-			out["pos"] = (a["pos"] as Vector2).lerp(b["pos"] as Vector2, k)
+			out["pos"] = _lerp_pos(a["pos"] as Vector2, b["pos"] as Vector2, k)
 			out["heading"] = _lerp_angle(float(a["heading"]), float(b["heading"]), k)
 			_apply_sample(s, out)
 			return
@@ -293,6 +294,18 @@ func _sample_remote(s: Dictionary) -> void:
 
 static func _lerp_angle(a: float, b: float, k: float) -> float:
 	return fposmod(a + ShipPhysics.normalize180(b - a) * k, 360.0)
+
+
+func _lerp_pos(a: Vector2, b: Vector2, k: float) -> Vector2:
+	"""两端之间插值。圆柱世界里走**最短的一边** ——
+	否则别人跨接缝那一包会让他的船"横穿整张地图飞过去"（M12）。"""
+	var d := b - a
+	if wrap_width > 0.0:
+		d.x = fposmod(d.x + wrap_width * 0.5, wrap_width) - wrap_width * 0.5
+	var p := a + d * k
+	if wrap_width > 0.0:
+		p.x = fposmod(p.x, wrap_width)
+	return p
 
 
 func _apply_sample(s: Dictionary, sample: Dictionary) -> void:

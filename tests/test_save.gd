@@ -78,9 +78,13 @@ func _test_field_coverage() -> void:
 		["ShipDynamics", v.ship, v.ship.capture_state(),
 			# land_shapes 是 M2 加进来的**静态世界数据**（海岸/岛的纯数据形状表），
 			# 和 land_center/land_radius 一样由 setup() 重新灌，不进存档。
-			["physics", "land_center", "land_radius", "land_shapes", "last_blocked", "_last"]],
+			# wrap_width 是 M12 加进来的**静态世界数据**（圆柱世界的宽度，
+			# 读档时由 Voyage.setup() 按当前海域重新灌）—— 同上。
+			["physics", "land_center", "land_radius", "land_shapes", "wrap_width",
+			 "last_blocked", "_last"]],
 		["ShipOrders", v.orders, v.orders.capture_state(), []],
-		["Navigator", v.nav, v.nav.capture_state(), ["orders"]],
+		# Navigator.wrap_width：同上，静态世界数据（圆柱世界的宽度）
+		["Navigator", v.nav, v.nav.capture_state(), ["orders", "wrap_width"]],
 		["Crew", v.crew, v.crew.capture_state(),
 			["ship", "roster", "_tw", "_ta", "_alpha_grid"]],
 		["CrewRoster", v.roster, v.roster.capture_state(),

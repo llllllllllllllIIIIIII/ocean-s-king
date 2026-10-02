@@ -114,6 +114,11 @@ func setup(region := Sea.DATA_PATH, ship_id := "trinidad", inherited := {}) -> v
 	ship.set_pose(Vector2(float(pos[0]), float(pos[1])), 0.0)
 	orders = ShipOrders.new()
 	nav = Navigator.new(orders)
+	# 圆柱世界（M12）：导航官、船、船队插值都按"走最短一边"算
+	if sea.wraps():
+		nav.wrap_width = sea.size_m().x
+		ship.wrap_width = sea.size_m().x
+		fleet.wrap_width = sea.size_m().x
 	crew = Crew.new(ship)
 	roster = CrewRoster.new()
 	roster.setup()
@@ -155,7 +160,7 @@ func tick(delta: float) -> void:
 	# 船队：AI 船与"别人的船"各自往前走一步。本机那条走下面的细化链路。
 	fleet.step_game(delta, sea)
 	var pos := ship.position_m()
-	journal.advance(_prev_pos, pos)
+	journal.advance(_prev_pos, pos, sea.dist(_prev_pos, pos))
 	_prev_pos = pos
 	weather.step(delta, pos)           # 天气先走：它改风、改损伤、改瞭望距离
 	# 洋流与背风区：同一个风，在岛后面就是软的；同一片水，在洋流带上自己会动
@@ -233,7 +238,7 @@ func _stall_hint(delta: float) -> void:
 			or orders.sail_level == ShipOrders.SailLevel.FURLED:
 		_reset_stall()
 		return
-	var d := ship.position_m().distance_to(orders.target_point)
+	var d := sea.dist(ship.position_m(), orders.target_point)
 	if _stall_best == INF:
 		_stall_best = d
 		return
@@ -409,7 +414,7 @@ func start_route_follow() -> String:
 	var best := 0
 	var best_d := INF
 	for i in route_waypoints.size():
-		var d := (route_waypoints[i] as Vector2).distance_to(ship.position_m())
+		var d := sea.dist(route_waypoints[i] as Vector2, ship.position_m())
 		if d < best_d:
 			best_d = d
 			best = i
@@ -463,7 +468,7 @@ func _route_tick() -> void:
 		following_route = false
 		return
 	var p := route_waypoints[0] as Vector2
-	if ship.position_m().distance_to(p) < 500.0:
+	if sea.dist(ship.position_m(), p) < 500.0:
 		if route_waypoints.size() <= 1:
 			following_route = false
 			# 顺手把"下一步做什么"说清楚：船这会儿还是张着帆的，
@@ -515,7 +520,7 @@ func next_port_id() -> String:
 		var id := str(p.get("id", ""))
 		if id == docked_port:
 			continue
-		var d := Geom2D.centroid(p["shape"]).distance_to(ship.position_m())
+		var d := sea.dist(Geom2D.centroid(p["shape"]), ship.position_m())
 		if d < best_d:
 			best_d = d
 			best = id
@@ -1060,7 +1065,7 @@ func port_supply_bundle(margin := 1.15) -> Dictionary:
 	"""一键补给：按"开到下一个港要多少"买齐，留一点余量。"""
 	if not can_trade_here():
 		return {"ok": false, "reason": "先靠港"}
-	var need := supply_need_for(next_port_position().distance_to(ship.position_m()))
+	var need := supply_need_for(sea.dist(next_port_position(), ship.position_m()))
 	var want_food := int(ceil(float(need["food"]) * margin)) - cargo.qty("food")
 	var want_water := int(ceil(float(need["water"]) * margin)) - cargo.qty("water")
 	var spent := 0

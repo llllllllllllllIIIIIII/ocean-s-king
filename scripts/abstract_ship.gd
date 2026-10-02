@@ -56,6 +56,7 @@ func step(delta: float, sea: Sea) -> void:
 		_drift(delta, sea)
 		return
 	var to_target := target - pos
+	to_target = sea.delta(pos, target)          # 圆柱世界：走最短的一边（M9/M12）
 	if to_target.length() < ARRIVE_M:
 		speed_ms = move_toward(speed_ms, 0.0, 1.0 * delta)
 		if not waypoints.is_empty():
@@ -95,7 +96,7 @@ func step(delta: float, sea: Sea) -> void:
 		_drift(delta, sea)
 		return
 	_blocked_t = 0.0
-	pos = next
+	pos = sea.wrap_pos(next)          # 圆柱世界：跨接缝不是瞬移（M9/M12）
 	_drift(delta, sea)
 
 

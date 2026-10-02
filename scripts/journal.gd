@@ -62,9 +62,13 @@ func landfall(name: String, text: String, t: float) -> void:
 	landfalls.append({ "name": name, "text": text, "t": t })
 
 
-func advance(from_pos: Vector2, to_pos: Vector2) -> void:
-	"""航程累计。瞬移（测试与截图脚本会 set_pose）不算航程。"""
-	var d := from_pos.distance_to(to_pos)
+func advance(from_pos: Vector2, to_pos: Vector2, distance_override := -1.0) -> void:
+	"""航程累计。瞬移（测试与截图脚本会 set_pose）不算航程。
+
+	`distance_override` 给圆柱世界用（M12）：跨接缝那一步的实际航程是"最短一边"，
+	而不是两个坐标相减出来的那 320 公里。
+	"""
+	var d := from_pos.distance_to(to_pos) if distance_override < 0.0 else distance_override
 	if d > TELEPORT_M:
 		teleports += 1
 		return

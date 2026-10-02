@@ -43,6 +43,7 @@ var land_radius := -1.0             # <= 0 表示这片海里没有陆地
 # （Geom2D 的圆 / 带子）。同样不是回调 —— 依旧是"把数据抄进来"，不持有 WorldMap。
 # 它是静态世界数据，不进存档（读档时 setup() 重新灌一次，见 docs/14 第 3 节）。
 var land_shapes: Array = []
+var wrap_width := 0.0               # 圆柱世界（M9/M12）：> 0 时位置按它卷起来
 var last_blocked := false           # 这一帧是不是撞上了（给上层做损伤提示）
 # 损伤（docs/01：只做三处，每一处都要能在气动上看见效果）
 var damage := { "hull": 0.0, "mast": 0.0, "rudder": 0.0 }
@@ -236,7 +237,7 @@ func sail_alpha_main_deg() -> float:
 
 func set_pose(pos_m: Vector2, heading_deg_value: float) -> void:
 	"""只给测试与重置用：把船摆到某个位置。运行时的运动必须由 step() 积分出来。"""
-	_pos_m = pos_m
+	_pos_m = _wrap(pos_m)
 	_heading_deg = fposmod(heading_deg_value, 360.0)
 
 
@@ -336,7 +337,15 @@ func step(delta: float, wind_world: Vector2) -> void:
 				_u *= 0.3
 				_w *= 0.3
 	_pos_m += step_vec
+	_pos_m = _wrap(_pos_m)
 	_t += delta
+
+
+func _wrap(p: Vector2) -> Vector2:
+	"""圆柱世界：绕地球一圈回到起点（不是"开到 320 公里以外"）。"""
+	if wrap_width <= 0.0:
+		return p
+	return Vector2(fposmod(p.x, wrap_width), p.y)
 
 
 func _blocked_at(p: Vector2) -> bool:

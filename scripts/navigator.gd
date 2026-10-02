@@ -32,6 +32,9 @@ var tack_count := 0                  # 真的换过几次舷（受风舷翻到�
 var beat_count := 0                  # 抢风走了几段（从别的航法切进抢风算一段）
 var _last_method: Method = Method.HOLD
 var _last_tack_side := 1.0           # 上一轮抢风时受风的那一舷
+# 圆柱世界（M9/M12）：> 0 时方位与距离都**走最短的一边**。
+# 平面海域是 0（老海域一个数都不改）。由 `Voyage.setup()` 灌进来。
+var wrap_width := 0.0
 
 
 func _init(orders_ref: ShipOrders) -> void:
@@ -55,7 +58,7 @@ func decide(ship: ShipDynamics) -> void:
 		_remember()
 		return
 
-	var to_target := orders.target_point - ship.position_m()
+	var to_target := delta_to(orders.target_point, ship.position_m())
 	if to_target.length() < 8.0:                 # 到了：转成保持航向
 		method = Method.HOLD
 		orders.clear_target_point()
@@ -95,6 +98,14 @@ func decide(ship: ShipDynamics) -> void:
 		method = Method.BEAT
 		target_heading_deg = fposmod(wind_from + tack_side * beat, 360.0)
 	_remember()
+
+
+func delta_to(to: Vector2, from: Vector2) -> Vector2:
+	"""从 from 到 to 的位移：圆柱世界里走**最短的一边**（跨接缝不是"绕地球一圈"）。"""
+	var d := to - from
+	if wrap_width > 0.0:
+		d.x = fposmod(d.x + wrap_width * 0.5, wrap_width) - wrap_width * 0.5
+	return d
 
 
 func _remember() -> void:
